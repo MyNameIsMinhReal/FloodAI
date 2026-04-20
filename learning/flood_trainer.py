@@ -311,6 +311,10 @@ def train():
     model = _load_model(torch, AutoModelForCausalLM, model_name, use_gpu, gpu_idx)  # noqa: F821
     model.config.use_cache = False
     model = get_peft_model(model, LoraConfig(**LORA_CFG))
+    # Báo Trainer rằng model tự quản lý device_map → không wrap DataParallel
+    # (bitsandbytes 4-bit không tương thích với DataParallel)
+    model.is_parallelizable = True
+    model.model_parallel = True
     if use_gpu and TRAIN_CFG.get("gradient_checkpointing"):
         model.enable_input_require_grads()
     model.print_trainable_parameters()
