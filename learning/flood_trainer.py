@@ -179,31 +179,37 @@ def _build_trainer(trl_new, sft_trainer_cls, training_args_cls, model, tokenizer
     )
 
 
-def _detect_device(torch) -> tuple[bool, str, float, int]:
-    """Phát hiện GPU/CPU và chọn model phù hợp. Trả về (use_gpu, model_name, free_vram_gb, gpu_idx)."""
+def _pick_best_gpu() -> int:
+    """Dùng nvidia-smi chọn GPU free nhất — KHÔNG cần torch, gọi trước khi import torch."""
+    import subprocess
+    try:
+        out = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+            text=True, stderr=subprocess.DEVNULL,
+        )
+        free_mems = [int(x.strip()) for x in out.strip().split("\n") if x.strip()]
+        best = max(range(len(free_mems)), key=lambda i: free_mems[i])
+        log.info(f"nvidia-smi free VRAM (MB): {free_mems} → chọn GPU {best} ({free_mems[best]} MB free)")
+        return best
+    except Exception as e:
+        log.warning(f"nvidia-smi không khả dụng ({e}), dùng GPU 0")
+        return 0
+
+
+def _detect_device(torch) -> tuple[bool, str, float]:
+    """Phát hiện GPU/CPU và chọn model. CUDA_VISIBLE_DEVICES đã được set trước khi torch init."""
     if not torch.cuda.is_available():
         log.warning("=" * 60)
         log.warning("Không có GPU — chạy trên CPU (chậm, mất 1-4 giờ).")
         log.warning("Model cố định: Qwen2.5-0.5B (nhỏ nhất)")
         log.warning("=" * 60)
-        return False, MODEL_0_5B, 0.0, 0
+        return False, MODEL_0_5B, 0.0
 
-    # Trên server nhiều GPU: chọn GPU có free VRAM nhiều nhất
-    n_gpus = torch.cuda.device_count()
-    best_idx, best_free = 0, 0.0
-    for i in range(n_gpus):
-        free = torch.cuda.mem_get_info(i)[0] / 1e9
-        total = torch.cuda.get_device_properties(i).total_memory / 1e9
-        log.info(f"  GPU {i}: {torch.cuda.get_device_name(i)} | {free:.1f}/{total:.1f} GB free")
-        if free > best_free:
-            best_free, best_idx = free, i
-
-    # Ẩn tất cả GPU khác để Trainer không tự bật DataParallel
-    # (DataParallel yêu cầu model phải ở cuda:0, conflict với device_map)
-    import os as _os
-    _os.environ["CUDA_VISIBLE_DEVICES"] = str(best_idx)
-    log.info(f"CUDA_VISIBLE_DEVICES={best_idx} — chỉ dùng GPU {best_idx} ({best_free:.1f} GB free)")
-    free_gb = best_free
+    # Sau khi set CUDA_VISIBLE_DEVICES, chỉ có 1 GPU → luôn là index 0
+    gpu_name = torch.cuda.get_device_name(0)
+    total_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+    free_gb  = torch.cuda.mem_get_info(0)[0] / 1e9
+    log.info(f"GPU 0: {gpu_name} | {free_gb:.1f}/{total_gb:.1f} GB free")
 
     # Kiểm tra disk space để tránh download model lớn hơn dung lượng trống
     import shutil
@@ -211,7 +217,6 @@ def _detect_device(torch) -> tuple[bool, str, float, int]:
     disk_free_gb = shutil.disk_usage(cache_dir if cache_dir.exists() else Path.home()).free / 1e9
     log.info(f"Disk free: {disk_free_gb:.1f} GB")
 
-    # Yêu cầu disk: 0.5B~1GB, 1.5B~3GB, 3B~7GB, 7B~15GB (với buffer 2GB)
     MODEL_DISK_REQ = {MODEL_7B: 15, MODEL_3B: 7, MODEL_1_5B: 3, MODEL_0_5B: 1}
 
     if free_gb < 4:
@@ -223,31 +228,30 @@ def _detect_device(torch) -> tuple[bool, str, float, int]:
     else:
         model_name = MODEL_7B
 
-    # Downgrade nếu disk không đủ (model có thể đã có trong cache)
     for candidate in [model_name, MODEL_3B, MODEL_1_5B, MODEL_0_5B]:
         cached = cache_dir / f"models--{candidate.replace('/', '--')}"
-        already_cached = cached.exists()
-        if already_cached or disk_free_gb >= MODEL_DISK_REQ[candidate] + 2:
+        if cached.exists():
+            log.info(f"Model đã có trong cache: {candidate}")
             model_name = candidate
-            if already_cached:
-                log.info(f"Model đã có trong cache: {candidate}")
             break
-        log.warning(f"Disk không đủ cho {candidate} ({MODEL_DISK_REQ[candidate]}GB cần, {disk_free_gb:.1f}GB free) → thử model nhỏ hơn")
+        if disk_free_gb >= MODEL_DISK_REQ[candidate] + 2:
+            model_name = candidate
+            break
+        log.warning(f"Disk không đủ cho {candidate} → thử model nhỏ hơn")
 
-    log.info(f"Tự động chọn model: {model_name} (VRAM {free_gb:.1f}GB free, Disk {disk_free_gb:.1f}GB free)")
-    return True, model_name, free_gb, best_idx
+    log.info(f"Tự động chọn model: {model_name} (VRAM {free_gb:.1f}GB, Disk {disk_free_gb:.1f}GB free)")
+    return True, model_name, free_gb
 
 
-def _load_model(torch, model_cls, model_name: str, use_gpu: bool, gpu_idx: int = 0):
-    """Load model với QLoRA (GPU) hoặc float32 (CPU). Pin vào 1 GPU để tránh multi-GPU conflict."""
-    log.info(f"Loading model: {model_name} → cuda:0 (mapped from physical GPU {gpu_idx})")
+def _load_model(torch, model_cls, model_name: str, use_gpu: bool):
+    """Load model với QLoRA (GPU) hoặc float32 (CPU). CUDA_VISIBLE_DEVICES đã pin 1 GPU."""
+    log.info(f"Loading model: {model_name}")
     if not use_gpu:
         return model_cls.from_pretrained(
             model_name, device_map="cpu",
             torch_dtype=torch.float32, trust_remote_code=True,
         )
-    # Sau khi set CUDA_VISIBLE_DEVICES, GPU được chọn luôn là index 0
-    device_map = {"": 0}
+    # CUDA_VISIBLE_DEVICES đã được set → chỉ 1 GPU visible → device_map="cuda:0" là đủ
     try:
         from transformers import BitsAndBytesConfig
         bnb_config = BitsAndBytesConfig(
@@ -256,23 +260,34 @@ def _load_model(torch, model_cls, model_name: str, use_gpu: bool, gpu_idx: int =
         )
         return model_cls.from_pretrained(
             model_name, quantization_config=bnb_config,
-            device_map=device_map, trust_remote_code=True,
+            device_map="cuda:0", trust_remote_code=True,
         )
     except Exception:
         return model_cls.from_pretrained(
-            model_name, device_map=device_map,
+            model_name, device_map="cuda:0",
             torch_dtype=torch.float16, trust_remote_code=True,
         )
 
 
 def train():
+    import os as _os
+
+    # QUAN TRỌNG: set CUDA_VISIBLE_DEVICES TRƯỚC KHI import torch
+    # Nếu set sau khi torch đã init CUDA context thì không có hiệu lực
+    if "CUDA_VISIBLE_DEVICES" not in _os.environ:
+        best_gpu = _pick_best_gpu()
+        _os.environ["CUDA_VISIBLE_DEVICES"] = str(best_gpu)
+        log.info(f"CUDA_VISIBLE_DEVICES={best_gpu} (set trước torch init)")
+    else:
+        log.info(f"CUDA_VISIBLE_DEVICES={_os.environ['CUDA_VISIBLE_DEVICES']} (từ môi trường)")
+
     try:
         import torch
     except ImportError:
         log.error("Thiếu torch. Chạy: pip install torch")
         return
 
-    use_gpu, model_name, vram_gb, gpu_idx = _detect_device(torch)
+    use_gpu, model_name, vram_gb = _detect_device(torch)
 
     try:
         from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
@@ -308,7 +323,7 @@ def train():
     train_dataset = Dataset.from_dict({"text": [_apply_template(e) for e in train_raw]})
     eval_dataset  = Dataset.from_dict({"text": [_apply_template(e) for e in eval_raw]})
 
-    model = _load_model(torch, AutoModelForCausalLM, model_name, use_gpu, gpu_idx)  # noqa: F821
+    model = _load_model(torch, AutoModelForCausalLM, model_name, use_gpu)  # noqa: F821
     model.config.use_cache = False
     model = get_peft_model(model, LoraConfig(**LORA_CFG))
     # Báo Trainer rằng model tự quản lý device_map → không wrap DataParallel
