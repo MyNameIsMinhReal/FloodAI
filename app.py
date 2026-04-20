@@ -110,22 +110,28 @@ RSS_FEEDS = [
     ("Dân Trí",    "https://dantri.com.vn/xa-hoi.rss"),
     ("Tiền Phong", "https://tienphong.vn/rss/xa-hoi.rss"),
     ("Zing News",  "https://zingnews.vn/xa-hoi.rss"),
+    ("Nhân Dân",   "https://nhandan.vn/rss/thoi-su.rss"),
+    ("Nhân Dân",   "https://nhandan.vn/rss/xa-hoi.rss"),
+    ("Lao Động",   "https://laodong.vn/rss/thoi-su.rss"),
+    ("Lao Động",   "https://laodong.vn/rss/moi-truong.rss"),
+    ("Phụ Nữ VN",  "https://phunuvietnam.vn/rss/thoi-su.rss"),
+    ("Phụ Nữ VN",  "https://phunuvietnam.vn/rss/xa-hoi.rss"),
+    ("Báo Mới",    "https://baomoi.com/thien-tai.epi/rss.xml"),
 ]
 FLOOD_KW = [
     # lũ lụt cốt lõi
-    "lũ", "lụt", "lũ lụt", "lũ quét", "mưa lũ",
-    "ngập", "ngập lụt", "ngập úng", "triều cường", "nước dâng",
+    "lũ", "lụt", "lũ lụt", "lũ quét", "mưa lũ", "lũ ống",
+    "ngập lụt", "ngập úng", "ngập sâu", "nước ngập", "triều cường", "nước dâng",
     # thiên tai
     "bão", "siêu bão", "áp thấp nhiệt đới", "lốc", "lốc xoáy", "vòi rồng",
-    "sạt lở", "sụt lún", "vỡ đê", "vỡ đập", "hồ chứa",
-    "thiên tai", "thảm họa", "khẩn cấp", "cảnh báo lũ", "báo động",
-    # ứng phó
-    "sơ tán", "di dời", "cứu nạn", "cứu hộ", "tìm kiếm",
-    "mất tích", "thiệt mạng", "chết đuối",
+    "sạt lở", "sụt lún", "vỡ đê", "vỡ đập",
+    "cảnh báo lũ", "cảnh báo bão", "báo động lũ",
+    # ứng phó thiên tai
+    "sơ tán", "di dời dân",
     # môi trường nước
-    "hạn hán", "xâm nhập mặn", "mực nước", "lưu lượng", "đỉnh lũ",
+    "hạn hán", "xâm nhập mặn", "mực nước sông", "đỉnh lũ",
     # english
-    "flood", "typhoon", "storm", "disaster",
+    "flood", "typhoon", "flash flood", "storm surge",
 ]
 
 SUMMARIZE_SYS = (

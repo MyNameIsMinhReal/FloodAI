@@ -79,7 +79,10 @@ _SYSTEM_PROMPT = (
     "- Chỉ nói về lũ lụt khi người dùng hỏi về lũ hoặc đang trong ngữ cảnh phân tích ảnh.\n"
     "- KHÔNG tự ý thêm 'sẽ phân tích ảnh lũ' vào câu trả lời không liên quan.\n"
     "- TUYỆT ĐỐI không dùng chữ Hán (tiếng Trung) trong câu trả lời. "
-    "Chỉ dùng tiếng Việt hoặc tiếng Anh."
+    "Chỉ dùng tiếng Việt hoặc tiếng Anh.\n"
+    "- KHÔNG tự thay đổi, 'sửa', hay 'ước tính lại' độ sâu nước đã đo. "
+    "Độ sâu trong [Kết quả phân tích] là dữ liệu thực tế từ hệ thống, không phải ước đoán của bạn. "
+    "Chỉ điều chỉnh khi user nói RÕ RÀNG một con số mới (ví dụ: 'nước chỉ 5cm thôi')."
 )
 
 _LEVEL_VI = {
@@ -215,7 +218,7 @@ class LLMEnhancer:
         n_ctx: int = 1024,
         n_threads: int = 4,
         max_new_tokens: int = 256,
-        temperature: float = 0.7,
+        temperature: float = 0.3,
         device: Optional[str] = None,
     ):
         """
