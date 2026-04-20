@@ -198,8 +198,21 @@ def _detect_device(torch) -> tuple[bool, str, float, int]:
         if free > best_free:
             best_free, best_idx = free, i
 
+    # Ẩn tất cả GPU khác để Trainer không tự bật DataParallel
+    # (DataParallel yêu cầu model phải ở cuda:0, conflict với device_map)
+    import os as _os
+    _os.environ["CUDA_VISIBLE_DEVICES"] = str(best_idx)
+    log.info(f"CUDA_VISIBLE_DEVICES={best_idx} — chỉ dùng GPU {best_idx} ({best_free:.1f} GB free)")
     free_gb = best_free
-    log.info(f"Dùng GPU {best_idx} ({free_gb:.1f} GB free)")
+
+    # Kiểm tra disk space để tránh download model lớn hơn dung lượng trống
+    import shutil
+    cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
+    disk_free_gb = shutil.disk_usage(cache_dir if cache_dir.exists() else Path.home()).free / 1e9
+    log.info(f"Disk free: {disk_free_gb:.1f} GB")
+
+    # Yêu cầu disk: 0.5B~1GB, 1.5B~3GB, 3B~7GB, 7B~15GB (với buffer 2GB)
+    MODEL_DISK_REQ = {MODEL_7B: 15, MODEL_3B: 7, MODEL_1_5B: 3, MODEL_0_5B: 1}
 
     if free_gb < 4:
         model_name = MODEL_0_5B
@@ -209,20 +222,32 @@ def _detect_device(torch) -> tuple[bool, str, float, int]:
         model_name = MODEL_3B
     else:
         model_name = MODEL_7B
-    log.info(f"Tự động chọn model: {model_name} (dựa trên {free_gb:.1f} GB free VRAM)")
+
+    # Downgrade nếu disk không đủ (model có thể đã có trong cache)
+    for candidate in [model_name, MODEL_3B, MODEL_1_5B, MODEL_0_5B]:
+        cached = cache_dir / f"models--{candidate.replace('/', '--')}"
+        already_cached = cached.exists()
+        if already_cached or disk_free_gb >= MODEL_DISK_REQ[candidate] + 2:
+            model_name = candidate
+            if already_cached:
+                log.info(f"Model đã có trong cache: {candidate}")
+            break
+        log.warning(f"Disk không đủ cho {candidate} ({MODEL_DISK_REQ[candidate]}GB cần, {disk_free_gb:.1f}GB free) → thử model nhỏ hơn")
+
+    log.info(f"Tự động chọn model: {model_name} (VRAM {free_gb:.1f}GB free, Disk {disk_free_gb:.1f}GB free)")
     return True, model_name, free_gb, best_idx
 
 
 def _load_model(torch, model_cls, model_name: str, use_gpu: bool, gpu_idx: int = 0):
     """Load model với QLoRA (GPU) hoặc float32 (CPU). Pin vào 1 GPU để tránh multi-GPU conflict."""
-    log.info(f"Loading model: {model_name} → cuda:{gpu_idx}")
+    log.info(f"Loading model: {model_name} → cuda:0 (mapped from physical GPU {gpu_idx})")
     if not use_gpu:
         return model_cls.from_pretrained(
             model_name, device_map="cpu",
             torch_dtype=torch.float32, trust_remote_code=True,
         )
-    # device_map={"": gpu_idx} buộc toàn bộ model vào 1 GPU duy nhất
-    device_map = {"": gpu_idx}
+    # Sau khi set CUDA_VISIBLE_DEVICES, GPU được chọn luôn là index 0
+    device_map = {"": 0}
     try:
         from transformers import BitsAndBytesConfig
         bnb_config = BitsAndBytesConfig(
