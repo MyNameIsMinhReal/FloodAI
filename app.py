@@ -86,19 +86,20 @@ def get_llm():
     return _llm if _llm_ready else None
 
 
-def llm_infer(messages: list) -> str:
+def llm_infer(messages: list, max_new_tokens: int = None) -> str:
     """Thread-safe inference. Raises on error."""
     llm = get_llm()
     if llm is None:
         raise RuntimeError("Model chưa sẵn sàng")
     with _infer_lock:
-        return llm._infer(messages)
+        return llm._infer(messages, max_new_tokens=max_new_tokens)
 
 
 # ── News Cache ─────────────────────────────────────────────────────────────────
-_news_cache = {"articles": [], "ts": 0.0}
-_news_lock  = threading.Lock()
-NEWS_TTL    = 900  # 15 min
+_news_cache       = {"articles": [], "ts": 0.0}
+_news_lock        = threading.Lock()
+_news_summarizing = False
+NEWS_TTL          = 900  # 15 min
 
 RSS_FEEDS = [
     ("VnExpress",  "https://vnexpress.net/rss/thoi-su.rss"),
@@ -150,16 +151,16 @@ CHAT_SYS = (
 def _summarize(title: str, body: str) -> str:
     try:
         prompt = (
-            f"Tóm tắt bài báo sau trong 2-3 câu ngắn gọn bằng tiếng Việt. "
-            f"Chỉ viết câu tóm tắt:\n\nTiêu đề: {title}\nNội dung: {body[:1500]}"
+            f"Tóm tắt trong 1-2 câu ngắn bằng tiếng Việt. "
+            f"Chỉ viết câu tóm tắt:\nTiêu đề: {title}\nNội dung: {body[:500]}"
         )
         return llm_infer([
             {"role": "system", "content": SUMMARIZE_SYS},
             {"role": "user",   "content": prompt},
-        ]).strip()
+        ], max_new_tokens=100).strip()
     except Exception as exc:
         log.debug(f"[summarize] {exc}")
-        return (body[:350] + "…") if len(body) > 350 else body
+        return (body[:250] + "…") if len(body) > 250 else body
 
 
 def _fetch_news():
@@ -181,18 +182,33 @@ def _fetch_news():
                         "title":     e.get("title", ""),
                         "link":      e.get("link", ""),
                         "published": e.get("published", ""),
-                        "body":      e.get("summary", ""),
+                        "body":      e.get("summary", "")[:800],
                         "summary":   None,
                     })
         except Exception as ex:
             log.warning(f"[news] feed {url}: {ex}")
 
-    for art in articles[:12]:  # limit to avoid long wait
-        body = art["body"]
-        art["summary"] = _summarize(art["title"], body)
-        art["body"] = body[:800]  # keep trimmed body for rewrite
-
     return articles[:20]
+
+
+def _summarize_articles_bg():
+    """Generate LLM summaries in background; updates cache in-place."""
+    global _news_summarizing
+    try:
+        with _news_lock:
+            snapshot = list(_news_cache["articles"])
+        for i, art in enumerate(snapshot[:10]):
+            if art.get("summary"):
+                continue
+            try:
+                s = _summarize(art["title"], art.get("body", ""))
+                with _news_lock:
+                    if i < len(_news_cache["articles"]):
+                        _news_cache["articles"][i]["summary"] = s
+            except Exception as exc:
+                log.debug(f"[summarize_bg] idx={i}: {exc}")
+    finally:
+        _news_summarizing = False
 
 
 # ── Image Analysis (ReferenceEstimator, same backend as /live_predict) ────────
@@ -277,7 +293,7 @@ def _analyze_image(image_b64: str) -> str:
 # ── Chat Sessions ──────────────────────────────────────────────────────────────
 _sessions: dict = {}
 _sess_lock      = threading.Lock()
-MAX_HIST        = 18
+MAX_HIST        = 8
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
@@ -365,15 +381,31 @@ def logout():
 
 @app.route("/api/news/fetch", methods=["GET"])
 def api_news_fetch():
+    global _news_summarizing
     force = request.args.get("refresh") == "1"
     with _news_lock:
         if not force and time.time() - _news_cache["ts"] < NEWS_TTL:
-            return jsonify({"articles": _news_cache["articles"], "cached": True})
+            return jsonify({"articles": _news_cache["articles"], "cached": True,
+                            "summarizing": _news_summarizing})
 
     articles = _fetch_news()
     with _news_lock:
         _news_cache.update({"articles": articles, "ts": time.time()})
-    return jsonify({"articles": articles, "cached": False})
+
+    if not _news_summarizing and get_llm():
+        _news_summarizing = True
+        threading.Thread(target=_summarize_articles_bg, daemon=True).start()
+
+    return jsonify({"articles": articles, "cached": False,
+                    "summarizing": _news_summarizing})
+
+
+@app.route("/api/news/summaries", methods=["GET"])
+def api_news_summaries():
+    """Return current summary status for polling (no LLM call)."""
+    with _news_lock:
+        summaries = [a.get("summary") for a in _news_cache["articles"]]
+    return jsonify({"summaries": summaries, "done": not _news_summarizing})
 
 
 @app.route("/api/news/rewrite", methods=["POST"])
@@ -388,8 +420,8 @@ def api_news_rewrite():
         rewritten = llm_infer([
             {"role": "system", "content": REWRITE_SYS},
             {"role": "user",   "content":
-             f"Tiêu đề: {title}\nNội dung gốc: {body[:1400]}\n\nViết lại thành bài báo hoàn chỉnh:"},
-        ]).strip()
+             f"Tiêu đề: {title}\nNội dung gốc: {body[:800]}\n\nViết lại thành bài báo hoàn chỉnh:"},
+        ], max_new_tokens=350).strip()
     except Exception as exc:
         log.warning(f"[rewrite] {exc}")
         rewritten = body or title
@@ -429,7 +461,7 @@ def api_chat_message():
     messages.append({"role": "user", "content": content})
 
     try:
-        reply = llm_infer(messages)
+        reply = llm_infer(messages, max_new_tokens=256)
         # Strip structured format if model still outputs it
         if "INTENT:" in reply:
             from learning.flood_llm import _parse_llm_output

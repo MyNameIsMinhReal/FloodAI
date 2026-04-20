@@ -259,21 +259,22 @@ class LLMEnhancer:
 
     # ── Inference ─────────────────────────────────────────────────────
 
-    def _infer(self, messages: List[Dict]) -> str:
+    def _infer(self, messages: List[Dict], max_new_tokens: Optional[int] = None) -> str:
+        tokens = max_new_tokens if max_new_tokens is not None else self.max_new_tokens
         if self.backend == "llama_cpp":
-            return self._infer_llama_cpp(messages)
-        return self._infer_transformers(messages)
+            return self._infer_llama_cpp(messages, tokens)
+        return self._infer_transformers(messages, tokens)
 
-    def _infer_llama_cpp(self, messages: List[Dict]) -> str:
+    def _infer_llama_cpp(self, messages: List[Dict], max_new_tokens: int) -> str:
         result = self._model.create_chat_completion(
             messages=messages,
-            max_tokens=self.max_new_tokens,
+            max_tokens=max_new_tokens,
             temperature=self.temperature,
             stop=["<|im_end|>", "<|endoftext|>"],
         )
         return result["choices"][0]["message"]["content"]
 
-    def _infer_transformers(self, messages: List[Dict]) -> str:
+    def _infer_transformers(self, messages: List[Dict], max_new_tokens: int) -> str:
         import torch
         text = self._tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
@@ -282,7 +283,7 @@ class LLMEnhancer:
         with torch.no_grad():
             output_ids = self._model.generate(
                 **inputs,
-                max_new_tokens=self.max_new_tokens,
+                max_new_tokens=max_new_tokens,
                 temperature=self.temperature,
                 do_sample=self.temperature > 0,
                 pad_token_id=self._tokenizer.eos_token_id,

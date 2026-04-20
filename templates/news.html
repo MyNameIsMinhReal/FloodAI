@@ -248,6 +248,7 @@ let _articles = [];
 let _activeSource = 'all';
 let _refreshTimer = null;
 let _countdownTimer = null;
+let _summaryPollTimer = null;
 let _nextRefreshAt = 0;
 const REFRESH_MS = 5 * 60 * 1000; // 5 phút
 
@@ -255,6 +256,7 @@ const REFRESH_MS = 5 * 60 * 1000; // 5 phút
 async function loadNews(force = false) {
   const btn = document.getElementById('refresh-btn');
   if (btn) btn.style.opacity = '.4';
+  clearTimeout(_summaryPollTimer);
   document.getElementById('news-container').innerHTML =
     '<div class="state-box"><div class="spinner"></div><p>Đang tải' +
     (force ? ' và làm mới' : '') + '…</p></div>';
@@ -270,6 +272,9 @@ async function loadNews(force = false) {
       `<span class="live-badge"><span class="live-dot"></span>Live</span>`;
     buildFilters();
     if (force) toast('Đã làm mới tin tức', 'ok');
+    if (d.summarizing || _articles.some(a => !a.summary)) {
+      _summaryPollTimer = setTimeout(pollSummaries, 3000);
+    }
   } catch (e) {
     document.getElementById('news-container').innerHTML =
       `<div class="state-box">
@@ -281,6 +286,26 @@ async function loadNews(force = false) {
     if (btn) btn.style.opacity = '';
     scheduleNextRefresh();
   }
+}
+
+// ── Poll for background summaries ──────────────────────────────────
+async function pollSummaries() {
+  if (!_articles.length) return;
+  try {
+    const r = await fetch('/api/news/summaries');
+    const d = await r.json();
+    let updated = false;
+    (d.summaries || []).forEach((s, i) => {
+      if (s && i < _articles.length && !_articles[i].summary) {
+        _articles[i].summary = s;
+        updated = true;
+      }
+    });
+    if (updated) renderNews();
+    if (!d.done) {
+      _summaryPollTimer = setTimeout(pollSummaries, 4000);
+    }
+  } catch (e) { console.debug('[summaries poll]', e); }
 }
 
 // ── Auto-refresh countdown ─────────────────────────────────────────
