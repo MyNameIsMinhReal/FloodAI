@@ -308,6 +308,28 @@ def login_required(f):
     return wrapped
 
 
+# ── API error handlers (always return JSON, never HTML) ────────────────────────
+_API_PREFIX = "/api/"
+
+@app.errorhandler(404)
+def _err404(e):
+    if request.path.startswith(_API_PREFIX):
+        return jsonify({"error": "not found"}), 404
+    return e
+
+@app.errorhandler(405)
+def _err405(e):
+    if request.path.startswith(_API_PREFIX):
+        return jsonify({"error": "method not allowed"}), 405
+    return e
+
+@app.errorhandler(500)
+def _err500(e):
+    if request.path.startswith(_API_PREFIX):
+        return jsonify({"error": "internal server error"}), 500
+    return e
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE ROUTES
 # ══════════════════════════════════════════════════════════════════════════════
@@ -410,22 +432,28 @@ def api_news_summaries():
 
 @app.route("/api/news/rewrite", methods=["POST"])
 def api_news_rewrite():
-    data  = request.get_json(force=True) or {}
-    title = data.get("title", "").strip()
-    body  = data.get("body", "").strip()
-    if not title:
-        return jsonify({"error": "missing title"}), 400
-
     try:
-        rewritten = llm_infer([
-            {"role": "system", "content": REWRITE_SYS},
-            {"role": "user",   "content":
-             f"Tiêu đề: {title}\nNội dung gốc: {body[:800]}\n\nViết lại thành bài báo hoàn chỉnh:"},
-        ], max_new_tokens=350).strip()
+        data  = request.get_json(force=True, silent=True)
+        if not isinstance(data, dict):
+            data = {}
+        title = data.get("title", "").strip()
+        body  = data.get("body", "").strip()
+        if not title:
+            return jsonify({"error": "missing title"}), 400
+
+        try:
+            rewritten = llm_infer([
+                {"role": "system", "content": REWRITE_SYS},
+                {"role": "user",   "content":
+                 f"Tiêu đề: {title}\nNội dung gốc: {body[:800]}\n\nViết lại thành bài báo hoàn chỉnh:"},
+            ], max_new_tokens=350).strip()
+        except Exception as exc:
+            log.warning(f"[rewrite] {exc}")
+            rewritten = body or title
+        return jsonify({"rewritten": rewritten})
     except Exception as exc:
-        log.warning(f"[rewrite] {exc}")
-        rewritten = body or title
-    return jsonify({"rewritten": rewritten})
+        log.error(f"[rewrite] unhandled: {exc}")
+        return jsonify({"error": str(exc)}), 500
 
 
 # ══════════════════════════════════════════════════════════════════════════════
