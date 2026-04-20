@@ -179,14 +179,14 @@ def _build_trainer(trl_new, sft_trainer_cls, training_args_cls, model, tokenizer
     )
 
 
-def _detect_device(torch) -> tuple[bool, str]:
-    """Phát hiện GPU/CPU và chọn model phù hợp. Trả về (use_gpu, model_name)."""
+def _detect_device(torch) -> tuple[bool, str, float]:
+    """Phát hiện GPU/CPU và chọn model phù hợp. Trả về (use_gpu, model_name, vram_gb)."""
     if not torch.cuda.is_available():
         log.warning("=" * 60)
         log.warning("Không có GPU — chạy trên CPU (chậm, mất 1-4 giờ).")
         log.warning("Model cố định: Qwen2.5-0.5B (nhỏ nhất)")
         log.warning("=" * 60)
-        return False, MODEL_0_5B
+        return False, MODEL_0_5B, 0.0
 
     gpu_name = torch.cuda.get_device_name(0)
     vram_gb  = torch.cuda.get_device_properties(0).total_memory / 1e9
@@ -194,13 +194,13 @@ def _detect_device(torch) -> tuple[bool, str]:
     if vram_gb < 6:
         model_name = MODEL_0_5B   # <6GB
     elif vram_gb < 10:
-        model_name = MODEL_1_5B   # 6–10GB: RTX 5050 (8GB) → 1.5B + QLoRA 4-bit
+        model_name = MODEL_1_5B   # 6–10GB  (RTX 5050 8GB)
     elif vram_gb < 20:
-        model_name = MODEL_3B     # 10–20GB
+        model_name = MODEL_3B     # 10–20GB (RTX A4000 16GB)
     else:
-        model_name = MODEL_7B     # 20GB+
+        model_name = MODEL_7B     # 20GB+   (A5000, A6000, ...)
     log.info(f"Tự động chọn model: {model_name}")
-    return True, model_name
+    return True, model_name, vram_gb
 
 
 def _load_model(torch, model_cls, model_name: str, use_gpu: bool):
@@ -235,7 +235,7 @@ def train():
         log.error("Thiếu torch. Chạy: pip install torch")
         return
 
-    use_gpu, model_name = _detect_device(torch)
+    use_gpu, model_name, vram_gb = _detect_device(torch)
 
     try:
         from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
@@ -275,7 +275,7 @@ def train():
     model.config.use_cache = False
     model = get_peft_model(model, LoraConfig(**LORA_CFG))
     if use_gpu and TRAIN_CFG.get("gradient_checkpointing"):
-        model.enable_input_require_grads()   # bắt buộc khi dùng gradient_checkpointing + PEFT
+        model.enable_input_require_grads()
     model.print_trainable_parameters()
 
     import trl as _trl
@@ -290,6 +290,29 @@ def train():
                             TRAIN_CFG["per_device_train_batch_size"])
     total_steps = n_steps_per_epoch * TRAIN_CFG["num_train_epochs"]
     warmup_steps = max(1, int(total_steps * TRAIN_CFG["warmup_ratio"]))
+
+    # Override config theo VRAM thực tế của GPU
+    # RTX A4000 (16GB): 3B model — tắt grad_checkpointing, tăng seq + epoch
+    # RTX 5050   (8GB): 1.5B model — giữ grad_checkpointing để tiết kiệm VRAM
+    if use_gpu:
+        if vram_gb >= 14:          # A4000, A5000, RTX 3090, 4090...
+            TRAIN_CFG["max_seq_length"]        = 2048
+            TRAIN_CFG["gradient_checkpointing"] = False   # đủ VRAM → nhanh hơn ~15%
+            TRAIN_CFG["num_train_epochs"]       = 7       # 3B model cần nhiều epoch hơn
+            TRAIN_CFG["per_device_train_batch_size"] = 8
+            log.info(f"[Config] VRAM {vram_gb:.0f}GB → seq=2048, epochs=7, no grad_ckpt")
+        elif vram_gb >= 8:         # RTX 5050, RTX 3070/3080, RTX 4070...
+            TRAIN_CFG["max_seq_length"]        = 1024
+            TRAIN_CFG["gradient_checkpointing"] = True
+            TRAIN_CFG["num_train_epochs"]       = 5
+            TRAIN_CFG["per_device_train_batch_size"] = 8
+            log.info(f"[Config] VRAM {vram_gb:.0f}GB → seq=1024, epochs=5, grad_ckpt=on")
+        else:                      # < 8GB
+            TRAIN_CFG["max_seq_length"]        = 512
+            TRAIN_CFG["gradient_checkpointing"] = True
+            TRAIN_CFG["num_train_epochs"]       = 3
+            TRAIN_CFG["per_device_train_batch_size"] = 4
+            log.info(f"[Config] VRAM {vram_gb:.0f}GB → seq=512, epochs=3 (conservative)")
 
     cpu_overrides = {} if use_gpu else {
         "per_device_train_batch_size": 1,

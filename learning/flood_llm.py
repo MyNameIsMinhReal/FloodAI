@@ -77,7 +77,9 @@ _SYSTEM_PROMPT = (
     "(toán học, kiến thức chung, hỏi thăm,…), hãy trả lời ĐÚNG và tự nhiên "
     "như một trợ lý thông thường — KHÔNG gắn kết quả vào ngữ cảnh lũ.\n"
     "- Chỉ nói về lũ lụt khi người dùng hỏi về lũ hoặc đang trong ngữ cảnh phân tích ảnh.\n"
-    "- KHÔNG tự ý thêm 'sẽ phân tích ảnh lũ' vào câu trả lời không liên quan."
+    "- KHÔNG tự ý thêm 'sẽ phân tích ảnh lũ' vào câu trả lời không liên quan.\n"
+    "- TUYỆT ĐỐI không dùng chữ Hán (tiếng Trung) trong câu trả lời. "
+    "Chỉ dùng tiếng Việt hoặc tiếng Anh."
 )
 
 _LEVEL_VI = {
@@ -126,6 +128,15 @@ class LLMParsedFeedback:
 # ─────────────────────────────────────────────────────────────────────────────
 # OUTPUT PARSER
 # ─────────────────────────────────────────────────────────────────────────────
+
+_CJK_RE = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+")
+
+def _remove_chinese(text: str) -> str:
+    """Xoá ký tự Hán khỏi chuỗi, thay bằng khoảng trắng rồi rút gọn."""
+    cleaned = _CJK_RE.sub(" ", text)
+    cleaned = re.sub(r" {2,}", " ", cleaned).strip()
+    return cleaned
+
 
 def _parse_llm_output(text: str) -> LLMParsedFeedback:
     """
@@ -179,7 +190,7 @@ def _parse_llm_output(text: str) -> LLMParsedFeedback:
         intent=intent,
         depth_hint=depth_hint,
         level_hint=level_hint,
-        response=response,
+        response=_remove_chinese(response),
         raw_output=text,
     )
 
@@ -405,7 +416,7 @@ class LLMEnhancer:
             raw = self._infer(messages)
             # Nếu model vẫn xuất header → chỉ lấy phần response
             parsed = _parse_llm_output(raw)
-            return parsed.response if parsed.response else raw
+            return parsed.response if parsed.response else _remove_chinese(raw)
         except Exception as e:
             log.warning(f"[LLM] generate_response lỗi: {e}")
             return self._fallback_response(results, duration_s)
