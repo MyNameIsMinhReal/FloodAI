@@ -264,22 +264,26 @@ def _loader_yolo(config: dict) -> Any:
 
 def _loader_depth(config: dict) -> Any:
     """Load Depth Anything V2 từ HuggingFace."""
+    import torch
     from transformers import pipeline as hf_pipeline
     model_name = config.get("model_name", "depth-anything/Depth-Anything-V2-Small-hf")
-    pipe = hf_pipeline(task="depth-estimation", model=model_name)
-    log.debug(f"  Depth model loaded: {model_name}")
+    device = 0 if torch.cuda.is_available() else -1  # HF pipeline: 0=cuda:0, -1=cpu
+    pipe = hf_pipeline(task="depth-estimation", model=model_name, device=device)
+    log.debug(f"  Depth model loaded: {model_name} (device={'cuda:0' if device == 0 else 'cpu'})")
     return pipe
 
 
 def _loader_dino(config: dict) -> Any:
     """Load DINOv2 feature extractor."""
+    import torch
     from transformers import AutoModel, AutoImageProcessor
     model_name = config.get("model_name", "facebook/dinov2-small")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     processor = AutoImageProcessor.from_pretrained(model_name)
-    model = AutoModel.from_pretrained(model_name)
+    model = AutoModel.from_pretrained(model_name).to(device)
     model.eval()
-    log.debug(f"  DINOv2 loaded: {model_name}")
-    return {"model": model, "processor": processor}
+    log.debug(f"  DINOv2 loaded: {model_name} (device={device})")
+    return {"model": model, "processor": processor, "device": device}
 
 
 def _free_gpu():

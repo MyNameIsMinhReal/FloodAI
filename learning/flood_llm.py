@@ -30,6 +30,18 @@ from typing import Any, Dict, List, Optional
 
 log = logging.getLogger("flood_llm")
 
+
+def _get_device() -> str:
+    """Trả về 'cuda' nếu GPU khả dụng, ngược lại 'cpu'."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            log.info(f"[LLM] GPU detected: {torch.cuda.get_device_name(0)}")
+            return "cuda"
+    except ImportError:
+        pass
+    return "cpu"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SYSTEM PROMPT  (giống với flood_data_generator.py)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -178,15 +190,18 @@ class LLMEnhancer:
         n_threads: int = 4,
         max_new_tokens: int = 256,
         temperature: float = 0.7,
+        device: Optional[str] = None,
     ):
         """
         backend:
-          "llama_cpp"    — dùng GGUF file, tốt nhất cho CPU
-          "transformers" — dùng HuggingFace model dir, cần nhiều RAM hơn
+          "llama_cpp"    — dùng GGUF file, tốt nhất cho CPU/GPU
+          "transformers" — dùng HuggingFace model dir, CPU/GPU
 
         model_path:
           llama_cpp:    đường dẫn tới file .gguf
           transformers: đường dẫn tới thư mục model
+
+        device: 'cuda' | 'cpu' | None (tự động phát hiện)
         """
         self.backend        = backend
         self.model_path     = model_path
@@ -194,6 +209,7 @@ class LLMEnhancer:
         self.n_threads      = n_threads
         self.max_new_tokens = max_new_tokens
         self.temperature    = temperature
+        self._device        = device or _get_device()
         self._model: Any    = None
         self._tokenizer: Any = None
 
@@ -222,15 +238,17 @@ class LLMEnhancer:
                 f"Không tìm thấy GGUF model: {self.model_path}\n"
                 "Xem hướng dẫn download ở README hoặc chạy flood_trainer.py trước."
             )
-        log.info(f"[LLM] Loading GGUF: {self.model_path}")
+        n_gpu_layers = -1 if self._device == "cuda" else 0
+        log.info(f"[LLM] Loading GGUF: {self.model_path} (device={self._device}, n_gpu_layers={n_gpu_layers})")
         self._model = Llama(
             model_path=str(self.model_path),
             n_ctx=self.n_ctx,
             n_threads=self.n_threads,
+            n_gpu_layers=n_gpu_layers,
             verbose=False,
             chat_format="chatml",
         )
-        log.info("[LLM] GGUF model loaded (CPU mode)")
+        log.info(f"[LLM] GGUF model loaded ({'GPU' if n_gpu_layers != 0 else 'CPU'} mode)")
 
     def _load_transformers(self):
         try:
@@ -244,18 +262,21 @@ class LLMEnhancer:
         if not self.model_path:
             raise ValueError("Cần chỉ định model_path cho backend transformers")
 
-        log.info(f"[LLM] Loading transformers model: {self.model_path}")
+        use_gpu = self._device == "cuda" and torch.cuda.is_available()
+        dtype = torch.float16 if use_gpu else torch.float32
+        device_map = "auto" if use_gpu else "cpu"
+        log.info(f"[LLM] Loading transformers model: {self.model_path} (device={self._device}, dtype={dtype})")
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.model_path, trust_remote_code=True
         )
         self._model = AutoModelForCausalLM.from_pretrained(
             self.model_path,
-            torch_dtype=torch.float32,  # CPU dùng float32
-            device_map="cpu",
+            torch_dtype=dtype,
+            device_map=device_map,
             trust_remote_code=True,
         )
         self._model.eval()
-        log.info("[LLM] Transformers model loaded (CPU mode)")
+        log.info(f"[LLM] Transformers model loaded ({'GPU' if use_gpu else 'CPU'} mode)")
 
     # ── Inference ─────────────────────────────────────────────────────
 
@@ -279,7 +300,7 @@ class LLMEnhancer:
         text = self._tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-        inputs = self._tokenizer(text, return_tensors="pt")
+        inputs = self._tokenizer(text, return_tensors="pt").to(self._device)
         with torch.no_grad():
             output_ids = self._model.generate(
                 **inputs,
