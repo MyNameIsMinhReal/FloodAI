@@ -264,7 +264,7 @@ class LLMEnhancer:
 
         use_gpu = self._device == "cuda" and torch.cuda.is_available()
         dtype = torch.float16 if use_gpu else torch.float32
-        device_map = "auto" if use_gpu else "cpu"
+        device_map = {"": 0} if use_gpu else "cpu"  # pin to single GPU, avoid multi-GPU tensor split
         log.info(f"[LLM] Loading transformers model: {self.model_path} (device={self._device}, dtype={dtype})")
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.model_path, trust_remote_code=True
