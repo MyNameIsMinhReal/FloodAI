@@ -371,3 +371,47 @@ class DriveUploader:
                 )
 
         return folder_id
+
+    # ==========================================================================
+    # SHARING
+    # ==========================================================================
+    def make_public(self, file_id: str) -> str:
+        """Mở chia sẻ 'anyone with link can view'. Trả về webViewLink."""
+        service = self._get_service()
+        service.permissions().create(
+            fileId=file_id,
+            body={"type": "anyone", "role": "reader"},
+        ).execute()
+        meta = service.files().get(
+            fileId=file_id, fields="webViewLink,id"
+        ).execute()
+        link = meta.get("webViewLink") or f"https://drive.google.com/drive/folders/{file_id}"
+        log.info(f"  Shared publicly: {link}")
+        return link
+
+    def upload_images_public(
+        self,
+        image_paths: List[Path],
+        folder_name: str,
+        parent_id: Optional[str] = None,
+    ) -> str:
+        """
+        Upload danh sách ảnh lên Drive trong folder mới,
+        mở chia sẻ public, trả về share link.
+        """
+        import tempfile
+        tmp = Path(tempfile.mkdtemp(prefix="floodai_gal_"))
+        try:
+            for p in image_paths:
+                dst = tmp / Path(p).name
+                if not dst.exists():
+                    shutil.copy2(str(p), str(dst))
+            folder_id = self.upload_folder(
+                local_dir=tmp,
+                folder_name=folder_name,
+                parent_id=parent_id,
+                extensions={".jpg", ".jpeg", ".png", ".webp", ".bmp"},
+            )
+            return self.make_public(folder_id)
+        finally:
+            shutil.rmtree(str(tmp), ignore_errors=True)

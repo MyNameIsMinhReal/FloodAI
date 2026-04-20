@@ -66,6 +66,19 @@
 .read-hint{font-size:11px;color:var(--tx3);display:flex;align-items:center;gap:4px}
 .read-hint svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
 
+/* Load more */
+.load-more-wrap{text-align:center;padding:24px 0 8px}
+.btn-load-more{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:10px 24px;border-radius:10px;
+  border:1px solid var(--border);background:var(--card);
+  color:var(--tx2);font-family:var(--font);font-size:13px;font-weight:500;
+  cursor:pointer;transition:all .15s;
+}
+.btn-load-more:hover{background:var(--bg2);border-color:var(--primary);color:var(--tx)}
+.btn-load-more svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+.load-more-count{font-size:11px;color:var(--tx3);margin-top:6px}
+
 /* States */
 .state-box{text-align:center;padding:60px 20px;color:var(--tx3)}
 .state-box svg{width:36px;height:36px;stroke:var(--tx3);fill:none;stroke-width:1.4;stroke-linecap:round;display:block;margin:0 auto 12px}
@@ -246,6 +259,8 @@
 <script>
 let _articles = [];
 let _activeSource = 'all';
+let _visibleCount = 20;
+const PAGE_SIZE = 20;
 let _refreshTimer = null;
 let _countdownTimer = null;
 let _summaryPollTimer = null;
@@ -265,6 +280,7 @@ async function loadNews(force = false) {
     const r = await fetch('/api/news/fetch' + (force ? '?refresh=1' : ''));
     const d = await r.json();
     _articles = d.articles || [];
+    if (force) _visibleCount = PAGE_SIZE;
     renderNews();
     const cached = d.cached ? ' (cache)' : ' (mới)';
     document.getElementById('news-count').innerHTML =
@@ -337,8 +353,16 @@ function buildFilters() {
 
 function setFilter(src) {
   _activeSource = src;
+  _visibleCount = PAGE_SIZE;
   buildFilters();
   renderNews();
+}
+
+function loadMore() {
+  _visibleCount += PAGE_SIZE;
+  renderNews();
+  // scroll nút vào tầm nhìn
+  document.getElementById('load-more-wrap')?.scrollIntoView({behavior:'smooth', block:'end'});
 }
 
 // ── Render list ────────────────────────────────────────────────────
@@ -352,8 +376,25 @@ function renderNews() {
       '<div class="state-box"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/></svg><p>Không có bài nào.</p></div>';
     return;
   }
+
+  const visible = list.slice(0, _visibleCount);
+  const remaining = list.length - visible.length;
+
+  const loadMoreHTML = remaining > 0 ? `
+    <div class="load-more-wrap" id="load-more-wrap">
+      <button class="btn-load-more" onclick="loadMore()">
+        <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+        Tải thêm ${Math.min(remaining, PAGE_SIZE)} bài
+      </button>
+      <div class="load-more-count">Đang hiển thị ${visible.length}/${list.length} bài</div>
+    </div>` : `
+    <div class="load-more-wrap">
+      <div class="load-more-count">Đã hiển thị tất cả ${list.length} bài</div>
+    </div>`;
+
   document.getElementById('news-container').innerHTML =
-    '<div class="article-list">' + list.map((a, i) => articleHTML(a, i)).join('') + '</div>';
+    '<div class="article-list">' + visible.map((a, i) => articleHTML(a, i)).join('') + '</div>' +
+    loadMoreHTML;
 }
 
 function articleHTML(a, idx) {
@@ -361,7 +402,7 @@ function articleHTML(a, idx) {
     ? `<div class="article-summary">${esc(a.summary)}</div>`
     : `<div class="article-summary" style="color:var(--tx3);font-style:italic">Đang tóm tắt…</div>`;
   const date = a.published
-    ? `<span class="article-date">${esc(a.published.slice(0, 16))}</span>` : '';
+    ? `<span class="article-date">${esc(a.published)}</span>` : '';
   const realIdx = _articles.indexOf(a);
 
   return `

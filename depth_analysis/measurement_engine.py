@@ -74,51 +74,55 @@ class MeasurementEngine:
         self.min_confidence = min_confidence
 
     # ------------------------------------------------------------------
+    def _collect_sensor_votes(
+        self, water_result, depth_norm: np.ndarray, flood_prob: float, img_h: int
+    ) -> List[MeasurementVote]:
+        votes: List[MeasurementVote] = []
+        if water_result and water_result.water_area_pct > 1.5:
+            v = self._vote_from_color(water_result, img_h)
+            if v:
+                votes.append(v)
+        if water_result and getattr(water_result, "has_puddle", False):
+            v = self._vote_from_puddle(water_result)
+            if v:
+                votes.append(v)
+        if depth_norm is not None and depth_norm.size > 0:
+            v = self._vote_from_depth(depth_norm, water_result, img_h)
+            if v:
+                votes.append(v)
+        v = self._vote_from_dino(flood_prob, water_result)
+        if v:
+            votes.append(v)
+        return votes
+
+    def _collect_votes(
+        self,
+        yolo_objects: List[dict],
+        water_result,
+        depth_norm: np.ndarray,
+        perspective,
+        flood_prob: float,
+        img_h: int,
+    ) -> List[MeasurementVote]:
+        votes: List[MeasurementVote] = []
+        for obj in yolo_objects:
+            v = self._vote_from_yolo(obj, perspective, img_h)
+            if v:
+                votes.append(v)
+        votes += self._collect_sensor_votes(water_result, depth_norm, flood_prob, img_h)
+        return votes
+
     def measure(
         self,
-        yolo_objects:    List[dict],      # tu reference_estimator
-        water_result,                     # WaterDetectionResult
-        depth_norm:      np.ndarray,      # depth map normalized 0-1
-        perspective,                      # PerspectiveResult
-        flood_prob:      float = 0.5,     # tu DINOv2 classifier
+        yolo_objects:    List[dict],
+        water_result,
+        depth_norm:      np.ndarray,
+        perspective,
+        flood_prob:      float = 0.5,
         img_h:           int   = 0,
     ) -> FinalMeasurement:
-        """
-        Ket hop tat ca nguon, tra ve FinalMeasurement.
-        """
-        votes: List[MeasurementVote] = []
-
-        # === SOURCE 1: YOLO objects ===
-        for obj in yolo_objects:
-            vote = self._vote_from_yolo(obj, perspective, img_h)
-            if vote:
-                votes.append(vote)
-
-        # === SOURCE 2: Water color detector ===
-        # Hạ ngưỡng xuống 1.5% để bắt được vũng nước nhỏ
-        if water_result and water_result.water_area_pct > 1.5:
-            vote = self._vote_from_color(water_result, img_h)
-            if vote:
-                votes.append(vote)
-
-        # === SOURCE 2b: Puddle vote (vũng nước nhỏ riêng biệt) ===
-        if water_result and getattr(water_result, "has_puddle", False):
-            vote = self._vote_from_puddle(water_result)
-            if vote:
-                votes.append(vote)
-
-        # === SOURCE 3: Depth map ===
-        if depth_norm is not None and depth_norm.size > 0:
-            vote = self._vote_from_depth(depth_norm, water_result, img_h)
-            if vote:
-                votes.append(vote)
-
-        # === SOURCE 4: DINOv2 prior ===
-        vote = self._vote_from_dino(flood_prob, water_result)
-        if vote:
-            votes.append(vote)
-
-        # === Loai bo votes co confidence qua thap ===
+        votes      = self._collect_votes(yolo_objects, water_result, depth_norm,
+                                         perspective, flood_prob, img_h)
         valid_votes = [v for v in votes if v.confidence >= self.min_confidence]
 
         if not valid_votes:
@@ -128,38 +132,14 @@ class MeasurementEngine:
                 confidence=0.0, votes=votes,
             )
 
-        # === Uu tien theo thu tu reference ===
-        # Nguyen tac: cua_nha > xe_may > nguoi > color/depth
-        # Neu co reference cao cap (door), giam trong so cua cap thap hon
-        has_door = any("cua_nha" in v.source for v in valid_votes)
-        has_vehicle = any(
-            any(x in v.source for x in ("motorcycle", "bicycle", "car", "truck", "bus"))
-            for v in valid_votes
-        )
-        if has_door:
-            # Co cua nha: giam trong so cua person va non-reference sources
-            for v in valid_votes:
-                if "person" in v.source or v.source in ("color_water", "depth_map", "dino"):
-                    v.confidence *= 0.60
-        elif has_vehicle:
-            # Co xe (khong co cua): giam trong so depth/dino (kem chinh xac hon)
-            for v in valid_votes:
-                if v.source in ("depth_map", "dino"):
-                    v.confidence *= 0.70
+        self._apply_priority_weights(valid_votes)
 
         # === Weighted median voting (robust hon mean, loai outliers) ===
         water_cm, ci_low, ci_high, dominant = self._weighted_median(valid_votes)
 
         level, desc = classify_level(water_cm)
         confidence  = self._calc_final_confidence(valid_votes, water_cm)
-
-        # Bonus confidence neu nhieu sources dong thuan
-        n_agree = sum(
-            1 for v in valid_votes
-            if abs(v.water_cm - water_cm) < max(10, water_cm * 0.3)
-        )
-        if n_agree >= 2:
-            confidence = min(1.0, confidence + 0.1 * (n_agree - 1))
+        confidence  = self._bonus_agreement(valid_votes, water_cm, confidence)
 
         log.info(
             f"  Measurement: {water_cm:.0f}cm [{ci_low:.0f}-{ci_high:.0f}] "
@@ -178,6 +158,42 @@ class MeasurementEngine:
             dominant_source  = dominant,
             notes            = self._generate_notes(valid_votes, water_cm, level),
         )
+
+    # ------------------------------------------------------------------
+    _PRIORITY_MAP = [
+        # (keyword_in_source, scale, weak_sources_to_suppress)
+        ("cua_nha", 0.60, frozenset({"person", "color_water", "depth_map", "dino_prior"})),
+        ("person",  0.45, frozenset({"color_water", "depth_map", "dino_prior"})),
+    ]
+    _VEHICLE_CLASSES = frozenset({"motorcycle", "bicycle", "car", "truck", "bus"})
+
+    def _detect_priority(self, sources: set) -> Tuple[float, frozenset]:
+        for key, scale, weak in self._PRIORITY_MAP:
+            if any(key in s for s in sources):
+                return scale, weak
+        if any(cls in s for s in sources for cls in self._VEHICLE_CLASSES):
+            return 0.70, frozenset({"depth_map", "dino_prior"})
+        return 1.0, frozenset()
+
+    def _apply_priority_weights(self, valid_votes: List[MeasurementVote]) -> None:
+        """Giảm trọng số các nguồn thô khi có reference tốt hơn."""
+        sources = {v.source for v in valid_votes}
+        scale, weak = self._detect_priority(sources)
+        for v in valid_votes:
+            if v.source in weak:
+                v.confidence *= scale
+
+    def _bonus_agreement(
+        self, valid_votes: List[MeasurementVote], water_cm: float, confidence: float
+    ) -> float:
+        """Tăng confidence nếu nhiều nguồn đồng thuận."""
+        n_agree = sum(
+            1 for v in valid_votes
+            if abs(v.water_cm - water_cm) < max(10, water_cm * 0.3)
+        )
+        if n_agree >= 2:
+            confidence = min(1.0, confidence + 0.1 * (n_agree - 1))
+        return confidence
 
     # ------------------------------------------------------------------
     def _vote_from_yolo(
@@ -227,15 +243,15 @@ class MeasurementEngine:
         if img_h <= 0 or pct < 0.015:
             return None
 
-        # Uoc tinh muc nuoc tu vi tri water line:
-        # (img_h - wl_y) / img_h = ti le phan duoi la nuoc
-        # Gia su nguoi trung binh chiem 75% chieu cao anh => 170 * 0.75 = 127.5cm
+        # water_line_y là ranh giới mặt nước TỪ TRÊN. Với ảnh đường phố ngập nước
+        # nông (9-30cm), nước lan rộng trên mặt đất → water_line_y có thể ở giữa
+        # ảnh dù nước rất cạn. Giới hạn est_cm ở 50cm để tránh overestimate.
         water_depth_ratio = max(0.0, (img_h - wl_y) / max(img_h, 1))
-        est_cm = water_depth_ratio * 170.0 * 0.75
-        est_cm = max(0, min(300, est_cm))
+        est_cm = water_depth_ratio * 50.0
+        est_cm = max(0, min(50, est_cm))
 
-        # Confidence tu water detector
-        conf = water_result.confidence * 0.7   # color alone = 70% max
+        # Confidence thấp — color không đủ thông tin để ước lượng độ sâu chính xác
+        conf = water_result.confidence * 0.40
 
         return MeasurementVote(
             source    = "color_water",
@@ -286,15 +302,14 @@ class MeasurementEngine:
         if water_pct_d < 0.1:
             return None
 
-        # Uoc tinh muc nuoc tu depth (rat rough)
-        est_cm = 170.0 * water_pct_d * 0.5
-        est_cm = max(0, min(250, est_cm))
+        # Depth map rất rough — không thể phân biệt nước nông lan rộng vs nước sâu
+        est_cm = 50.0 * water_pct_d
+        est_cm = max(0, min(60, est_cm))
 
-        conf = min(0.5, water_pct_d * 0.8)   # depth alone = 50% max
+        conf = min(0.30, water_pct_d * 0.5)
 
-        # Neu co water mask, tang confidence
         if water_result and water_result.water_area_pct > 5:
-            conf = min(0.65, conf + 0.15)
+            conf = min(0.40, conf + 0.10)
 
         return MeasurementVote(
             source    = "depth_map",
@@ -316,10 +331,9 @@ class MeasurementEngine:
 
         water_pct = (water_result.water_area_pct / 100.0) if water_result else 0.05
 
-        # DINOv2 prior: neu co lu thi it nhat 5cm
-        # Muc do dua tren water_area_pct + flood_prob
-        est_cm = max(5.0, water_pct * 200 * flood_prob)
-        est_cm = min(est_cm, 100.0)   # DINOv2 khong biet muc nuoc cu the
+        # DINOv2 chỉ biết "có lũ" hay không, không biết độ sâu — dùng làm prior nhẹ
+        est_cm = max(5.0, water_pct * 50 * flood_prob)
+        est_cm = min(est_cm, 40.0)
 
         conf = flood_prob * 0.4   # DINOv2 prior = 40% max
 

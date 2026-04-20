@@ -169,32 +169,63 @@ def _summarize(title: str, body: str) -> str:
         return (body[:250] + "…") if len(body) > 250 else body
 
 
+def _parse_entry_ts(e) -> int:
+    import calendar
+    try:
+        if e.get("published_parsed"):
+            return calendar.timegm(e.published_parsed)
+    except Exception:
+        pass
+    return 0
+
+
+def _format_ts(ts: int, fallback: str) -> str:
+    import datetime as _dt
+    if ts:
+        return _dt.datetime.fromtimestamp(ts, tz=_dt.timezone.utc).strftime("%d/%m/%Y %H:%M")
+    return fallback[:16]
+
+
+def _entry_to_article(src: str, e) -> dict:
+    ts = _parse_entry_ts(e)
+    return {
+        "source":    src,
+        "title":     e.get("title", ""),
+        "link":      e.get("link", ""),
+        "published": _format_ts(ts, e.get("published", "")),
+        "ts":        ts,
+        "body":      e.get("summary", "")[:800],
+        "summary":   None,
+    }
+
+
 def _fetch_news():
     try:
         import feedparser
     except ImportError:
         return [{"title": "Cần cài feedparser", "source": "", "link": "",
-                 "published": "", "summary": "pip install feedparser"}]
+                 "published": "", "ts": 0, "summary": "pip install feedparser"}]
 
     articles = []
+    seen_links: set = set()
+
     for src, url in RSS_FEEDS:
         try:
             feed = feedparser.parse(url)
-            for e in feed.entries[:15]:
+            for e in feed.entries:
+                link = e.get("link", "")
+                if link in seen_links:
+                    continue
                 txt = (e.get("title", "") + " " + e.get("summary", "")).lower()
-                if any(kw in txt for kw in FLOOD_KW):
-                    articles.append({
-                        "source":    src,
-                        "title":     e.get("title", ""),
-                        "link":      e.get("link", ""),
-                        "published": e.get("published", ""),
-                        "body":      e.get("summary", "")[:800],
-                        "summary":   None,
-                    })
+                if not any(kw in txt for kw in FLOOD_KW):
+                    continue
+                seen_links.add(link)
+                articles.append(_entry_to_article(src, e))
         except Exception as ex:
             log.warning(f"[news] feed {url}: {ex}")
 
-    return articles[:20]
+    articles.sort(key=lambda x: x["ts"], reverse=True)
+    return articles
 
 
 def _summarize_articles_bg():

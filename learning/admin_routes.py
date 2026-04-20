@@ -373,12 +373,7 @@ def _run_pipeline(cfg: dict):
 
 def register_admin(app):
     """Register all admin/review/pipeline routes onto a Flask app instance."""
-    from flask import g, jsonify, redirect, render_template_string, request, send_file, session
-
-    def _render(name, **ctx):
-        """Render from learning/templates/ to avoid conflict with main app templates."""
-        src = (TMPL_DIR / name).read_text(encoding="utf-8")
-        return render_template_string(src, **ctx)
+    from flask import g, jsonify, redirect, render_template, request, send_file, session
 
     def login_required(f):
         @wraps(f)
@@ -411,11 +406,18 @@ def register_admin(app):
                     actual_level TEXT NOT NULL,
                     notes        TEXT DEFAULT '',
                     source       TEXT DEFAULT 'manual',
-                    verified     INTEGER DEFAULT 1
+                    verified     INTEGER DEFAULT 1,
+                    category     TEXT DEFAULT 'untagged'
                 );
-                CREATE INDEX IF NOT EXISTS idx_ti_level ON training_images(actual_level);
+                CREATE INDEX IF NOT EXISTS idx_ti_level    ON training_images(actual_level);
+                CREATE INDEX IF NOT EXISTS idx_ti_category ON training_images(category);
             """)
-            conn.commit()
+            # Migration: add category column if missing
+            try:
+                conn.execute("ALTER TABLE training_images ADD COLUMN category TEXT DEFAULT 'untagged'")
+                conn.commit()
+            except Exception:
+                pass
             g.adm_tc = conn
         return g.adm_tc
 
@@ -469,14 +471,7 @@ def register_admin(app):
     @app.route("/admin")
     @login_required
     def admin_panel():
-        learner = get_learner()
-        stats   = {k: (v or 0) for k, v in learner.get_review_stats().items()}
-        cases   = learner.get_pending_reviews(max_count=5, priority_filter=1)
-        return _render("dashboard.html", stats=stats, cases=cases)
-
-    @app.route("/admin/live")
-    def admin_live():
-        return _render("live.html")
+        return render_template("admin.html", active="admin", logged_in=True)
 
     # ══════════════════════════════════════════════════════════════════════════
     # REVIEW
@@ -1079,6 +1074,117 @@ def register_admin(app):
                 },
             })
         except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # GALLERY / IMAGE FILTER
+    # ══════════════════════════════════════════════════════════════════════════
+
+    @app.route("/gallery_images")
+    @login_required
+    def gallery_images():
+        try:
+            conn = get_train_conn()
+            rows = conn.execute(
+                "SELECT id, image_path, image_hash, actual_level, actual_depth, "
+                "notes, source, added_at, category "
+                "FROM training_images ORDER BY id DESC"
+            ).fetchall()
+            images = []
+            for r in rows:
+                p = Path(r["image_path"])
+                images.append({
+                    "id":          r["id"],
+                    "filename":    p.name,
+                    "actual_level": r["actual_level"],
+                    "actual_depth": r["actual_depth"],
+                    "notes":       r["notes"],
+                    "source":      r["source"],
+                    "added_at":    r["added_at"],
+                    "category":    r["category"] or "untagged",
+                    "exists":      p.exists(),
+                })
+            return jsonify({"images": images, "total": len(images)})
+        except Exception as e:
+            return jsonify({"images": [], "error": str(e)}), 500
+
+    @app.route("/training_image/<int:tid>")
+    @login_required
+    def training_image(tid):
+        try:
+            conn = get_train_conn()
+            row  = conn.execute(
+                "SELECT image_path FROM training_images WHERE id=?", (tid,)
+            ).fetchone()
+            if row:
+                p = Path(row["image_path"])
+                candidates = [p, TRAIN_IMG_DIR / p.name, LIVE_DIR / p.name]
+                for c in candidates:
+                    if c.exists():
+                        return send_file(str(c.resolve()))
+        except Exception:
+            pass
+        return "Not found", 404
+
+    @app.route("/tag_image/<int:tid>", methods=["POST"])
+    @login_required
+    def tag_image(tid):
+        data = request.get_json() or {}
+        cat  = data.get("category", "untagged")
+        allowed = {"ai", "hand_drawn", "oil_painting", "photo", "untagged"}
+        if cat not in allowed:
+            return jsonify({"error": f"category phải là một trong {allowed}"}), 400
+        try:
+            conn = get_train_conn()
+            conn.execute(
+                "UPDATE training_images SET category=? WHERE id=?", (cat, tid)
+            )
+            conn.commit()
+            return jsonify({"status": "ok", "id": tid, "category": cat})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/upload_gallery_to_drive", methods=["POST"])
+    @login_required
+    def upload_gallery_to_drive():
+        data        = request.get_json() or {}
+        image_ids   = [int(i) for i in (data.get("image_ids") or [])]
+        folder_name = str(data.get("folder_name") or "FloodAI_Gallery").strip() or "FloodAI_Gallery"
+
+        if not image_ids:
+            return jsonify({"error": "Không có ảnh nào được chọn"}), 400
+
+        try:
+            conn  = get_train_conn()
+            paths = []
+            for tid in image_ids:
+                row = conn.execute(
+                    "SELECT image_path FROM training_images WHERE id=?", (tid,)
+                ).fetchone()
+                if not row:
+                    continue
+                p = Path(row["image_path"])
+                for candidate in (p, TRAIN_IMG_DIR / p.name, LIVE_DIR / p.name):
+                    if candidate.exists():
+                        paths.append(candidate)
+                        break
+
+            if not paths:
+                return jsonify({"error": "Không tìm thấy file ảnh nào trên đĩa"}), 404
+
+            from uploader.drive_uploader import DriveUploader
+            uploader   = DriveUploader()
+            share_link = uploader.upload_images_public(paths, folder_name)
+            return jsonify({
+                "status":     "ok",
+                "share_link": share_link,
+                "uploaded":   len(paths),
+                "folder_name": folder_name,
+            })
+        except FileNotFoundError as e:
+            return jsonify({"error": f"Drive chưa cấu hình: {e}"}), 503
+        except Exception as e:
+            log.exception("[gallery_upload] %s", e)
             return jsonify({"error": str(e)}), 500
 
     log.info("[admin_routes] %d routes registered ✓", len([r for r in app.url_map.iter_rules()]))
