@@ -31,12 +31,27 @@ from typing import Any, Dict, List, Optional
 log = logging.getLogger("flood_llm")
 
 
+def _best_gpu_index() -> int:
+    """Trả về index GPU có nhiều VRAM trống nhất."""
+    import torch
+    best_idx, best_free = 0, 0
+    for i in range(torch.cuda.device_count()):
+        free, _ = torch.cuda.mem_get_info(i)
+        if free > best_free:
+            best_free, best_idx = free, i
+    log.info(
+        f"[LLM] Best GPU: cuda:{best_idx} "
+        f"({torch.cuda.get_device_name(best_idx)}, "
+        f"{best_free / 1024**3:.1f} GiB free)"
+    )
+    return best_idx
+
+
 def _get_device() -> str:
     """Trả về 'cuda' nếu GPU khả dụng, ngược lại 'cpu'."""
     try:
         import torch
         if torch.cuda.is_available():
-            log.info(f"[LLM] GPU detected: {torch.cuda.get_device_name(0)}")
             return "cuda"
     except ImportError:
         pass
@@ -212,6 +227,7 @@ class LLMEnhancer:
         self._device        = device or _get_device()
         self._model: Any    = None
         self._tokenizer: Any = None
+        self._gpu_id: Any   = None
 
         self._load()
 
@@ -264,8 +280,13 @@ class LLMEnhancer:
 
         use_gpu = self._device == "cuda" and torch.cuda.is_available()
         dtype = torch.float16 if use_gpu else torch.float32
-        device_map = {"": 0} if use_gpu else "cpu"  # pin to single GPU, avoid multi-GPU tensor split
-        log.info(f"[LLM] Loading transformers model: {self.model_path} (device={self._device}, dtype={dtype})")
+        if use_gpu:
+            self._gpu_id = _best_gpu_index()
+            device_map = {"": self._gpu_id}
+        else:
+            self._gpu_id = None
+            device_map = "cpu"
+        log.info(f"[LLM] Loading transformers model: {self.model_path} (device_map={device_map}, dtype={dtype})")
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.model_path, trust_remote_code=True
         )
@@ -276,7 +297,7 @@ class LLMEnhancer:
             trust_remote_code=True,
         )
         self._model.eval()
-        log.info(f"[LLM] Transformers model loaded ({'GPU' if use_gpu else 'CPU'} mode)")
+        log.info(f"[LLM] Transformers model loaded ({'cuda:'+str(self._gpu_id) if use_gpu else 'CPU'} mode)")
 
     # ── Inference ─────────────────────────────────────────────────────
 
@@ -300,7 +321,8 @@ class LLMEnhancer:
         text = self._tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-        inputs = self._tokenizer(text, return_tensors="pt").to(self._device)
+        infer_device = f"cuda:{self._gpu_id}" if self._gpu_id is not None else "cpu"
+        inputs = self._tokenizer(text, return_tensors="pt").to(infer_device)
         with torch.no_grad():
             output_ids = self._model.generate(
                 **inputs,
