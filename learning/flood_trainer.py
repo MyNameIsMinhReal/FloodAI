@@ -179,39 +179,50 @@ def _build_trainer(trl_new, sft_trainer_cls, training_args_cls, model, tokenizer
     )
 
 
-def _detect_device(torch) -> tuple[bool, str, float]:
-    """Phát hiện GPU/CPU và chọn model phù hợp. Trả về (use_gpu, model_name, vram_gb)."""
+def _detect_device(torch) -> tuple[bool, str, float, int]:
+    """Phát hiện GPU/CPU và chọn model phù hợp. Trả về (use_gpu, model_name, free_vram_gb, gpu_idx)."""
     if not torch.cuda.is_available():
         log.warning("=" * 60)
         log.warning("Không có GPU — chạy trên CPU (chậm, mất 1-4 giờ).")
         log.warning("Model cố định: Qwen2.5-0.5B (nhỏ nhất)")
         log.warning("=" * 60)
-        return False, MODEL_0_5B, 0.0
+        return False, MODEL_0_5B, 0.0, 0
 
-    gpu_name   = torch.cuda.get_device_name(0)
-    total_gb   = torch.cuda.get_device_properties(0).total_memory / 1e9
-    free_gb    = torch.cuda.mem_get_info(0)[0] / 1e9  # free VRAM sau khi trừ process khác
-    log.info(f"GPU: {gpu_name} | Total: {total_gb:.1f} GB | Free: {free_gb:.1f} GB")
+    # Trên server nhiều GPU: chọn GPU có free VRAM nhiều nhất
+    n_gpus = torch.cuda.device_count()
+    best_idx, best_free = 0, 0.0
+    for i in range(n_gpus):
+        free = torch.cuda.mem_get_info(i)[0] / 1e9
+        total = torch.cuda.get_device_properties(i).total_memory / 1e9
+        log.info(f"  GPU {i}: {torch.cuda.get_device_name(i)} | {free:.1f}/{total:.1f} GB free")
+        if free > best_free:
+            best_free, best_idx = free, i
+
+    free_gb = best_free
+    log.info(f"Dùng GPU {best_idx} ({free_gb:.1f} GB free)")
+
     if free_gb < 4:
-        model_name = MODEL_0_5B   # <4GB free
+        model_name = MODEL_0_5B
     elif free_gb < 7:
-        model_name = MODEL_1_5B   # 4–7GB free
+        model_name = MODEL_1_5B
     elif free_gb < 13:
-        model_name = MODEL_3B     # 7–13GB free
+        model_name = MODEL_3B
     else:
-        model_name = MODEL_7B     # 13GB+ free
+        model_name = MODEL_7B
     log.info(f"Tự động chọn model: {model_name} (dựa trên {free_gb:.1f} GB free VRAM)")
-    return True, model_name, free_gb
+    return True, model_name, free_gb, best_idx
 
 
-def _load_model(torch, model_cls, model_name: str, use_gpu: bool):
-    """Load model với QLoRA (GPU) hoặc float32 (CPU)."""
-    log.info(f"Loading model: {model_name}")
+def _load_model(torch, model_cls, model_name: str, use_gpu: bool, gpu_idx: int = 0):
+    """Load model với QLoRA (GPU) hoặc float32 (CPU). Pin vào 1 GPU để tránh multi-GPU conflict."""
+    log.info(f"Loading model: {model_name} → cuda:{gpu_idx}")
     if not use_gpu:
         return model_cls.from_pretrained(
             model_name, device_map="cpu",
             torch_dtype=torch.float32, trust_remote_code=True,
         )
+    # device_map={"": gpu_idx} buộc toàn bộ model vào 1 GPU duy nhất
+    device_map = {"": gpu_idx}
     try:
         from transformers import BitsAndBytesConfig
         bnb_config = BitsAndBytesConfig(
@@ -220,11 +231,11 @@ def _load_model(torch, model_cls, model_name: str, use_gpu: bool):
         )
         return model_cls.from_pretrained(
             model_name, quantization_config=bnb_config,
-            device_map="auto", trust_remote_code=True,
+            device_map=device_map, trust_remote_code=True,
         )
     except Exception:
         return model_cls.from_pretrained(
-            model_name, device_map="auto",
+            model_name, device_map=device_map,
             torch_dtype=torch.float16, trust_remote_code=True,
         )
 
@@ -236,7 +247,7 @@ def train():
         log.error("Thiếu torch. Chạy: pip install torch")
         return
 
-    use_gpu, model_name, vram_gb = _detect_device(torch)
+    use_gpu, model_name, vram_gb, gpu_idx = _detect_device(torch)
 
     try:
         from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
@@ -272,7 +283,7 @@ def train():
     train_dataset = Dataset.from_dict({"text": [_apply_template(e) for e in train_raw]})
     eval_dataset  = Dataset.from_dict({"text": [_apply_template(e) for e in eval_raw]})
 
-    model = _load_model(torch, AutoModelForCausalLM, model_name, use_gpu)  # noqa: F821
+    model = _load_model(torch, AutoModelForCausalLM, model_name, use_gpu, gpu_idx)  # noqa: F821
     model.config.use_cache = False
     model = get_peft_model(model, LoraConfig(**LORA_CFG))
     if use_gpu and TRAIN_CFG.get("gradient_checkpointing"):
