@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FloodAI · {% block title %}{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Serif+JP:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --bg:#e8e8ed;--bg2:#d8d8df;
+  --sidebar-bg:rgba(232,232,237,0.72);
+  --card:rgba(255,255,255,0.85);--card-hover:rgba(255,255,255,0.98);
+  --border:rgba(0,0,0,0.08);--border-card:rgba(0,0,0,0.06);
+  --primary:#2d7ff9;--primary-s:rgba(45,127,249,0.12);
+  --accent:#f09a3e;--accent-s:rgba(240,154,62,0.12);
+  --danger:#ff3b30;--warn:#ff9500;--ok:#34c759;
+  --tx:rgba(0,0,0,0.88);--tx2:rgba(0,0,0,0.5);--tx3:rgba(0,0,0,0.28);
+  --shadow-sm:0 1px 3px rgba(0,0,0,0.08),0 1px 2px rgba(0,0,0,0.06);
+  --shadow-md:0 4px 16px rgba(0,0,0,0.10),0 2px 6px rgba(0,0,0,0.06);
+  --shadow-lg:0 12px 40px rgba(0,0,0,0.14),0 4px 12px rgba(0,0,0,0.08);
+  --shadow-widget:0 8px 32px rgba(0,0,0,0.12),0 2px 8px rgba(0,0,0,0.08);
+  --font:'Inter',system-ui,sans-serif;--font-serif:'Noto Serif JP',serif;
+  --radius:14px;--radius-lg:18px;--sb-w:240px;--sb-c:62px;
+  --ease:.22s cubic-bezier(.4,0,.2,1);
+  --ease-spring:.35s cubic-bezier(.34,1.56,.64,1);
+}
+[data-theme="dark"]{
+  --bg:#1c1c1e;--bg2:#2c2c2e;
+  --sidebar-bg:rgba(28,28,30,0.82);
+  --card:rgba(44,44,46,0.90);--card-hover:rgba(58,58,60,0.98);
+  --border:rgba(255,255,255,0.08);--border-card:rgba(255,255,255,0.06);
+  --primary:#4da3ff;--primary-s:rgba(77,163,255,0.15);
+  --accent:#f09a3e;--accent-s:rgba(240,154,62,0.14);
+  --danger:#ff453a;--warn:#ffa020;--ok:#30d158;
+  --tx:rgba(255,255,255,0.92);--tx2:rgba(255,255,255,0.5);--tx3:rgba(255,255,255,0.24);
+  --shadow-sm:0 1px 3px rgba(0,0,0,0.3),0 1px 2px rgba(0,0,0,0.2);
+  --shadow-md:0 4px 16px rgba(0,0,0,0.4),0 2px 6px rgba(0,0,0,0.25);
+  --shadow-lg:0 12px 40px rgba(0,0,0,0.5),0 4px 12px rgba(0,0,0,0.3);
+  --shadow-widget:0 8px 32px rgba(0,0,0,0.45),0 2px 8px rgba(0,0,0,0.3);
+}
+
+body{
+  font-family:var(--font);background:var(--bg);color:var(--tx);
+  display:flex;height:100vh;overflow:hidden;font-size:14px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ─── macOS Sidebar ─────────────────────────────────────────────────── */
+.sb{
+  width:var(--sb-w);height:100vh;min-width:var(--sb-w);
+  background:var(--sidebar-bg);
+  backdrop-filter:blur(24px) saturate(180%);
+  -webkit-backdrop-filter:blur(24px) saturate(180%);
+  border-right:1px solid var(--border);
+  display:flex;flex-direction:column;
+  flex-shrink:0;overflow:hidden;
+  transition:width var(--ease);
+  position:relative;z-index:20;
+}
+
+/* Logo / App Header */
+.sb-logo{
+  display:flex;align-items:center;gap:10px;
+  padding:16px 14px 14px;
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;min-height:56px;
+}
+.sb-app-icon{
+  width:32px;height:32px;border-radius:8px;
+  background:linear-gradient(135deg,#4da3ff 0%,#2d7ff9 100%);
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+  box-shadow:0 2px 8px rgba(45,127,249,0.4);
+}
+.sb-app-icon svg{width:18px;height:18px}
+.sb-name{
+  font-family:var(--font-serif);font-size:15px;font-weight:600;
+  white-space:nowrap;
+  transition:opacity var(--ease),max-width var(--ease);
+  max-width:160px;overflow:hidden;
+}
+.sb.collapsed{width:var(--sb-c);min-width:var(--sb-c)}
+.sb.collapsed .sb-name{opacity:0;max-width:0}
+
+/* Nav scroll container */
+.sb-nav{
+  flex:1;overflow-y:auto;overflow-x:hidden;
+  padding:12px 10px;
+  display:flex;flex-direction:column;gap:4px;
+}
+.sb-nav::-webkit-scrollbar{width:0}
+
+/* Section label */
+.sb-section{
+  font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--tx3);padding:10px 8px 4px;
+  white-space:nowrap;overflow:hidden;
+  transition:opacity var(--ease);
+}
+.sb.collapsed .sb-section{opacity:0}
+
+/* ─── Widget Card nav item ─────────────────────────────────────────── */
+.nav-widget{
+  display:flex;align-items:center;gap:11px;
+  padding:10px 12px;
+  border-radius:12px;
+  background:transparent;
+  border:1px solid transparent;
+  color:var(--tx2);
+  text-decoration:none;
+  cursor:pointer;
+  white-space:nowrap;overflow:hidden;
+  user-select:none;
+  position:relative;
+  transition:
+    background var(--ease),
+    border-color var(--ease),
+    color var(--ease),
+    transform var(--ease-spring),
+    box-shadow var(--ease);
+  will-change:transform;
+}
+.nav-widget:hover{
+  background:var(--card-hover);
+  border-color:var(--border-card);
+  color:var(--tx);
+  transform:translateY(-1px) scale(1.01);
+  box-shadow:var(--shadow-widget);
+}
+.nav-widget:active{
+  transform:translateY(0) scale(0.99);
+  box-shadow:var(--shadow-sm);
+  transition-duration:.08s;
+}
+.nav-widget.active{
+  background:var(--primary-s);
+  border-color:rgba(77,163,255,0.2);
+  color:var(--primary);
+  box-shadow:var(--shadow-sm);
+}
+.nav-widget.active:hover{
+  background:var(--primary-s);
+  transform:translateY(-1px) scale(1.01);
+  box-shadow:var(--shadow-widget);
+}
+
+/* Icon bubble */
+.w-icon{
+  width:34px;height:34px;border-radius:9px;
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+  background:var(--bg2);
+  transition:background var(--ease),transform var(--ease-spring);
+}
+.nav-widget:hover .w-icon{transform:scale(1.05)}
+.nav-widget.active .w-icon{background:var(--primary);box-shadow:0 2px 8px rgba(45,127,249,0.4)}
+.w-icon svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.nav-widget.active .w-icon svg{stroke:#fff}
+
+/* Label + sublabel */
+.w-info{display:flex;flex-direction:column;gap:0;min-width:0}
+.w-label{font-size:13px;font-weight:500;line-height:1.3;
+  transition:opacity var(--ease),max-width var(--ease);max-width:140px;overflow:hidden}
+.w-sub{font-size:10px;color:var(--tx3);line-height:1.3;
+  white-space:nowrap;overflow:hidden;
+  transition:opacity var(--ease),max-width var(--ease);max-width:140px}
+.sb.collapsed .w-label,.sb.collapsed .w-sub{opacity:0;max-width:0;overflow:hidden}
+.sb.collapsed .w-info{max-width:0;overflow:hidden;padding:0}
+.sb.collapsed .nav-widget{padding:10px 14px;justify-content:center;gap:0}
+.sb.collapsed .w-badge{display:none}
+
+/* Badge pill */
+.w-badge{
+  margin-left:auto;min-width:20px;height:20px;padding:0 6px;
+  background:var(--primary);color:#fff;
+  font-size:10px;font-weight:700;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+  transition:opacity var(--ease);
+}
+/* Separator */
+.sb-sep{height:1px;background:var(--border);margin:6px 8px}
+
+/* Footer */
+.sb-foot{
+  padding:10px 10px 12px;
+  border-top:1px solid var(--border);
+  flex-shrink:0;display:flex;flex-direction:column;gap:3px;
+}
+.sb-foot-btn{
+  display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:10px;
+  border:1px solid transparent;cursor:pointer;
+  font-family:var(--font);font-size:12px;font-weight:500;
+  background:transparent;color:var(--tx2);text-decoration:none;
+  white-space:nowrap;overflow:hidden;
+  transition:background var(--ease),color var(--ease),transform var(--ease-spring),border-color var(--ease);
+}
+.sb-foot-btn:hover{
+  background:var(--card-hover);border-color:var(--border-card);color:var(--tx);
+  transform:translateY(-1px);box-shadow:var(--shadow-sm);
+}
+.sb-foot-btn:active{transform:translateY(0);transition-duration:.08s}
+.sb-foot-btn.primary{
+  background:var(--primary);color:#fff;
+  box-shadow:0 2px 8px rgba(45,127,249,0.35);border-color:transparent;
+}
+.sb-foot-btn.primary:hover{opacity:.9;background:var(--primary)}
+.f-icon{width:28px;height:28px;border-radius:7px;background:var(--bg2);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  transition:background var(--ease)}
+.sb-foot-btn.primary .f-icon{background:rgba(255,255,255,0.2)}
+.f-icon svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.sb-foot-btn.primary .f-icon svg{stroke:#fff}
+.sb-foot-lbl{font-size:12px;font-weight:500;
+  transition:opacity var(--ease),max-width var(--ease);max-width:140px;overflow:hidden}
+.sb.collapsed .sb-foot-lbl{opacity:0;max-width:0}
+.sb.collapsed .f-icon + *{opacity:0;max-width:0}
+
+/* Collapse toggle (macOS style handle) */
+.sb-toggle{
+  position:absolute;right:-10px;top:50%;transform:translateY(-50%);
+  width:20px;height:36px;background:var(--card);
+  border:1px solid var(--border);border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;z-index:30;
+  box-shadow:var(--shadow-md);
+  transition:opacity var(--ease),transform var(--ease);
+  opacity:0;
+}
+.sb:hover .sb-toggle{opacity:1}
+.sb-toggle svg{width:10px;height:10px;stroke:var(--tx2);fill:none;stroke-width:2.2;stroke-linecap:round;
+  transition:transform var(--ease)}
+.sb.collapsed .sb-toggle svg{transform:rotate(180deg)}
+
+/* ─── Main area ────────────────────────────────────────────────────── */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+
+/* Traffic light area (macOS feel) */
+.topbar{
+  height:52px;padding:0 18px;
+  background:var(--sidebar-bg);
+  backdrop-filter:blur(24px) saturate(180%);
+  -webkit-backdrop-filter:blur(24px) saturate(180%);
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
+}
+.topbar-l{display:flex;align-items:center;gap:10px}
+.topbar-title{font-family:var(--font-serif);font-size:15px;font-weight:600}
+.topbar-badge{
+  font-size:10px;font-weight:600;
+  background:var(--accent-s);color:var(--accent);
+  border:1px solid rgba(240,154,62,0.3);border-radius:6px;
+  padding:2px 8px;letter-spacing:.04em;
+}
+.topbar-r{display:flex;align-items:center;gap:5px}
+
+.icon-btn{
+  width:30px;height:30px;border-radius:8px;border:1px solid var(--border);
+  background:transparent;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--tx2);
+  transition:background var(--ease),transform var(--ease-spring);
+}
+.icon-btn:hover{background:var(--card);color:var(--tx);transform:scale(1.05);box-shadow:var(--shadow-sm)}
+.icon-btn:active{transform:scale(0.97)}
+.icon-btn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+.page-body{flex:1;overflow-y:auto}
+.page-body::-webkit-scrollbar{width:5px}
+.page-body::-webkit-scrollbar-thumb{background:var(--border);border-radius:5px}
+
+/* ─── Toast ────────────────────────────────────────────────────────── */
+#toast-wrap{
+  position:fixed;bottom:20px;right:20px;
+  display:flex;flex-direction:column;gap:8px;
+  z-index:9999;pointer-events:none;
+}
+.toast{
+  padding:10px 16px;border-radius:12px;font-size:13px;font-weight:500;color:#fff;
+  box-shadow:var(--shadow-lg);
+  animation:slideUp .25s cubic-bezier(.34,1.56,.64,1);
+  max-width:300px;pointer-events:auto;
+  backdrop-filter:blur(10px);
+}
+@keyframes slideUp{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:none}}
+.toast.ok{background:var(--ok)}.toast.err{background:var(--danger)}.toast.warn{background:var(--warn)}
+
+/* ─── Shared components ────────────────────────────────────────────── */
+.card{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  box-shadow:var(--shadow-sm);
+}
+.btn{
+  padding:9px 18px;border-radius:10px;border:none;cursor:pointer;
+  font-family:var(--font);font-size:13px;font-weight:500;
+  text-decoration:none;display:inline-flex;align-items:center;gap:6px;
+  transition:opacity .2s,transform var(--ease-spring),box-shadow .2s;
+}
+.btn:hover{opacity:.9;transform:translateY(-1px);box-shadow:var(--shadow-md)}
+.btn:active{transform:translateY(0) scale(.98);transition-duration:.08s}
+.btn-primary{background:var(--primary);color:#fff;box-shadow:0 2px 8px rgba(45,127,249,0.35)}
+.btn-ghost{background:var(--card);color:var(--tx);border:1px solid var(--border)}
+.btn-danger{background:var(--danger);color:#fff;box-shadow:0 2px 8px rgba(255,59,48,0.35)}
+.badge{
+  display:inline-block;font-size:10px;font-weight:700;
+  padding:2px 7px;border-radius:5px;letter-spacing:.04em;
+}
+</style>
+{% block head %}{% endblock %}
+</head>
+<body>
+
+<!-- ── macOS Sidebar ─────────────────────────────────────────────────── -->
+<aside class="sb" id="sb">
+
+  <!-- App icon + name -->
+  <div class="sb-logo">
+    <div class="sb-app-icon">
+      <svg viewBox="0 0 22 22" fill="none">
+        <path d="M2 13C5 10.5 8 15.5 11 13C14 10.5 17 15.5 20 13" stroke="white" stroke-width="2" stroke-linecap="round"/>
+        <path d="M2 17C5 14.5 8 19.5 11 17C14 14.5 17 19.5 20 17" stroke="rgba(255,255,255,.55)" stroke-width="1.4" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <span class="sb-name">FloodAI</span>
+  </div>
+
+  <!-- Collapse handle -->
+  <button class="sb-toggle" onclick="toggleSb()" title="Thu gọn">
+    <svg viewBox="0 0 10 10"><polyline points="6.5 2 3.5 5 6.5 8"/></svg>
+  </button>
+
+  <nav class="sb-nav">
+    <span class="sb-section">Điều hướng</span>
+
+    <!-- Home widget -->
+    <a href="/" class="nav-widget {% if active=='home' %}active{% endif %}">
+      <span class="w-icon">
+        <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      </span>
+      <span class="w-info">
+        <span class="w-label">Trang chủ</span>
+        <span class="w-sub">Tổng quan hệ thống</span>
+      </span>
+    </a>
+
+    <!-- News widget -->
+    <a href="/news" class="nav-widget {% if active=='news' %}active{% endif %}">
+      <span class="w-icon">
+        <svg viewBox="0 0 24 24"><path d="M4 22h16a2 2 0 002-2V4a2 2 0 00-2-2H8a2 2 0 00-2 2v16a2 2 0 01-2 2zm0 0a2 2 0 01-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8M15 18h-5M10 6h8v4h-8z"/></svg>
+      </span>
+      <span class="w-info">
+        <span class="w-label">Tin tức</span>
+        <span class="w-sub">Cập nhật lũ lụt RSS</span>
+      </span>
+      {% block news_badge %}{% endblock %}
+    </a>
+
+    <!-- Map widget -->
+    <a href="/map" class="nav-widget {% if active=='map' %}active{% endif %}">
+      <span class="w-icon">
+        <svg viewBox="0 0 24 24"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+      </span>
+      <span class="w-info">
+        <span class="w-label">Bản đồ lũ</span>
+        <span class="w-sub">Theo dõi thời gian thực</span>
+      </span>
+    </a>
+
+    <!-- Chat widget -->
+    <a href="/chat" class="nav-widget {% if active=='chat' %}active{% endif %}">
+      <span class="w-icon">
+        <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      </span>
+      <span class="w-info">
+        <span class="w-label">Trò chuyện AI</span>
+        <span class="w-sub">Hỏi đáp với FloodAI</span>
+      </span>
+    </a>
+
+    {% if logged_in %}
+    <div class="sb-sep"></div>
+    <span class="sb-section">Quản trị</span>
+
+    <!-- Dashboard widget -->
+    <a href="/dashboard" class="nav-widget {% if active=='dashboard' %}active{% endif %}">
+      <span class="w-icon">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+      </span>
+      <span class="w-info">
+        <span class="w-label">Dashboard</span>
+        <span class="w-sub">Thống kê &amp; cài đặt</span>
+      </span>
+    </a>
+    {% endif %}
+  </nav>
+
+  <!-- Footer actions -->
+  <div class="sb-foot">
+    <button class="sb-foot-btn" onclick="toggleTheme()" id="theme-btn">
+      <span class="f-icon" id="theme-icon">
+        <svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+      </span>
+      <span class="sb-foot-lbl">Đổi giao diện</span>
+    </button>
+
+    {% if logged_in %}
+    <a href="/logout" class="sb-foot-btn">
+      <span class="f-icon"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span>
+      <span class="sb-foot-lbl">Đăng xuất</span>
+    </a>
+    {% else %}
+    <a href="/login" class="sb-foot-btn primary">
+      <span class="f-icon"><svg viewBox="0 0 24 24" stroke="white"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg></span>
+      <span class="sb-foot-lbl">Đăng nhập</span>
+    </a>
+    {% endif %}
+  </div>
+</aside>
+
+<!-- ── Main ──────────────────────────────────────────────────────────── -->
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-l">
+      <button class="icon-btn" onclick="toggleSb()" title="Thu gọn sidebar">
+        <svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <span class="topbar-title">{% block topbar_title %}FloodAI{% endblock %}</span>
+      {% block topbar_badge %}{% endblock %}
+    </div>
+    <div class="topbar-r">{% block topbar_right %}{% endblock %}</div>
+  </div>
+  <div class="page-body">{% block content %}{% endblock %}</div>
+</div>
+
+<div id="toast-wrap"></div>
+
+<script>
+const _sb = document.getElementById('sb');
+
+function toggleSb() {
+  _sb.classList.toggle('collapsed');
+  localStorage.setItem('sb_collapsed', _sb.classList.contains('collapsed') ? '1' : '0');
+}
+
+function toggleTheme() {
+  const h = document.documentElement;
+  const t = h.dataset.theme === 'dark' ? 'light' : 'dark';
+  h.dataset.theme = t;
+  localStorage.setItem('theme', t);
+  updateThemeIcon(t);
+}
+
+function updateThemeIcon(t) {
+  const el = document.getElementById('theme-icon');
+  if (!el) return;
+  el.innerHTML = t === 'dark'
+    ? '<svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>'
+    : '<svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
+}
+
+function toast(msg, type='ok', dur=3000) {
+  const el = Object.assign(document.createElement('div'), {className:`toast ${type}`, textContent:msg});
+  document.getElementById('toast-wrap').appendChild(el);
+  setTimeout(() => el.remove(), dur);
+}
+
+// Restore persisted state
+(function(){
+  const t = localStorage.getItem('theme') || 'dark';
+  document.documentElement.dataset.theme = t;
+  updateThemeIcon(t);
+  if (localStorage.getItem('sb_collapsed') === '1') _sb.classList.add('collapsed');
+})();
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FloodAI · Live Model</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Noto+Serif+JP:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f1eb;--bg2:#ede8e0;--card:#ffffff;--border:#e2dbd2;
+  --primary:#7a9e7e;--primary-d:#5e8063;--accent:#c9a96e;--accent-s:#f0e4cf;
+  --tx:#2a2520;--tx2:#5a544e;--tx3:#98928a;--ok:#5aab6e;--warn:#e09a3c;
+  --shadow:rgba(0,0,0,0.08);
+  --font-serif:"Noto Serif JP",serif;--font-sans:"DM Sans",sans-serif;--radius:14px;
+}
+[data-theme="dark"]{
+  --bg:#151310;--bg2:#1c1a16;--card:#221f1b;--border:#302c27;
+  --primary:#8aac8e;--primary-d:#6d9272;--accent:#c9a96e;--accent-s:#2e2519;
+  --tx:#e8e0d5;--tx2:#9e9488;--tx3:#5e5850;--ok:#6aba7e;
+  --shadow:rgba(0,0,0,0.35);
+}
+body{font-family:var(--font-sans);background:var(--bg);color:var(--tx);
+  min-height:100vh;font-size:14px;line-height:1.5}
+
+/* ── Header ── */
+.header{
+  height:60px;padding:0 24px;background:var(--card);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10
+}
+.header-logo{display:flex;align-items:center;gap:10px}
+.logo-icon{
+  width:32px;height:32px;background:var(--primary);border-radius:9px;
+  display:flex;align-items:center;justify-content:center
+}
+.logo-icon svg{width:20px;height:20px}
+.logo-text{font-family:var(--font-serif);font-size:17px;font-weight:600;color:var(--tx)}
+.logo-badge{
+  font-size:11px;background:var(--accent-s);color:var(--accent);
+  border:1px solid var(--accent);border-radius:6px;padding:2px 7px;font-weight:600
+}
+.header-right{display:flex;align-items:center;gap:8px}
+.btn{
+  padding:7px 16px;border-radius:9px;border:none;cursor:pointer;
+  font-family:var(--font-sans);font-size:13px;font-weight:500;
+  transition:opacity .2s,transform .2s;display:inline-flex;align-items:center;gap:5px
+}
+.btn:hover{opacity:.88;transform:translateY(-1px)}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-ghost{background:var(--bg2);color:var(--tx);border:1px solid var(--border)}
+.icon-btn{
+  width:34px;height:34px;border-radius:9px;border:1px solid var(--border);
+  background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  font-size:15px;color:var(--tx2);transition:background .2s
+}
+.icon-btn:hover{background:var(--bg2);color:var(--tx)}
+
+/* ── Content ── */
+.content{max-width:800px;margin:0 auto;padding:28px 20px}
+.card{
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:22px;box-shadow:0 2px 12px var(--shadow);margin-bottom:18px
+}
+.card-title{
+  font-size:12px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.06em;color:var(--tx3);margin-bottom:14px
+}
+.section-desc{font-size:13px;color:var(--tx2);margin-bottom:18px;line-height:1.6}
+
+/* ── Drop zone ── */
+.drop-zone{
+  border:2px dashed var(--border);border-radius:var(--radius);padding:36px;
+  text-align:center;cursor:pointer;transition:border-color .2s,background .2s;
+  color:var(--tx3);background:var(--bg)
+}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--primary);background:var(--accent-s);color:var(--tx)}
+.drop-zone-icon{font-size:38px;margin-bottom:10px}
+.drop-zone-text{font-size:14px;font-weight:500;color:var(--tx2)}
+.drop-zone-hint{font-size:12px;color:var(--tx3);margin-top:5px}
+
+/* ── Result ── */
+.live-result{display:none;margin-top:18px;padding-top:18px;border-top:1px solid var(--border)}
+.live-result.show{display:block;animation:fadeIn .3s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.result-grid{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:start}
+@media(max-width:520px){.result-grid{grid-template-columns:1fr}}
+.result-img{width:180px;border-radius:10px;object-fit:cover}
+.result-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.result-stat{background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:10px 14px}
+.result-stat-num{font-family:var(--font-serif);font-size:22px;font-weight:600;color:var(--tx)}
+.result-stat-lbl{font-size:11px;color:var(--tx3);margin-top:2px}
+.overlay-section{margin-top:12px}
+.overlay-title{font-size:11px;font-weight:600;color:var(--tx3);text-transform:uppercase;
+  letter-spacing:.05em;margin-bottom:6px}
+.overlay-img{max-width:100%;border-radius:9px}
+.ai-info{margin-top:12px;font-size:12px;color:var(--tx3);font-style:italic}
+
+/* ── Toast ── */
+#toast-container{position:fixed;bottom:20px;right:20px;display:flex;flex-direction:column;gap:8px;z-index:999}
+.toast{
+  display:flex;align-items:center;gap:8px;padding:10px 16px;border-radius:10px;
+  font-size:13px;font-weight:500;color:#fff;box-shadow:0 4px 16px var(--shadow);
+  animation:slideUp .25s ease
+}
+@keyframes slideUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.toast.ok{background:var(--ok)}
+.toast.err{background:#d9604a}
+.toast.warn{background:var(--warn)}
+
+/* ── Guest banner ── */
+.guest-banner{
+  background:linear-gradient(135deg,var(--primary) 0%,var(--primary-d) 100%);
+  color:#fff;text-align:center;padding:10px 20px;font-size:13px;font-weight:500
+}
+.guest-banner a{color:#fff;font-weight:700;text-decoration:underline}
+</style>
+</head>
+<body>
+
+<div id="toast-container"></div>
+
+<!-- ── Header ─────────────────────────────────────────────────────────────── -->
+<header class="header">
+  <div class="header-logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M2 13 C5 10.5, 8 15.5, 11 13 C14 10.5, 17 15.5, 20 13"
+              stroke="white" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+        <path d="M2 17 C5 14.5, 8 19.5, 11 17 C14 14.5, 17 19.5, 20 17"
+              stroke="rgba(255,255,255,0.5)" stroke-width="1.3" stroke-linecap="round" fill="none"/>
+      </svg>
+    </div>
+    <span class="logo-text">FloodAI</span>
+    <span class="logo-badge">Live</span>
+  </div>
+  <div class="header-right">
+    <button class="icon-btn" onclick="toggleTheme()" title="Đổi theme">☽</button>
+    <a href="/login" class="btn btn-primary" style="text-decoration:none">Đăng nhập</a>
+  </div>
+</header>
+
+<!-- ── Guest Banner ────────────────────────────────────────────────────────── -->
+<div class="guest-banner">
+  Chế độ khách — chỉ xem Live Model.
+  <a href="/login">Đăng nhập để dùng đầy đủ Pipeline, Review, Training →</a>
+</div>
+
+<!-- ── Main Content ────────────────────────────────────────────────────────── -->
+<div class="content">
+  <div class="card">
+    <div class="card-title">Phân tích ảnh lũ tức thì</div>
+    <p class="section-desc">Tải lên một bức ảnh để AI phân tích mức độ ngập lụt, ước tính độ sâu nước.</p>
+
+    <div class="drop-zone" id="drop-zone"
+         onclick="document.getElementById('file-input').click()"
+         ondragover="dropOver(event)" ondragleave="dropLeave(event)" ondrop="dropFile(event)">
+      <div class="drop-zone-icon">🖼</div>
+      <div class="drop-zone-text">Kéo thả hoặc nhấn để chọn ảnh</div>
+      <div class="drop-zone-hint">JPG, PNG — tối đa 10MB</div>
+    </div>
+    <input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleFileSelect(event)">
+
+    <div class="live-result" id="live-result">
+      <div class="result-grid">
+        <img id="res-img" class="result-img" src="" alt="">
+        <div>
+          <div class="result-stats" id="result-stats"></div>
+        </div>
+      </div>
+      <div id="res-overlay-row" style="display:none" class="overlay-section">
+        <div class="overlay-title">AI Overlay</div>
+        <img id="res-overlay" class="overlay-img" src="" alt="">
+      </div>
+      <div id="ai-info" class="ai-info"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const LEVEL_COLORS = {
+  'NO_FLOOD':'#22c984','PUDDLE':'#34d399','ANKLE':'#6dd9a8',
+  'KNEE':'#f0a428','WAIST':'#f97316','CHEST':'#e85065','SUBMERGED':'#991b1b',
+};
+
+function escHtml(s) {
+  var d = document.createElement('div');
+  d.textContent = String(s || '');
+  return d.innerHTML.replace(/"/g,'&quot;');
+}
+
+function toast(msg, type='ok') {
+  const icons = {ok:'✓', err:'✕', warn:'⚠'};
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span>${icons[type]||'•'}</span><span>${escHtml(msg)}</span>`;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+
+function dropOver(e) { e.preventDefault(); document.getElementById('drop-zone').classList.add('drag-over'); }
+function dropLeave(e) { document.getElementById('drop-zone').classList.remove('drag-over'); }
+function dropFile(e) {
+  e.preventDefault(); dropLeave(e);
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) analyzeImage(file);
+  else toast('Chỉ hỗ trợ file ảnh (JPG, PNG)', 'warn');
+}
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (file) analyzeImage(file);
+}
+
+async function analyzeImage(file) {
+  const reader = new FileReader();
+  reader.onload = async ev => {
+    const data_b64 = ev.target.result.split(',')[1];
+    document.getElementById('res-img').src = ev.target.result;
+    document.getElementById('live-result').classList.add('show');
+    document.getElementById('result-stats').innerHTML =
+      '<div style="grid-column:1/-1;text-align:center;padding:20px"><span style="animation:spin 1s linear infinite;display:inline-block">↻</span> Đang phân tích…</div>';
+    document.getElementById('res-overlay-row').style.display = 'none';
+    document.getElementById('ai-info').textContent = '';
+
+    try {
+      const r = await fetch('/live_predict', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ data_b64, filename: file.name })
+      });
+      const d = await r.json();
+      if (d.error) { toast('Lỗi: ' + d.error, 'err'); return; }
+
+      const lvlCol = LEVEL_COLORS[d.flood_level] || '#888';
+      document.getElementById('result-stats').innerHTML = [
+        { num: d.flood_level,              lbl: 'Mức lũ',      col: lvlCol },
+        { num: d.flood_depth_cm + ' cm',   lbl: 'Độ sâu',      col: '' },
+        { num: Math.round(d.confidence*100)+'%', lbl: 'Độ tin cậy', col: '' },
+        { num: d.detections,               lbl: 'Phát hiện',   col: '' },
+      ].map(s => `<div class="result-stat">
+        <div class="result-stat-num" style="${s.col?`color:${s.col}`:''}">
+          ${escHtml(String(s.num))}
+        </div>
+        <div class="result-stat-lbl">${s.lbl}</div>
+      </div>`).join('');
+
+      if (d.overlay_name) {
+        document.getElementById('res-overlay').src = `/live_image/${d.overlay_name}`;
+        document.getElementById('res-overlay-row').style.display = '';
+      }
+      if (d.ai_active) {
+        document.getElementById('ai-info').textContent =
+          '🤖 AI correction active — ' + (d.ai_explanation || '');
+      }
+      toast('Phân tích xong ✓', 'ok');
+    } catch(e) {
+      toast('Lỗi kết nối: ' + e.message, 'err');
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+function toggleTheme() {
+  const h = document.documentElement;
+  const t = h.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  h.setAttribute('data-theme', t);
+  localStorage.setItem('theme', t);
+}
+(function(){ document.documentElement.setAttribute('data-theme', localStorage.getItem('theme')||'dark'); })();
+</script>
+</body>
+</html>

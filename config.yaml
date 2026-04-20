@@ -1,0 +1,334 @@
+# ═══════════════════════════════════════════════════════════════════════
+# FLOOD PIPELINE CONFIG
+# Chinh sua file nay de thay doi cau hinh, khong can sua code.
+# ═══════════════════════════════════════════════════════════════════════
+
+# ── Giao dien / UI ──────────────────────────────────────────────────────
+ui:
+  language: "vi"          # "vi" = Tieng Viet, "en" = English
+  show_banner: true       # Hien thi banner khi khoi dong
+  banner_text: |
+    ╔══════════════════════════════════════════════╗
+    ║     FLOOD IMAGE ANALYSIS PIPELINE           ║
+    ║     Depth Anything V2 + YOLOv8 + DINOv2     ║
+    ╚══════════════════════════════════════════════╝
+
+  # Ten cac buoc hien thi trong interactive setup
+  step_labels:
+    source:    "BUOC 1/8 - Nguon anh dau vao"
+    filter:    "BUOC 2/8 - Loc anh"
+    enhance:   "BUOC 3/8 - Lam sang + sua khung canh"
+    watermark: "BUOC 4/8 - Xu ly Watermark"
+    depth:     "BUOC 5/8 - Depth Analysis"
+    drive:     "BUOC 6/8 - Google Drive"
+    output:    "BUOC 7/8 - Thu muc output"
+    confirm:   "BUOC 8/8 - Xac nhan"
+
+  # Cau hoi custom (de trong = dung mac dinh)
+  questions:
+    source_prompt:    "Ban muon lay anh tu dau?"
+    filter_skip:      "Bo qua buoc loc anh?"
+    enhance_skip:     "Bo qua lam sang va sua khung canh?"
+    watermark_mode:   "Xu ly watermark nhu the nao?"
+    depth_skip:       "Bo qua depth analysis?"
+    drive_skip:       "Bo qua upload Drive?"
+    delete_local:     "Xoa du lieu local sau khi upload?"
+    confirm_start:    "Bat dau chay pipeline?"
+
+
+
+# ── Image Enhancement ────────────────────────────────────────────────────
+enhance:
+  enable:             true
+  dark_threshold:     80.0     # Brightness mean < nguong = lam sang
+  clahe_clip_limit:   2.5
+  clahe_tile_size:    8
+  sharpen:            false
+
+  # Sua khung canh (black bars / pillarbox / letterbox)
+  fix_borders:
+    enable:       true
+    method:       "lama"      # "lama" | "telea" | "ns" | "crop"
+    # "lama" = AI inpainting (dep nhat, cham hon)
+    # "telea"/"ns" = OpenCV inpainting (nhanh, khong dep bang)
+    # "crop" = cat bo phan den (nhanh nhat, mat noi dung)
+    black_thresh: 15          # pixel < nguong nay = "den"
+    min_bar_width_pct: 0.03   # dai den < 3% chieu rong = bo qua
+    lama_model_path: ""       # de trong = tu dong download
+
+# ── Watermark ────────────────────────────────────────────────────────────
+watermark:
+  enable:            true
+  remove:            true
+  method:            "lama"    # "lama" | "opencv_telea" | "opencv_ns"
+  confidence_thresh: 0.45
+  lama_model_path:   ""        # de trong = tu dong download
+  # Vung can kiem tra watermark (co the them them)
+  check_corners:     true
+  check_center:      false
+
+  # Pattern watermark biet truoc (them vao day de phat hien chinh xac hon)
+  known_patterns:
+    - name: "CyberLink PowerDirector"
+      location: "bottom_right"
+      color: "white"
+    - name: "Shutterstock"
+      location: "tiled"      # scattered toan anh
+      color: "gray"
+    - name: "Alamy"
+      location: "tiled"
+      color: "gray"
+    - name: "Getty Images"
+      location: "bottom_center"
+      color: "white"
+    - name: "VIVAVIDEO"
+      location: "bottom_right"
+      color: "white"
+    - name: "iStock"
+      location: "bottom_center"
+      color: "gray"
+
+# ── Depth Analysis ───────────────────────────────────────────────────────
+depth:
+  model:        "depth-anything/Depth-Anything-V2-Small-hf"
+  yolo_model:   "yolov8n.pt"
+  yolo_conf:    0.35
+  use_dino:     true
+  dino_model:   "facebook/dinov2-small"
+  use_pose:     true
+  pose_model:   "yolov8n-pose.pt"
+
+  # Nguong phan loai muc nuoc (cm)
+  flood_levels:
+    puddle:    [0,   15]
+    ankle:     [15,  40]
+    knee:      [40,  70]
+    waist:     [70,  120]
+    chest:     [120, 200]
+    submerged: [200, 9999]
+
+# ── Google Drive ─────────────────────────────────────────────────────────
+drive:
+  folder_name:          "FloodAnalysis"
+  credentials_path:     "credentials.json"
+  token_path:           "token.json"
+  delete_local_default: false    # Hoi lai truoc khi xoa
+  upload_extensions:    [".jpg", ".jpeg", ".png", ".csv", ".html", ".json"]
+
+# ── Output ───────────────────────────────────────────────────────────────
+output:
+  base_dir:     "output"
+  folder_structure:
+    raw:        "00_raw"
+    original:   "original_images"
+    cleaned:    "cleaned_images"    # sau watermark removal + border fix
+    overlays:   "depth_overlays"
+    depthmaps:  "depth_maps"
+    report_html: "flood_analysis_report.html"
+    report_csv:  "flood_analysis_report.csv"
+
+# ── Ground Detection (SegFormer) ─────────────────────────────────────────
+ground_detection:
+  enable:      true
+  model:       "nvidia/segformer-b0-finetuned-ade-512-512"
+  # Cac model khac (chinh xac hon, lon hon):
+  #   "nvidia/segformer-b2-finetuned-ade-512-512"   (~85MB)
+  #   "nvidia/segformer-b4-finetuned-ade-512-512"   (~175MB)
+  road_threshold: 0.15     # > 15% road pixels = anh duong kho
+  dry_conf_thresh: 0.50    # confidence > 0.5 moi hieu chinh water line
+
+# ── AI Deblur ────────────────────────────────────────────────────────────────
+deblur:
+  enable:          true
+  method:          "auto"      # "nafnet" | "auto" | "wiener" | "off"
+  # "nafnet"  = NAFNet AI (tot nhat, can: pip install basicsr + download model)
+  # "auto"    = Thu NAFNet truoc, fallback Wiener neu khong co model
+  # "wiener"  = Chi dung Wiener deconvolution (khong can download gi)
+  # "off"     = Tat deblur
+
+  blur_threshold:   100.0      # Laplacian variance < nguong = anh mo
+  min_improvement:  0.20       # Phai cai thien >= 20% moi giu ban deblur
+
+  # NAFNet model path (de trong = tu dong tim trong ./models/)
+  # Download tai: https://github.com/megvii-research/NAFNet/releases
+  nafnet_model_path: ""
+
+# ── Auto Skip (bat len de bo qua tat ca cau hoi) ─────────────────────────────
+# Neu enable=true, pipeline chay tu dong voi cac gia tri mac dinh duoi day.
+# Khong can nhan phim gi ca.
+auto_skip:
+  enable: false          # true = tu dong skip tat ca cau hoi
+
+  # Cac gia tri mac dinh khi auto_skip = true:
+  mode:          "local" # "local" | "crawl" | "drive"
+  input_path:    ""      # Duong dan folder anh (khi mode=local)
+  query:         "flood disaster vietnam 2024"
+  max_images:    50
+  sources:       ["bing", "google"]
+
+  skip_filter:   false   # Co loc anh khong?
+  enhance:       true    # Co lam sang anh khong?
+  fix_borders:   true    # Co sua black bars khong?
+  border_method: "lama"  # "lama" | "ns" | "crop"
+
+  check_watermark:  true
+  remove_watermark: true
+
+  skip_depth:    false
+  depth_model:   "small"  # "small" | "base" | "large"
+  yolo_model:    "nano"   # "nano" | "small" | "medium"
+
+  skip_drive:    true
+  drive_folder:  "FloodAnalysis"
+
+  output_dir:    "output"
+
+# ── Water Color Detection (v3) ────────────────────────────────────────────────
+water_color:
+  use_lab:      true    # LAB color space cho ánh sáng phức tạp / ban đêm
+  use_ycbcr:    true    # YCbCr độc lập ánh sáng (tốt cho nước bùn)
+  use_norm_rgb: true    # Normalized RGB loại trừ hiệu ứng độ sáng
+  use_texture:  true    # Texture-based detection (nước mịn)
+  use_reflection: true  # Phát hiện phản chiếu trên mặt nước
+  min_water_area: 0.03  # >= 3% diện tích mới tính là có nước
+
+  # Profile màu nước (15 profile trong code, có thể disable từng cái)
+  enabled_profiles:
+    - clear_blue        # Nước trong xanh
+    - teal_shallow      # Nước cạn xanh ngọc
+    - greenish          # Nước xanh lá
+    - muddy_brown       # Nước bùn nâu ← phổ biến nhất ở VN
+    - muddy_orange      # Nước bùn cam
+    - reddish_clay      # Nước đất sét đỏ
+    - yellowish_flood   # Nước lũ vàng đất
+    - deep_brown        # Nước bùn nâu sẫm
+    - turbid_gray       # Nước xám đục
+    - ash_gray          # Nước tro xám nhạt
+    - dark_water        # Nước tối
+    - night_reflection  # Nước đêm phản chiếu
+    - foam_white        # Bọt sóng trắng
+    - algae_green       # Nước tảo xanh
+    - oil_dark          # Nước nhiễm dầu
+
+# ── Route Prediction ──────────────────────────────────────────────────────────
+route_prediction:
+  enable: false          # Bật khi cần dự đoán đường
+  vehicle: "motorbike"   # "motorbike" | "car" | "truck"
+  # Điểm xuất phát [lat, lon] — để trống = chỉ tạo flood map
+  origin: []
+  # Danh sách điểm đến [[lat,lon], ...]
+  destinations: []
+  # Bán kính ảnh hưởng (m) của mỗi điểm đo xung quanh đường
+  influence_radius_m: 200
+
+# ── Pipeline Orchestrator (MỚI) ───────────────────────────────────────────────
+pipeline:
+  # Bật/tắt từng stage độc lập
+  stages:
+    crawl:      true
+    filter:     true
+    analyze:    true
+    depth:      true
+    postprocess: true
+    store:      true
+    learn:      true
+
+  # Parallel processing
+  parallel:
+    filter:   true    # BlurFilter song song (CPU-safe)
+    analyze:  true    # Location detection song song
+    workers:  4       # Số threads tối đa
+
+  # Auto-retrain threshold
+  auto_retrain_threshold: 0.20   # Retrain khi error rate > 20%
+
+# ── Model Switching (MỚI) ────────────────────────────────────────────────────
+models:
+  # Depth estimation
+  # Options: small | base | large | midas
+  depth: small
+
+  # Object detector
+  # Options: nano | small | medium  (hoặc đường dẫn đầy đủ: yolov8n.pt)
+  detector: nano
+
+  # Pose estimation
+  pose: yolov8n-pose.pt
+
+  # Feature extraction
+  dino: facebook/dinov2-small
+
+# ── Filter Toggles (MỚI) ─────────────────────────────────────────────────────
+enable_filters:
+  blur:       true    # Lọc ảnh mờ (Laplacian)
+  duplicate:  true    # Lọc ảnh trùng (pHash)
+  banner:     true    # Lọc banner/text-heavy
+  deblur:     true    # AI deblur (MotionBlur)
+  content:    true    # ContentFilter (chart, cartoon...)
+
+# ── Alert System (MỚI) ───────────────────────────────────────────────────────
+alerts:
+  # Gửi cảnh báo khi flood level >= threshold
+  # Options: NO_FLOOD | PUDDLE | ANKLE | KNEE | WAIST | CHEST | SUBMERGED
+  flood_threshold: WAIST
+
+  # Email alert (cần config SMTP trong .env)
+  send_email: false
+  email_to: ""          # Hoặc set ALERT_EMAIL_TO trong .env
+
+# ── Database (MỚI) ───────────────────────────────────────────────────────────
+database:
+  # "sqlite" (mặc định) hoặc "postgresql" (production)
+  backend: sqlite
+
+  # SQLite paths (chỉ dùng khi backend=sqlite)
+  sqlite:
+    review_queue: learning/review_queue.db
+    errors:       learning/errors.db
+    training:     learning/training_images.db
+
+  # PostgreSQL (cần set DATABASE_URL trong .env)
+  postgresql:
+    # DATABASE_URL=postgresql://user:pass@localhost:5432/flood_pipeline
+    schema: |
+      CREATE TABLE IF NOT EXISTS flood_results (
+        id           SERIAL PRIMARY KEY,
+        image_id     TEXT UNIQUE NOT NULL,
+        location     TEXT,
+        timestamp    TIMESTAMPTZ DEFAULT NOW(),
+        flood_depth  FLOAT,
+        flood_level  TEXT,
+        confidence   FLOAT,
+        source       TEXT,
+        reviewed     BOOLEAN DEFAULT FALSE
+      );
+      CREATE INDEX IF NOT EXISTS idx_flood_timestamp ON flood_results(timestamp);
+      CREATE INDEX IF NOT EXISTS idx_flood_location  ON flood_results(location);
+      CREATE INDEX IF NOT EXISTS idx_flood_level     ON flood_results(flood_level);
+
+# ── Raincoat Detection (MỚI v3) ──────────────────────────────────────────────
+raincoat:
+  enabled: true          # Bật/tắt stage phát hiện áo mưa
+
+  # CLIP zero-shot (cần: pip install transformers torch)
+  # Tắt nếu không có GPU hoặc muốn chạy nhanh hơn
+  use_clip: false
+
+  # Padding bbox trước khi crop (áo mưa rộng hay bị cắt mất)
+  bbox_pad: 0.15          # 15% padding mỗi cạnh
+
+  # Ngưỡng ensemble cuối
+  # final_conf = 0.4*rule + 0.4*clip + 0.2*shape  (nếu có CLIP)
+  # final_conf = 0.66*rule + 0.33*shape            (nếu không CLIP)
+  final_thresh: 0.40
+
+  # Temporal tracker
+  tracker_max_age: 10     # Số frame không detect → xóa track
+  tracker_history: 5      # Số frame lịch sử cho majority voting
+
+  # Debug: vẽ bbox + score overlay
+  debug_overlay: false
+
+  # Adaptive YOLO confidence theo điều kiện mưa
+  # heavy_rain_conf: 0.20   # Mưa to → hạ ngưỡng detect person
+  # normal_conf: 0.35        # Thời tiết bình thường

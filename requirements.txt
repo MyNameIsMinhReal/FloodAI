@@ -1,0 +1,61 @@
+# == Core ======================================================================
+numpy>=1.24
+Pillow>=10.0
+opencv-python>=4.8
+requests>=2.31
+
+# == Image crawling (Selenium browser - bypasses all rate limits) ==============
+selenium>=4.15
+webdriver-manager>=4.0        # auto-downloads correct ChromeDriver
+
+# == Facebook crawler ==========================================================
+# (uses same selenium above)
+
+# == Duplicate detection =======================================================
+imagehash>=4.3.1
+
+# == Depth estimation (Depth Anything V2) =====================================
+torch>=2.0
+transformers>=4.40
+accelerate>=0.27
+
+# == Object detection (YOLOv8) ================================================
+ultralytics>=8.0
+
+# == Google Drive upload =======================================================
+google-api-python-client>=2.100
+google-auth-httplib2>=0.2
+google-auth-oauthlib>=1.1
+
+# == Pose estimation ===========================================================
+# yolov8n-pose.pt se tu dong download khi chay lan dau
+# (da co trong ultralytics, khong can cai them)
+
+# == DINOv2 ====================================================================
+# da co trong transformers
+
+# == Ground Detection (SegFormer semantic segmentation) =======================
+# transformers>=4.40 (da co o tren)
+# Cai them:
+# pip install pyyaml  (cho config.yaml)
+
+# == AI Deblur (NAFNet) ========================================================
+# Option A: basicsr (co NAFNet, tot nhat)
+#   pip install basicsr
+#   Download model: https://github.com/megvii-research/NAFNet/releases
+#
+# Option B: Wiener deconvolution (built-in, khong can cai them)
+#
+# pip install pyyaml openpyxl   (cho config.yaml va Excel report)
+
+# Raincoat Detection (thêm v3)
+# CLIP zero-shot (tùy chọn — tắt use_clip: false nếu không cần)
+# transformers>=4.35.0   # đã có từ depth analysis
+# torch>=2.0.0           # đã có từ depth analysis
+Pillow>=10.0.0           # PIL Image cho CLIP processor
+
+# == Web application (app.py) ==================================================
+flask>=3.0
+python-dotenv>=1.0
+feedparser>=6.0          # RSS feed parsing cho trang tin tức
+peft>=0.10               # LoRA adapter loading (flood-agent-merged)

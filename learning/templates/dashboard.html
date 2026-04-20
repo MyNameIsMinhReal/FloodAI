@@ -1,0 +1,3215 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FloodAI · Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=Noto+Serif+JP:wght@300;400;600&display=swap" rel="stylesheet">
+
+<style>
+/* ── Reset & Base ─────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Design Tokens ────────────────────────────────────────────────────── */
+:root {
+  --bg:        #f5f1eb;
+  --bg2:       #ede8e0;
+  --sidebar:   #ffffff;
+  --card:      #ffffff;
+  --border:    #e2dbd2;
+  --primary:   #7a9e7e;
+  --primary-d: #5e8063;
+  --accent:    #c9a96e;
+  --accent-s:  #f0e4cf;
+  --danger:    #d9604a;
+  --warn:      #e09a3c;
+  --ok:        #5aab6e;
+  --tx:        #2a2520;
+  --tx2:       #5a544e;
+  --tx3:       #98928a;
+  --shadow:    rgba(0,0,0,0.08);
+
+  --font-serif: 'Noto Serif JP', serif;
+  --font-sans:  'DM Sans', sans-serif;
+  --radius:     14px;
+  --sidebar-w:  230px;
+  --sidebar-c:  60px;
+  --transition: 0.25s cubic-bezier(.4,0,.2,1);
+}
+
+[data-theme="dark"] {
+  --bg:        #151310;
+  --bg2:       #1c1a16;
+  --sidebar:   #1a1815;
+  --card:      #221f1b;
+  --border:    #302c27;
+  --primary:   #8aac8e;
+  --primary-d: #6d9272;
+  --accent:    #c9a96e;
+  --accent-s:  #2e2519;
+  --danger:    #e07060;
+  --warn:      #e0a550;
+  --ok:        #6aba7e;
+  --tx:        #e8e0d5;
+  --tx2:       #9e9488;
+  --tx3:       #5e5850;
+  --shadow:    rgba(0,0,0,0.35);
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--tx);
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────── */
+.sidebar {
+  width: var(--sidebar-w);
+  height: 100vh;
+  background: var(--sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  transition: width var(--transition);
+  overflow: hidden;
+  position: relative;
+  z-index: 10;
+}
+.sidebar.collapsed { width: var(--sidebar-c); }
+
+.sidebar-top {
+  padding: 20px 16px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  min-height: 62px;
+  flex-shrink: 0;
+}
+.logo-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary);
+  border-radius: 9px;
+  padding: 5px;
+  transition: background var(--transition);
+}
+.logo-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.logo-text {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--tx);
+  white-space: nowrap;
+  opacity: 1;
+  transition: opacity var(--transition);
+}
+.sidebar.collapsed .logo-text { opacity: 0; pointer-events: none; width: 0; overflow: hidden; }
+
+.sidebar-nav {
+  flex: 1;
+  padding: 12px 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--tx2);
+  transition: background var(--transition), color var(--transition);
+  white-space: nowrap;
+  user-select: none;
+  font-size: 13.5px;
+  font-weight: 450;
+  margin-bottom: 2px;
+}
+.nav-item:hover { background: var(--bg2); color: var(--tx); }
+.nav-item.active { background: var(--primary); color: #fff; font-weight: 500; }
+.nav-icon { font-size: 17px; flex-shrink: 0; line-height: 1; width: 22px; text-align: center; }
+.nav-label {
+  opacity: 1;
+  transition: opacity var(--transition);
+  overflow: hidden;
+}
+.sidebar.collapsed .nav-label { opacity: 0; width: 0; }
+
+.sidebar-bottom {
+  padding: 10px 8px 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.collapse-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--tx3);
+  transition: background var(--transition), color var(--transition);
+  font-size: 13px;
+  white-space: nowrap;
+  user-select: none;
+}
+.collapse-btn:hover { background: var(--bg2); color: var(--tx); }
+.collapse-icon {
+  font-size: 16px;
+  transition: transform var(--transition);
+  flex-shrink: 0;
+  width: 22px;
+  text-align: center;
+}
+.sidebar.collapsed .collapse-icon { transform: rotate(180deg); }
+.collapse-label {
+  opacity: 1;
+  transition: opacity var(--transition);
+  overflow: hidden;
+}
+.sidebar.collapsed .collapse-label { opacity: 0; width: 0; }
+
+/* ── Main ─────────────────────────────────────────────────────────────── */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.topbar {
+  height: 62px;
+  padding: 0 28px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  background: var(--sidebar);
+}
+.page-title {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--tx);
+}
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: var(--tx2);
+  transition: background var(--transition), color var(--transition);
+}
+.icon-btn:hover { background: var(--bg2); color: var(--tx); }
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 28px;
+}
+
+/* ── Tab Panes ────────────────────────────────────────────────────────── */
+.tab-pane { display: none; }
+.tab-pane.active { display: block; animation: fadeIn 0.2s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ── Cards ────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: 0 2px 12px var(--shadow);
+}
+.card-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tx3);
+  margin-bottom: 14px;
+}
+
+/* ── Stats Grid ───────────────────────────────────────────────────────── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.stat-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  box-shadow: 0 2px 10px var(--shadow);
+  transition: transform var(--transition);
+}
+.stat-card:hover { transform: translateY(-2px); }
+.stat-num {
+  font-family: var(--font-serif);
+  font-size: 30px;
+  font-weight: 600;
+  color: var(--tx);
+  line-height: 1.1;
+}
+.stat-lbl {
+  font-size: 12px;
+  color: var(--tx3);
+  margin-top: 4px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.stat-sub {
+  font-size: 11px;
+  color: var(--primary);
+  margin-top: 3px;
+  font-weight: 500;
+}
+
+/* ── Forms ────────────────────────────────────────────────────────────── */
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.form-group { display: flex; flex-direction: column; gap: 5px; }
+.form-label { font-size: 12px; font-weight: 600; color: var(--tx2); text-transform: uppercase; letter-spacing: 0.05em; }
+.form-input, .form-select {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg);
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  color: var(--tx);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  outline: none;
+  transition: border-color var(--transition);
+}
+.form-input:focus, .form-select:focus { border-color: var(--primary); }
+.form-select option { background: var(--card); }
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+.btn {
+  padding: 9px 18px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 500;
+  transition: opacity var(--transition), transform var(--transition), background var(--transition);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn:hover { opacity: 0.88; transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-danger  { background: var(--danger); color: #fff; }
+.btn-ghost   { background: var(--bg2); color: var(--tx); border: 1px solid var(--border); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+/* ── Progress ─────────────────────────────────────────────────────────── */
+.steps-bar {
+  display: flex;
+  gap: 0;
+  margin: 18px 0 12px;
+  border-radius: 9px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.step-seg {
+  flex: 1;
+  height: 8px;
+  background: var(--bg2);
+  position: relative;
+  transition: background 0.4s ease;
+}
+.step-seg.done    { background: var(--primary); }
+.step-seg.active  { background: var(--accent); }
+.step-seg + .step-seg { border-left: 1px solid var(--sidebar); }
+
+.step-labels {
+  display: flex;
+  font-size: 10.5px;
+  color: var(--tx3);
+  margin-bottom: 14px;
+  gap: 0;
+}
+.step-lbl {
+  flex: 1;
+  text-align: center;
+  padding: 3px 2px;
+  transition: color var(--transition), font-weight var(--transition);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.step-lbl.active { color: var(--accent); font-weight: 600; }
+.step-lbl.done   { color: var(--primary); }
+
+/* ── Log ──────────────────────────────────────────────────────────────── */
+.log-box {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  height: 220px;
+  overflow-y: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  padding: 10px 14px;
+  color: var(--tx2);
+  line-height: 1.6;
+}
+.log-line { display: flex; gap: 10px; }
+.log-ts  { color: var(--tx3); flex-shrink: 0; }
+.log-ERROR { color: var(--danger); }
+.log-WARNING { color: var(--warn); }
+.log-INFO {}
+
+/* ── Toast ────────────────────────────────────────────────────────────── */
+#toast-container {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 18px;
+  font-size: 13.5px;
+  color: var(--tx);
+  box-shadow: 0 8px 28px var(--shadow);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: slideUp 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
+  pointer-events: auto;
+  max-width: 340px;
+  min-width: 220px;
+}
+.toast.ok   { border-left: 4px solid var(--ok); }
+.toast.err  { border-left: 4px solid var(--danger); }
+.toast.warn { border-left: 4px solid var(--warn); }
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* ── Modal ────────────────────────────────────────────────────────────── */
+.modal-bg {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.15s ease;
+}
+.modal-bg.open { display: flex; }
+.modal-box {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: column;
+}
+.modal-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+}
+.modal-title { font-size: 13.5px; font-weight: 500; color: var(--tx2); font-family: monospace; }
+.modal-img   { max-width: 85vw; max-height: 80vh; object-fit: contain; display: block; }
+
+/* ── History ──────────────────────────────────────────────────────────── */
+.hist-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.hist-search {
+  flex: 1;
+  min-width: 180px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--tx);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  outline: none;
+}
+.hist-search:focus { border-color: var(--primary); }
+.filter-chip {
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--tx2);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all var(--transition);
+  user-select: none;
+}
+.filter-chip.active, .filter-chip:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+.hist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.hist-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform var(--transition), box-shadow var(--transition);
+  box-shadow: 0 2px 8px var(--shadow);
+}
+.hist-card:hover { transform: translateY(-3px); box-shadow: 0 6px 20px var(--shadow); }
+
+.hist-thumb {
+  aspect-ratio: 4/3;
+  background: var(--bg2);
+  overflow: hidden;
+  position: relative;
+}
+.hist-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.35s ease;
+}
+.hist-card:hover .hist-thumb img { transform: scale(1.04); }
+.hist-type-badge {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.badge-live    { background: #1e3a2f; color: #6aba7e; }
+.badge-run     { background: #1c2840; color: #6a9aba; }
+.badge-overlay { background: #0008; color: #fff; top: 7px; left: auto; right: 7px; font-size: 9px; text-transform: lowercase; font-weight: 400; letter-spacing: 0; }
+
+.hist-meta {
+  padding: 10px 12px;
+}
+.hist-name {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: var(--tx3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 6px;
+}
+.hist-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.level-badge {
+  padding: 2px 7px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.hist-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.hist-size { font-size: 11px; color: var(--tx3); }
+.hist-time { font-size: 11px; color: var(--tx3); }
+
+/* Run cards in history */
+.run-hist-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: 0 2px 8px var(--shadow);
+  transition: transform var(--transition);
+}
+.run-hist-card:hover { transform: translateY(-2px); }
+.run-hdr { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+.run-id { font-family: var(--font-serif); font-size: 14px; font-weight: 600; color: var(--tx); }
+.run-meta { font-size: 12px; color: var(--tx3); margin-top: 3px; }
+.run-meta span { margin-right: 8px; }
+.run-badges { display: flex; flex-wrap: wrap; gap: 5px; }
+.run-badge {
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--accent-s);
+  color: var(--accent);
+  border: 1px solid var(--accent)33;
+}
+/* ── Run Detail Panel ─────────────────────────────────────────────────── */
+.run-detail-btn {
+  margin-top: 10px;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--tx2);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.run-detail-btn:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+.run-detail-panel {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height .4s cubic-bezier(.4,0,.2,1), opacity .3s;
+  opacity: 0;
+}
+.run-detail-panel.open {
+  max-height: 2400px;
+  opacity: 1;
+}
+.run-detail-inner {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  margin-top: 12px;
+}
+.rd-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.rd-kpi {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  text-align: center;
+}
+.rd-kpi-num { font-size: 22px; font-weight: 700; color: var(--tx); font-family: var(--font-serif); }
+.rd-kpi-lbl { font-size: 11px; color: var(--tx3); margin-top: 2px; }
+.rd-section { margin-bottom: 16px; }
+.rd-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--tx3);
+  margin-bottom: 10px;
+}
+/* Level bar chart */
+.rd-level-bars { display: flex; flex-direction: column; gap: 6px; }
+.rd-level-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.rd-level-name { width: 130px; flex-shrink: 0; color: var(--tx2); }
+.rd-level-bar-wrap { flex: 1; height: 14px; background: var(--bg2); border-radius: 5px; overflow: hidden; }
+.rd-level-bar { height: 100%; border-radius: 5px; transition: width .5s cubic-bezier(.4,0,.2,1); }
+.rd-level-count { width: 28px; text-align: right; color: var(--tx); font-weight: 600; }
+/* Confidence row */
+.rd-conf-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.rd-conf-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 10px 12px;
+  text-align: center;
+}
+.rd-conf-num { font-size: 20px; font-weight: 700; }
+.rd-conf-lbl { font-size: 11px; color: var(--tx3); margin-top: 2px; }
+/* Results table */
+.rd-table-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.rd-table-toolbar select,
+.rd-table-toolbar input[type=range] { font-size: 12px; }
+.rd-table-wrap { overflow-x: auto; max-height: 320px; overflow-y: auto; }
+.rd-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.rd-table th {
+  position: sticky;
+  top: 0;
+  background: var(--card);
+  padding: 7px 10px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--tx2);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.rd-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border)88;
+  white-space: nowrap;
+  color: var(--tx);
+}
+.rd-table tr:hover td { background: var(--bg2); }
+.rd-empty { text-align: center; padding: 28px; color: var(--tx3); font-size: 13px; }
+.rd-csv-btn {
+  padding: 5px 14px;
+  font-size: 12px;
+  border-radius: 7px;
+  border: 1px solid var(--primary);
+  background: transparent;
+  color: var(--primary);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+.rd-csv-btn:hover { background: var(--primary); color: #fff; }
+.img-strip {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-top: 6px;
+}
+.img-strip img {
+  height: 72px;
+  width: auto;
+  border-radius: 7px;
+  object-fit: cover;
+  cursor: pointer;
+  transition: transform var(--transition);
+  flex-shrink: 0;
+}
+.img-strip img:hover { transform: scale(1.06); }
+
+/* ── Drag & Drop ──────────────────────────────────────────────────────── */
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 32px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+  color: var(--tx3);
+  background: var(--bg);
+}
+.drop-zone:hover, .drop-zone.drag-over {
+  border-color: var(--primary);
+  background: var(--accent-s);
+  color: var(--tx);
+}
+.drop-zone-icon { font-size: 36px; margin-bottom: 8px; }
+.drop-zone-text { font-size: 14px; font-weight: 500; }
+.drop-zone-hint { font-size: 12px; color: var(--tx3); margin-top: 4px; }
+
+/* ── Live Result ──────────────────────────────────────────────────────── */
+.live-result {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  margin-top: 16px;
+  display: none;
+}
+.live-result.show { display: block; animation: fadeIn 0.3s ease; }
+.result-grid { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: start; }
+.result-img { width: 180px; border-radius: 10px; object-fit: cover; }
+.result-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.result-stat { background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 10px 14px; }
+.result-stat-num { font-family: var(--font-serif); font-size: 22px; font-weight: 600; color: var(--tx); }
+.result-stat-lbl { font-size: 11px; color: var(--tx3); margin-top: 2px; }
+
+/* ── Scrollbar ────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--tx3); }
+
+/* ── Misc ─────────────────────────────────────────────────────────────── */
+.section-gap { height: 18px; }
+.flex-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--tx3);
+}
+.empty-icon { font-size: 36px; margin-bottom: 10px; }
+.empty-title { font-size: 15px; font-weight: 500; color: var(--tx2); margin-bottom: 5px; }
+.empty-msg { font-size: 13px; }
+
+.spin { display: inline-block; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.divider { height: 1px; background: var(--border); margin: 16px 0; }
+
+/* ── Section heading ──────────────────────────────────────────────────── */
+.section-title {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--tx);
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ── Recent activity list ─────────────────────────────────────────────── */
+.activity-list { display: flex; flex-direction: column; gap: 10px; }
+.activity-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+}
+.act-icon { font-size: 18px; flex-shrink: 0; width: 28px; text-align: center; }
+.act-info { flex: 1; min-width: 0; }
+.act-title { font-weight: 500; color: var(--tx); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-time  { font-size: 11.5px; color: var(--tx3); }
+
+/* ── Dashboard layout ─────────────────────────────────────────────────── */
+.dash-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 18px;
+  margin-top: 20px;
+}
+@media (max-width: 800px) {
+  .dash-grid { grid-template-columns: 1fr; }
+  .form-row  { grid-template-columns: 1fr; }
+}
+
+/* ── Hamburger (ẩn trên desktop) ─────────────────────────────────────── */
+.hamburger {
+  display: none;
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: var(--tx2);
+  transition: background var(--transition), color var(--transition);
+  flex-shrink: 0;
+}
+.hamburger:hover { background: var(--bg2); color: var(--tx); }
+
+/* ── Sidebar overlay backdrop (mobile) ──────────────────────────────── */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 199;
+  backdrop-filter: blur(2px);
+  animation: fadeIn 0.18s ease;
+}
+.sidebar-overlay.open { display: block; }
+
+/* ── Mobile breakpoint ───────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  body { overflow: auto; }
+
+  .hamburger { display: flex; }
+
+  /* Sidebar: hidden off-screen by default, slides in as overlay */
+  .sidebar {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    transform: translateX(-100%);
+    z-index: 200;
+    width: var(--sidebar-w) !important;
+    transition: transform var(--transition), box-shadow var(--transition);
+    box-shadow: none;
+  }
+  .sidebar.mobile-open {
+    transform: translateX(0);
+    box-shadow: 6px 0 32px rgba(0,0,0,0.45);
+  }
+  .sidebar.collapsed { width: var(--sidebar-w) !important; }
+  .sidebar.collapsed .logo-text,
+  .sidebar.collapsed .nav-label,
+  .sidebar.collapsed .collapse-label { opacity: 1; width: auto; pointer-events: auto; }
+  .collapse-btn { display: none; }
+
+  /* Main fills viewport */
+  .main { width: 100%; min-width: 0; }
+  .content { padding: 12px 10px; }
+  .topbar { padding: 0 12px; gap: 8px; }
+  .page-title { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: calc(100vw - 140px); }
+  .card { padding: 14px 14px; }
+
+  /* Stats */
+  .stats-grid { grid-template-columns: repeat(3, 1fr) !important; }
+  .dash-grid  { grid-template-columns: 1fr !important; }
+
+  /* Review card: stack image above body */
+  .review-case-card { grid-template-columns: 1fr; }
+  .review-case-img  { aspect-ratio: 16/9; width: 100%; height: auto; }
+  .review-form      { grid-template-columns: 1fr !important; }
+
+  /* Forms */
+  .annotate-form-grid { grid-template-columns: 1fr !important; }
+  .form-row           { grid-template-columns: 1fr !important; }
+
+  /* History grid: 2 columns */
+  .hist-grid { grid-template-columns: repeat(2, 1fr); }
+
+  /* Log box */
+  .log-box { height: 160px; }
+
+  /* Toast */
+  #toast-container { right: 10px; top: 10px; }
+  .toast { max-width: calc(100vw - 20px); min-width: 0; }
+
+  /* Modal */
+  .modal-img { max-width: 96vw; max-height: 75vh; }
+}
+
+@media (max-width: 480px) {
+  .hist-grid    { grid-template-columns: 1fr; }
+  .stats-grid   { grid-template-columns: repeat(2, 1fr) !important; }
+  .review-stats-bar { grid-template-columns: repeat(2, 1fr); }
+  .content { padding: 10px 8px; }
+  .card { padding: 12px 12px; }
+  .page-title { max-width: calc(100vw - 120px); }
+  .btn { padding: 8px 14px; font-size: 13px; }
+}
+
+/* ── Review Tab ──────────────────────────────────────────────────────── */
+.review-stats-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 22px;
+}
+.review-stat {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  box-shadow: 0 2px 8px var(--shadow);
+}
+.review-stat-num { font-family: var(--font-serif); font-size: 26px; font-weight: 600; color: var(--tx); line-height: 1.1; }
+.review-stat-lbl { font-size: 11px; color: var(--tx3); margin-top: 3px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+
+.review-queue { display: flex; flex-direction: column; gap: 16px; }
+.review-case-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 0 2px 10px var(--shadow);
+  display: grid;
+  grid-template-columns: 180px 1fr;
+}
+.review-case-img { aspect-ratio: 4/3; object-fit: cover; width: 100%; height: 100%; display: block; cursor: pointer; transition: opacity var(--transition); }
+.review-case-img:hover { opacity: 0.88; }
+.review-case-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.review-case-head { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px; }
+.review-pred { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.reason-chip { padding: 2px 8px; border-radius: 7px; font-size: 10.5px; font-weight: 600; background: var(--accent-s); color: var(--accent); border: 1px solid var(--accent)33; }
+.conf-low  { background: rgba(224,112,96,0.12); color: var(--danger); border-color: rgba(224,112,96,0.25); }
+.conf-med  { background: rgba(224,165,80,0.12); color: var(--warn);   border-color: rgba(224,165,80,0.25); }
+.conf-high { background: rgba(106,186,126,0.12); color: var(--ok);    border-color: rgba(106,186,126,0.25); }
+
+.review-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.review-form-full { grid-column: 1 / -1; }
+.review-actions { display: flex; gap: 8px; margin-top: 2px; }
+
+.level-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 12.5px; }
+.level-bar-label { width: 120px; flex-shrink: 0; color: var(--tx2); font-weight: 500; }
+.level-bar-track { flex: 1; height: 9px; background: var(--bg2); border-radius: 5px; overflow: hidden; }
+.level-bar-fill { height: 100%; border-radius: 5px; transition: width 0.6s ease; }
+.level-bar-count { width: 36px; text-align: right; color: var(--tx3); font-size: 11.5px; }
+
+.hist-annotate-btn {
+  padding: 4px 10px;
+  border-radius: 7px;
+  border: 1px solid rgba(138,172,142,0.4);
+  background: transparent;
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+  font-family: var(--font-sans);
+}
+.hist-annotate-btn:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+.annotate-modal-bg {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.72);
+  z-index: 1100;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(5px);
+}
+.annotate-modal-bg.open { display: flex; animation: fadeIn 0.15s ease; }
+.annotate-modal-box {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  width: min(580px, 95vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 28px 70px rgba(0,0,0,0.55);
+  display: flex;
+  flex-direction: column;
+}
+.annotate-modal-header { padding: 16px 20px 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.annotate-modal-title { font-family: var(--font-serif); font-size: 16px; font-weight: 400; color: var(--tx); }
+.annotate-modal-body { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+.annotate-img-preview { width: 100%; max-height: 240px; object-fit: contain; border-radius: 10px; background: var(--bg2); display: block; }
+.annotate-pred-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 14px; background: var(--bg2); border-radius: 9px; font-size: 12.5px; color: var(--tx2); }
+.annotate-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.annotate-form-full { grid-column: 1 / -1; }
+.annotate-footer { display: flex; gap: 10px; justify-content: flex-end; padding: 14px 20px; border-top: 1px solid var(--border); background: var(--bg); border-radius: 0 0 18px 18px; }
+.learn-pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: pulse 1.5s ease-in-out infinite; margin-right: 5px; }
+@keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.7); } }
+
+/* ── Easter Egg: Logo animation ──────────────────────────────────────────── */
+.logo-icon { cursor: pointer; }
+.logo-icon:hover {
+  background: var(--accent) !important;
+  box-shadow: 0 0 14px rgba(201,169,110,0.55);
+  transform: scale(1.13) rotate(-4deg);
+  transition: background var(--transition), box-shadow 0.3s ease, transform 0.25s ease;
+}
+.logo-icon:hover svg path { animation: waveRide 0.55s ease-in-out infinite alternate; }
+.logo-icon:hover svg line { animation: waveRide 0.55s ease-in-out 0.1s infinite alternate; }
+@keyframes waveRide {
+  from { stroke: white; stroke-width: 1.6; opacity: 1; }
+  to   { stroke: rgba(255,230,140,1); stroke-width: 2; opacity: 0.7; }
+}
+.logo-icon.egg-active {
+  background: var(--accent) !important;
+  animation: eggGlow 2s ease-in-out infinite;
+}
+@keyframes eggGlow {
+  0%, 100% { box-shadow: 0 0 8px rgba(201,169,110,0.45); }
+  50%       { box-shadow: 0 0 20px rgba(201,169,110,0.85); }
+}
+
+/* ── Easter Egg: Music Player ────────────────────────────────────────────── */
+#music-player {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: max-height 0.38s cubic-bezier(.4,0,.2,1), opacity 0.28s ease;
+}
+#music-player.open {
+  max-height: 240px;
+  opacity: 1;
+  pointer-events: all;
+}
+.music-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 10px 8px;
+  margin: 0 4px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: padding 0.38s cubic-bezier(.4,0,.2,1),
+              background 0.38s ease,
+              border-color 0.38s ease,
+              margin 0.38s cubic-bezier(.4,0,.2,1),
+              gap 0.38s ease;
+}
+.music-disc-row { display: flex; align-items: center; gap: 10px; }
+.music-disc { width: 44px; height: 44px; flex-shrink: 0; }
+.disc-svg {
+  width: 100%; height: 100%;
+  animation: discSpin 2.6s linear infinite;
+  animation-play-state: paused;
+  display: block;
+}
+.disc-svg.spinning { animation-play-state: running; }
+@keyframes discSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.music-info {
+  flex: 1; min-width: 0;
+  overflow: hidden; max-height: 60px; opacity: 1;
+  transition: max-height 0.35s cubic-bezier(.4,0,.2,1), opacity 0.25s ease;
+}
+.music-title {
+  font-size: 11.5px; font-weight: 500; color: var(--tx);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.music-meta { font-size: 10px; color: var(--tx3); margin-top: 2px; }
+.music-progress {
+  width: 100%; height: 4px; background: var(--border);
+  border-radius: 4px; overflow: hidden; cursor: pointer; flex-shrink: 0;
+  max-height: 20px; opacity: 1;
+  transition: max-height 0.35s cubic-bezier(.4,0,.2,1), opacity 0.25s ease;
+}
+.music-progress-fill {
+  height: 100%; background: var(--accent); border-radius: 4px;
+  width: 0%; transition: width 0.5s linear;
+}
+.music-controls {
+  display: flex; align-items: center; gap: 3px;
+  overflow: hidden; max-height: 40px; opacity: 1;
+  transition: max-height 0.35s cubic-bezier(.4,0,.2,1), opacity 0.25s ease;
+}
+.mc-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--tx2); padding: 4px 5px; border-radius: 7px;
+  font-size: 13px; line-height: 1; transition: color 0.18s, background 0.18s;
+  display: flex; align-items: center; justify-content: center;
+}
+.mc-btn:hover { color: var(--tx); background: var(--border); }
+.mc-btn.mc-play {
+  background: var(--primary); color: #fff;
+  font-size: 15px; padding: 5px 8px; border-radius: 8px;
+}
+.mc-btn.mc-play:hover { background: var(--primary-d); }
+.mc-vol {
+  display: flex; align-items: center; gap: 4px;
+  flex: 1; justify-content: flex-end;
+}
+.mc-vol-icon { font-size: 11px; color: var(--tx3); cursor: default; user-select: none; }
+.mc-vol-slider {
+  width: 50px; height: 3px;
+  accent-color: var(--accent); cursor: pointer;
+}
+/* Khi sidebar thu gọn: ẩn player nếu chưa mở (dùng max-height thay display:none để animate) */
+.sidebar.collapsed #music-player:not(.open) {
+  max-height: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+/* Khi sidebar thu gọn + player đang mở: animate thu thành mini disc */
+.sidebar.collapsed #music-player.open {
+  max-height: 72px;
+  opacity: 1;
+  pointer-events: all;
+}
+.sidebar.collapsed #music-player.open .music-card {
+  padding: 6px 0;
+  background: transparent;
+  border-color: transparent;
+  margin: 0;
+  gap: 0;
+}
+.sidebar.collapsed #music-player.open .music-info,
+.sidebar.collapsed #music-player.open .music-progress,
+.sidebar.collapsed #music-player.open .music-controls {
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.sidebar.collapsed #music-player.open .music-disc {
+  cursor: pointer;
+  transform: scale(0.82);
+  transition: transform 0.38s cubic-bezier(.4,0,.2,1), opacity 0.18s ease;
+}
+.sidebar.collapsed #music-player.open .music-disc:hover {
+  opacity: 0.72;
+  transform: scale(0.90);
+}
+</style>
+</head>
+<body>
+
+<!-- Mobile sidebar backdrop -->
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeMobileSidebar()"></div>
+
+<!-- ══ SIDEBAR ════════════════════════════════════════════════════════════ -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-top">
+    <span class="logo-icon" id="logo-icon" title="Nhấp vào đây...">
+      <svg viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg" style="pointer-events:none">
+        <circle cx="5"  cy="5"  r="1.1" fill="rgba(255,255,255,0.5)"/>
+        <circle cx="11" cy="5"  r="1.1" fill="white"/>
+        <circle cx="17" cy="5"  r="1.1" fill="rgba(255,255,255,0.5)"/>
+        <line x1="5" y1="5" x2="11" y2="5" stroke="rgba(255,255,255,0.25)" stroke-width="0.8"/>
+        <line x1="11" y1="5" x2="17" y2="5" stroke="rgba(255,255,255,0.25)" stroke-width="0.8"/>
+        <path d="M2 13 C5 10.5, 8 15.5, 11 13 C14 10.5, 17 15.5, 20 13"
+              stroke="white" stroke-width="1.6" stroke-linecap="round" fill="none"/>
+        <path d="M2 17 C5 14.5, 8 19.5, 11 17 C14 14.5, 17 19.5, 20 17"
+              stroke="rgba(255,255,255,0.4)" stroke-width="1.2" stroke-linecap="round" fill="none"/>
+      </svg>
+    </span>
+    <span class="logo-text">FloodAI</span>
+  </div>
+
+  <div class="sidebar-nav">
+    <div class="nav-item active" onclick="switchTab('dashboard', this)">
+      <span class="nav-icon">⬡</span>
+      <span class="nav-label">Dashboard</span>
+    </div>
+    <div class="nav-item" onclick="switchTab('pipeline', this)">
+      <span class="nav-icon">▷</span>
+      <span class="nav-label">Pipeline</span>
+    </div>
+    <div class="nav-item" onclick="switchTab('history', this)">
+      <span class="nav-icon">◫</span>
+      <span class="nav-label">Lịch sử</span>
+    </div>
+    <div class="nav-item" onclick="switchTab('live', this)">
+      <span class="nav-icon">◎</span>
+      <span class="nav-label">Live Model</span>
+    </div>
+    <div class="nav-item" onclick="switchTab('logs', this)">
+      <span class="nav-icon">≡</span>
+      <span class="nav-label">Logs</span>
+    </div>
+  </div>
+
+  <div class="sidebar-bottom">
+    <!-- ── Music Player Easter Egg ── -->
+    <div id="music-player">
+      <div class="music-card">
+        <div class="music-disc-row">
+          <div class="music-disc" onclick="musicToggle()" title="Phát / Tạm dừng">
+            <svg id="disc-svg" class="disc-svg" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="22" cy="22" r="22" fill="#18150f"/>
+              <circle cx="22" cy="22" r="19" fill="none" stroke="rgba(201,169,110,0.22)" stroke-width="1.6"/>
+              <circle cx="22" cy="22" r="16" fill="none" stroke="rgba(201,169,110,0.18)" stroke-width="1.3"/>
+              <circle cx="22" cy="22" r="13" fill="none" stroke="rgba(201,169,110,0.14)" stroke-width="1.1"/>
+              <circle cx="22" cy="22" r="10" fill="none" stroke="rgba(201,169,110,0.10)" stroke-width="0.9"/>
+              <circle cx="22" cy="22" r="7"  fill="none" stroke="rgba(201,169,110,0.08)" stroke-width="0.7"/>
+              <circle cx="22" cy="22" r="4"  fill="rgba(201,169,110,0.75)"/>
+              <circle cx="22" cy="22" r="2"  fill="#151310"/>
+            </svg>
+          </div>
+          <div class="music-info">
+            <div class="music-title" id="music-title">Chưa có bài hát</div>
+            <div class="music-meta" id="music-meta">Đặt nhạc vào /learning/music/</div>
+          </div>
+        </div>
+        <div class="music-progress" id="music-progress" onclick="musicSeek(event)" title="Click để tua">
+          <div class="music-progress-fill" id="music-progress-fill"></div>
+        </div>
+        <div class="music-controls">
+          <button class="mc-btn" onclick="musicPrev()" title="Bài trước">⏮</button>
+          <button class="mc-btn mc-play" id="mc-play-btn" onclick="musicToggle()" title="Phát / Tạm dừng">▶</button>
+          <button class="mc-btn" onclick="musicNext()" title="Bài tiếp theo">⏭</button>
+          <div class="mc-vol">
+            <span class="mc-vol-icon">🔊</span>
+            <input type="range" class="mc-vol-slider" id="mc-vol-slider"
+                   min="0" max="1" step="0.05" value="0.7"
+                   oninput="musicSetVol(this.value)" title="Âm lượng">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="collapse-btn" onclick="toggleSidebar()">
+      <span class="collapse-icon nav-icon">◁</span>
+      <span class="collapse-label">Thu gọn</span>
+    </div>
+  </div>
+</nav>
+
+<!-- ══ MAIN ═══════════════════════════════════════════════════════════════ -->
+<div class="main">
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <button class="hamburger" id="hamburger" onclick="openMobileSidebar()" title="Menu">☰</button>
+    <div class="page-title" id="page-title">Dashboard</div>
+    <div class="topbar-right">
+      <button class="icon-btn" onclick="toggleTheme()" title="Đổi theme">☽</button>
+      <button class="icon-btn" onclick="refreshAll()" title="Làm mới">↺</button>
+      <a href="/logout" class="icon-btn" title="Đăng xuất" style="text-decoration:none;font-size:13px;padding:0 10px;width:auto;gap:5px;display:flex;align-items:center">
+        <span>⏻</span><span class="nav-label" style="font-size:12px;font-weight:500">Đăng xuất</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div class="content">
+
+    <!-- ── DASHBOARD + NHẬN XÉT (gộp) ─────────────────────────────── -->
+    <div id="tab-dashboard" class="tab-pane active">
+
+      <!-- Stats row -->
+      <div class="stats-grid" id="dash-stats" style="grid-template-columns:repeat(6,1fr)">
+        <div class="stat-card">
+          <div class="stat-num" id="st-pending">—</div>
+          <div class="stat-lbl">Chờ review</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="st-reviewed">—</div>
+          <div class="stat-lbl">Đã review</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="st-train-total">—</div>
+          <div class="stat-lbl">Ảnh training</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="st-live">—</div>
+          <div class="stat-lbl">Ảnh live</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="st-runs">—</div>
+          <div class="stat-lbl">Pipeline runs</div>
+        </div>
+        <div class="stat-card" style="display:flex;align-items:center;justify-content:center">
+          <button class="btn btn-primary" style="font-size:12px;padding:7px 14px" onclick="triggerRetrain()">
+            <span class="learn-pulse"></span>Retrain AI
+          </button>
+        </div>
+      </div>
+
+      <!-- Main 2-column grid -->
+      <div class="dash-grid" style="grid-template-columns:1fr 300px">
+
+        <!-- Left: hoạt động + review queue -->
+        <div style="display:flex;flex-direction:column;gap:18px">
+          <div>
+            <div class="section-title">Hoạt động gần đây</div>
+            <div class="activity-list" id="recent-activity">
+              <div class="empty-state"><div class="spin">↻</div></div>
+            </div>
+          </div>
+          <div>
+            <div class="section-title">Hàng chờ review <span id="rv-queue-count" style="font-size:12px;color:var(--tx3);font-family:var(--font-sans);font-weight:400"></span></div>
+            <div id="rv-queue" class="review-queue">
+              <div class="empty-state"><div class="spin">↻</div><div class="empty-msg" style="margin-top:8px">Đang tải…</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: phân bố lũ + training + thiếu -->
+        <div style="display:flex;flex-direction:column;gap:18px">
+          <div>
+            <div class="section-title">Phân bố mức lũ</div>
+            <div class="card" id="level-dist" style="padding:16px">
+              <div class="empty-state" style="padding:20px 0"><div class="spin">↻</div></div>
+            </div>
+          </div>
+          <div>
+            <div class="section-title">Phân bố training</div>
+            <div class="card" id="rv-train-dist" style="padding:16px">
+              <div class="empty-state" style="padding:14px 0"><div class="spin">↻</div></div>
+            </div>
+          </div>
+          <div>
+            <div class="section-title" style="margin-bottom:10px">Level thiếu dữ liệu</div>
+            <div id="rv-underrep" class="card" style="padding:14px;font-size:12.5px;color:var(--tx2)">—</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── PIPELINE ────────────────────────────────────────────────── -->
+    <div id="tab-pipeline" class="tab-pane">
+
+      <div class="card" style="margin-bottom:18px">
+        <div class="card-title">Chạy Pipeline</div>
+
+        <!-- ── Nguồn ảnh đầu vào ── -->
+        <div class="form-row" style="margin-bottom:10px">
+          <div class="form-group" style="flex:1">
+            <span class="form-label">Nguồn ảnh đầu vào</span>
+            <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:6px;overflow:hidden;width:fit-content;margin-bottom:8px">
+              <button id="src-local-btn" onclick="switchSource('local')"
+                style="padding:5px 14px;font-size:12px;border:none;cursor:pointer;background:var(--primary);color:#fff;font-weight:600;transition:background .15s">
+                📁 Local Folder
+              </button>
+              <button id="src-drive-btn" onclick="switchSource('drive')"
+                style="padding:5px 14px;font-size:12px;border:none;cursor:pointer;background:var(--bg2);color:var(--tx2);font-weight:600;transition:background .15s">
+                ☁️ Google Drive
+              </button>
+            </div>
+            <input class="form-input" id="pl-input-path" placeholder="Đường dẫn folder ảnh (VD: C:/flood_images hoặc /home/user/images)"
+              style="width:100%">
+            <div id="pl-input-hint" style="font-size:11px;color:var(--tx3);margin-top:4px">
+              Nhập đường dẫn tuyệt đối đến folder chứa ảnh trên máy
+            </div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="pl-yolo">YOLO Model</label>
+            <select class="form-select" id="pl-yolo">
+              <option value="yolov8n.pt">yolov8n (nhanh)</option>
+              <option value="yolov8s.pt">yolov8s (cân bằng)</option>
+              <option value="yolov8m.pt">yolov8m (chính xác)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="pl-output">Output Dir</label>
+            <input class="form-input" id="pl-output" value="output" placeholder="output/">
+          </div>
+        </div>
+
+        <div class="form-row" style="margin-top:10px">
+          <div class="form-group">
+            <label class="form-label" for="pl-depth">Depth Model</label>
+            <select class="form-select" id="pl-depth">
+              <option value="depth-anything/Depth-Anything-V2-Small-hf">V2-Small — Nhanh (CPU)</option>
+              <option value="depth-anything/Depth-Anything-V2-Base-hf">V2-Base — Cân bằng</option>
+              <option value="depth-anything/Depth-Anything-V2-Large-hf">V2-Large — Chính xác (GPU)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="pl-drive">Drive Folder (output)</label>
+            <input class="form-input" id="pl-drive" value="FloodAnalysis" placeholder="Google Drive folder">
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Progress Steps -->
+        <div id="pipeline-steps" style="display:none">
+          <div class="steps-bar" id="steps-bar"></div>
+          <div class="step-labels" id="step-labels"></div>
+        </div>
+
+        <div class="flex-row" style="margin-top:4px">
+          <button class="btn btn-primary" id="run-btn" onclick="startPipeline()">▷ Chạy</button>
+          <button class="btn btn-danger"  id="stop-btn" onclick="stopPipeline()" style="display:none">■ Dừng</button>
+          <button class="btn btn-ghost"   onclick="loadDefaults()">↻ Load config</button>
+          <span id="pl-status" style="font-size:12px;color:var(--tx3);margin-left:4px"></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title" style="display:flex;justify-content:space-between">
+          <span>Pipeline Log</span>
+          <span id="log-count" style="font-weight:400;color:var(--tx3)"></span>
+        </div>
+        <div class="log-box" id="pipeline-log"></div>
+      </div>
+    </div>
+
+    <!-- ── HISTORY (merged live + run) ────────────────────────────── -->
+    <div id="tab-history" class="tab-pane">
+
+      <div class="hist-toolbar">
+        <input class="hist-search" id="hist-search" placeholder="🔍  Tìm tên file, run ID…" oninput="filterHistory()">
+        <div class="filter-chip active" data-filter="all"      onclick="setFilter('all',this)">Tất cả</div>
+        <div class="filter-chip"        data-filter="live"     onclick="setFilter('live',this)">Live</div>
+        <div class="filter-chip"        data-filter="run"      onclick="setFilter('run',this)">Pipeline</div>
+        <div class="filter-chip"        data-filter="labeled"  onclick="setFilter('labeled',this)">Có nhãn</div>
+        <button class="btn btn-ghost" style="margin-left:auto;padding:6px 12px;font-size:12px" onclick="loadHistory()">↺ Làm mới</button>
+      </div>
+
+      <div id="hist-container">
+        <div class="empty-state"><div class="spin">↻</div><div class="empty-msg" style="margin-top:8px">Đang tải…</div></div>
+      </div>
+    </div>
+
+    <!-- ── LIVE MODEL ──────────────────────────────────────────────── -->
+    <div id="tab-live" class="tab-pane">
+
+      <div class="card" style="margin-bottom:18px">
+        <div class="card-title">Phân tích ảnh tức thì</div>
+
+        <div class="drop-zone" id="drop-zone"
+             onclick="document.getElementById('file-input').click()"
+             ondragover="dropOver(event)"
+             ondragleave="dropLeave(event)"
+             ondrop="dropFile(event)">
+          <div class="drop-zone-icon">🖼</div>
+          <div class="drop-zone-text">Kéo thả hoặc nhấn để chọn ảnh</div>
+          <div class="drop-zone-hint">JPG, PNG — tối đa 10MB</div>
+        </div>
+        <input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleFileSelect(event)">
+
+        <div class="live-result" id="live-result">
+          <div class="result-grid">
+            <img id="res-img" class="result-img" src="" alt="">
+            <div>
+              <div class="result-stats" id="result-stats"></div>
+              <div id="res-overlay-row" style="margin-top:10px;display:none">
+                <div class="card-title">AI Overlay</div>
+                <img id="res-overlay" style="max-width:100%;border-radius:9px;margin-top:6px" src="" alt="">
+              </div>
+            </div>
+          </div>
+          <div id="ai-info" style="margin-top:14px;font-size:12px;color:var(--tx3)"></div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ── LOGS ────────────────────────────────────────────────────── -->
+    <div id="tab-logs" class="tab-pane">
+      <div class="card">
+        <div class="card-title" style="display:flex;justify-content:space-between">
+          <span>Pipeline Log — toàn bộ</span>
+          <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="clearLog()">Xóa</button>
+        </div>
+        <div class="log-box" id="full-log" style="height:60vh"></div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<!-- ══ MODAL ══════════════════════════════════════════════════════════════ -->
+<div class="modal-bg" id="modal" onclick="closeModal(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">—</span>
+      <button class="icon-btn" onclick="closeModalBtn()">✕</button>
+    </div>
+    <img class="modal-img" id="modal-img" src="" alt="">
+  </div>
+</div>
+
+<!-- ══ ANNOTATE MODAL ══════════════════════════════════════════════════════ -->
+<div class="annotate-modal-bg" id="annotate-modal">
+  <div class="annotate-modal-box">
+    <div class="annotate-modal-header">
+      <span class="annotate-modal-title">📝 Nhận xét &amp; Huấn luyện</span>
+      <button class="icon-btn" onclick="closeAnnotateModal()">✕</button>
+    </div>
+    <div class="annotate-modal-body">
+      <img class="annotate-img-preview" id="ann-img-preview" src="" alt="">
+
+      <div class="annotate-pred-row" id="ann-pred-row" style="display:none">
+        <span>🤖 Dự đoán:</span>
+        <span id="ann-pred-level" class="reason-chip"></span>
+        <span id="ann-pred-depth" style="font-weight:600;color:var(--tx)"></span>
+        <span id="ann-pred-conf" class="reason-chip conf-med"></span>
+      </div>
+
+      <div class="annotate-form-grid">
+        <div class="form-group">
+          <label class="form-label" for="ann-level">Mức lũ thực tế *</label>
+          <select class="form-select" id="ann-level">
+            <option value="">— Chọn mức lũ —</option>
+            <option value="NO_FLOOD">Không ngập</option>
+            <option value="PUDDLE">Vũng nước (&lt;5cm)</option>
+            <option value="ANKLE">Ngập mắt cá (5–20cm)</option>
+            <option value="KNEE">Ngập đầu gối (20–50cm)</option>
+            <option value="WAIST">Ngập hông (50–120cm)</option>
+            <option value="CHEST">Ngập ngực (120–200cm)</option>
+            <option value="SUBMERGED">Ngập hoàn toàn (&gt;200cm)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="ann-depth">Độ sâu thực tế (cm)</label>
+          <input class="form-input" type="number" id="ann-depth" min="0" max="500" placeholder="VD: 45">
+        </div>
+        <div class="form-group annotate-form-full">
+          <label class="form-label" for="ann-notes">Ghi chú</label>
+          <input class="form-input" id="ann-notes" placeholder="VD: ảnh từ Facebook, góc chụp từ trên cao…">
+        </div>
+      </div>
+
+      <div style="font-size:12px;color:var(--tx3);line-height:1.6;background:var(--bg2);padding:10px 14px;border-radius:8px">
+        <span class="learn-pulse"></span>
+        Nhãn bạn cung cấp sẽ được lưu vào <strong>training_images.db</strong> và kích hoạt
+        retrain AI ngay trong nền. Model sẽ học từ correction này cho các ảnh tương tự.
+      </div>
+    </div>
+    <div class="annotate-footer">
+      <button class="btn btn-ghost" onclick="closeAnnotateModal()">Hủy</button>
+      <button class="btn btn-primary" id="ann-submit-btn" onclick="submitAnnotation()">
+        ✓ Xác nhận &amp; Học
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ TOASTS ══════════════════════════════════════════════════════════════ -->
+<div id="toast-container"></div>
+
+<!-- ══ JS ════════════════════════════════════════════════════════════════ -->
+<script>
+// ── Helpers ────────────────────────────────────────────────────────────────
+function toast(msg, type='ok') {
+  const icons = { ok:'✓', err:'✕', warn:'⚠' };
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span>${icons[type]||'•'}</span><span>${msg}</span>`;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+
+function openModal(src, title) {
+  document.getElementById('modal-img').src = src;
+  document.getElementById('modal-title').textContent = title || src;
+  document.getElementById('modal').classList.add('open');
+}
+function closeModal(e) {
+  if (e.target === document.getElementById('modal')) closeModalBtn();
+}
+function closeModalBtn() {
+  document.getElementById('modal').classList.remove('open');
+  document.getElementById('modal-img').src = '';
+}
+
+// ── Theme ──────────────────────────────────────────────────────────────────
+function toggleTheme() {
+  const html = document.documentElement;
+  const dark = html.dataset.theme === 'dark';
+  html.dataset.theme = dark ? 'light' : 'dark';
+  document.querySelector('.topbar .icon-btn').textContent = dark ? '☽' : '☀';
+  localStorage.setItem('theme', html.dataset.theme);
+}
+(function(){
+  const t = localStorage.getItem('theme');
+  if (t) { document.documentElement.dataset.theme = t; }
+})();
+
+// ── Sidebar collapse ───────────────────────────────────────────────────────
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('collapsed');
+}
+
+// ── Mobile sidebar ─────────────────────────────────────────────────────────
+function openMobileSidebar() {
+  document.getElementById('sidebar').classList.add('mobile-open');
+  document.getElementById('sidebar-overlay').classList.add('open');
+}
+function closeMobileSidebar() {
+  document.getElementById('sidebar').classList.remove('mobile-open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
+}
+
+// ── Tab switching ──────────────────────────────────────────────────────────
+const TAB_TITLES = {
+  dashboard: 'Dashboard & Nhận xét',
+  pipeline:  'Pipeline',
+  history:   'Lịch sử',
+  live:      'Live Model',
+  logs:      'Logs',
+};
+let activeTab = 'dashboard';
+
+function switchTab(name, el) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  if (el) el.classList.add('active');
+  document.getElementById('page-title').textContent = TAB_TITLES[name] || name;
+  activeTab = name;
+  if (name === 'dashboard') loadDashboard();
+  if (name === 'history')   loadHistory();
+  if (name === 'logs')      renderFullLog();
+  if (window.innerWidth <= 768) closeMobileSidebar();
+}
+
+// ── Dashboard ──────────────────────────────────────────────────────────────
+let _stats = {};
+let _liveItems = [];
+let _runItems  = [];
+
+async function loadDashboard() {
+  try {
+    const [sr, lr, rr, casesRes, trainRes] = await Promise.all([
+      fetch('/stats').then(r=>r.json()).catch(()=>({})),
+      fetch('/live_history').then(r=>r.json()).catch(()=>({items:[]})),
+      fetch('/run_history').then(r=>r.json()).catch(()=>[]),
+      fetch('/review_cases').then(r=>r.json()).catch(()=>({cases:[]})),
+      fetch('/training_summary').then(r=>r.json()).catch(()=>({total:0,by_level:{}})),
+    ]);
+
+    _stats = sr;
+    _liveItems = lr.items || [];
+    _runItems  = rr || [];
+
+    // Stats
+    document.getElementById('st-pending').textContent    = sr.pending   ?? '—';
+    document.getElementById('st-reviewed').textContent   = sr.reviewed  ?? '—';
+    document.getElementById('st-train-total').textContent= trainRes.total ?? '—';
+    document.getElementById('st-live').textContent       = _liveItems.length;
+    document.getElementById('st-runs').textContent       = _runItems.length;
+
+    // Review queue
+    renderReviewQueue(casesRes.cases || []);
+
+    // Training distribution
+    renderTrainDist(trainRes.by_level || {});
+
+    // Underrepresented levels
+    const underrep = casesRes.underrepresented || [];
+    const urEl = document.getElementById('rv-underrep');
+    if (urEl) {
+      if (!underrep.length) {
+        urEl.innerHTML = '<span style="color:var(--ok)">✓ Dữ liệu training cân đối</span>';
+      } else {
+        urEl.innerHTML = underrep.map(lv =>
+          `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+             <span style="width:10px;height:10px;border-radius:50%;background:${LEVEL_COLORS_FULL[lv]||'#888'};display:inline-block;flex-shrink:0"></span>
+             <span style="font-weight:600;color:var(--tx)">${LEVEL_VI[lv]||lv}</span>
+             <span style="font-size:11px;color:var(--warn)">— cần thêm ảnh</span>
+           </div>`
+        ).join('');
+      }
+    }
+
+    // Recent activity
+    const acts = [];
+    _liveItems.slice(0, 4).forEach(i => {
+      acts.push({
+        icon: '◎',
+        title: i.name,
+        sub: i.db ? `${i.db.actual_level} · ${i.db.actual_depth} cm` : 'Live prediction',
+        time: (i.mtime||'').substring(5,16),
+      });
+    });
+    _runItems.slice(0, 3).forEach(r => {
+      acts.push({
+        icon: '▷',
+        title: r.run_id || r.run_dir || 'Run',
+        sub: `${r.total_analyzed||0} ảnh · ${r.total_filtered||0} lọc`,
+        time: r.run_dir ? r.run_dir.substring(0,10) : '',
+      });
+    });
+    const al = document.getElementById('recent-activity');
+    if (!acts.length) {
+      al.innerHTML = '<div class="empty-state" style="padding:20px 0"><div class="empty-icon">○</div><div class="empty-msg">Chưa có hoạt động</div></div>';
+    } else {
+      al.innerHTML = acts.slice(0,6).map(a => `
+        <div class="activity-item">
+          <span class="act-icon">${a.icon}</span>
+          <div class="act-info">
+            <div class="act-title">${a.title}</div>
+            <div class="act-time">${a.sub}</div>
+          </div>
+          <span class="act-time">${a.time}</span>
+        </div>
+      `).join('');
+    }
+
+    // Level distribution
+    const ld = document.getElementById('level-dist');
+    const labeledItems = _liveItems.filter(i => i.db && i.db.actual_level);
+    if (!labeledItems.length) {
+      ld.innerHTML = '<div class="empty-state" style="padding:14px 0"><div class="empty-icon">○</div><div class="empty-msg">Chưa có nhãn</div></div>';
+    } else {
+      const counts = {};
+      const COLORS = {
+        'Không ngập':'#22c984','NO_FLOOD':'#22c984',
+        'Ngập nhẹ':'#34d399','PUDDLE':'#34d399','ANKLE':'#6dd9a8',
+        'Ngập đầu gối':'#f0a428','KNEE':'#f0a428',
+        'Ngập ngang hông':'#f97316','WAIST':'#f97316',
+        'Ngập ngang ngực':'#e85065','CHEST':'#e85065',
+        'Ngập hoàn toàn':'#7f1d1d','SUBMERGED':'#991b1b',
+      };
+      labeledItems.forEach(i => {
+        const lv = i.db.actual_level;
+        counts[lv] = (counts[lv]||0) + 1;
+      });
+      const total = Object.values(counts).reduce((a,b)=>a+b,0);
+      ld.innerHTML = Object.entries(counts).map(([lv, n]) => {
+        const c = COLORS[lv] || '#888';
+        const pct = Math.round(n/total*100);
+        return `<div style="margin-bottom:9px">
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+            <span style="color:var(--tx)">${lv}</span>
+            <span style="color:var(--tx3)">${n} (${pct}%)</span>
+          </div>
+          <div style="height:7px;border-radius:4px;background:var(--bg2);overflow:hidden">
+            <div style="height:100%;border-radius:4px;background:${c};width:${pct}%;transition:width 0.6s ease"></div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+  } catch(e) {
+    toast('Lỗi tải dashboard: ' + e.message, 'err');
+  }
+}
+
+// ── Pipeline ───────────────────────────────────────────────────────────────
+const STEPS = ['Tải ảnh','Sao chép','Địa điểm','Depth AI','Báo cáo'];
+let _logOffset = 0;
+let _pollTimer = null;
+let _logStore  = [];
+
+function renderSteps(current) {
+  const bar = document.getElementById('steps-bar');
+  const lbl = document.getElementById('step-labels');
+  bar.innerHTML = STEPS.map((_, i) => {
+    let cls = i < current ? 'done' : (i === current ? 'active' : '');
+    return `<div class="step-seg ${cls}"></div>`;
+  }).join('');
+  lbl.innerHTML = STEPS.map((s, i) => {
+    let cls = i < current ? 'done' : (i === current ? 'active' : '');
+    return `<div class="step-lbl ${cls}">${s}</div>`;
+  }).join('');
+  document.getElementById('pipeline-steps').style.display = 'block';
+}
+
+// ── Input source switcher ──────────────────────────────────────────────────
+let _sourceMode = 'local';
+function switchSource(mode) {
+  _sourceMode = mode;
+  const localBtn = document.getElementById('src-local-btn');
+  const driveBtn = document.getElementById('src-drive-btn');
+  const hint     = document.getElementById('pl-input-hint');
+  const inp      = document.getElementById('pl-input-path');
+  if (mode === 'local') {
+    localBtn.style.background = 'var(--primary)';
+    localBtn.style.color      = '#fff';
+    driveBtn.style.background = 'var(--bg2)';
+    driveBtn.style.color      = 'var(--tx2)';
+    inp.placeholder = 'Đường dẫn folder ảnh (VD: C:/flood_images hoặc /home/user/images)';
+    hint.textContent = 'Nhập đường dẫn tuyệt đối đến folder chứa ảnh trên máy';
+  } else {
+    driveBtn.style.background = 'var(--primary)';
+    driveBtn.style.color      = '#fff';
+    localBtn.style.background = 'var(--bg2)';
+    localBtn.style.color      = 'var(--tx2)';
+    inp.placeholder = 'Link Drive hoặc Folder ID (VD: https://drive.google.com/drive/folders/... hoặc 1abc...)';
+    hint.textContent = 'Dán link Google Drive folder chứa ảnh lũ. Cần cấp quyền truy cập cho service account.';
+  }
+}
+
+async function startPipeline() {
+  const inputPath = document.getElementById('pl-input-path').value.trim();
+  if (!inputPath) {
+    toast('Vui lòng nhập đường dẫn hoặc link Drive!', 'err');
+    document.getElementById('pl-input-path').focus();
+    return;
+  }
+  // Normalise Drive URLs → folder ID
+  let resolvedPath = inputPath;
+  if (_sourceMode === 'drive') {
+    const m = inputPath.match(/\/folders\/([^/?&]+)/);
+    if (m) resolvedPath = m[1];
+  }
+  const cfg = {
+    mode:          _sourceMode,
+    input_path:    resolvedPath,
+    yolo_model:    document.getElementById('pl-yolo').value,
+    output_dir:    document.getElementById('pl-output').value,
+    depth_model:   document.getElementById('pl-depth').value,
+    drive_folder:  document.getElementById('pl-drive').value,
+  };
+  try {
+    const r = await fetch('/start_pipeline', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(cfg)
+    });
+    const d = await r.json();
+    if (d.error) { toast(d.error, 'err'); return; }
+    toast('Pipeline đã bắt đầu ▷', 'ok');
+    document.getElementById('run-btn').style.display  = 'none';
+    document.getElementById('stop-btn').style.display = '';
+    _logOffset = 0;
+    _logStore  = [];
+    document.getElementById('pipeline-log').innerHTML = '';
+    document.getElementById('full-log').innerHTML = '';
+    renderSteps(0);
+    _pollTimer = setInterval(pollLog, 800);
+  } catch(e) {
+    toast('Lỗi: ' + e.message, 'err');
+  }
+}
+
+async function stopPipeline() {
+  await fetch('/stop_pipeline', {method:'POST'});
+  toast('Đã dừng pipeline ■', 'warn');
+  clearInterval(_pollTimer);
+  document.getElementById('run-btn').style.display  = '';
+  document.getElementById('stop-btn').style.display = 'none';
+  document.getElementById('pl-status').textContent = 'Đã dừng';
+}
+
+async function pollLog() {
+  try {
+    const r = await fetch(`/pipeline_log?offset=${_logOffset}`);
+    const d = await r.json();
+    if (d.lines && d.lines.length) {
+      _logOffset = d.next_offset;
+      d.lines.forEach(l => {
+        _logStore.push(l);
+        appendLog(l);
+      });
+    }
+    renderSteps(d.step || 0);
+    document.getElementById('pl-status').textContent =
+      d.status === 'running' ? '● Đang chạy…' :
+      d.status === 'done'    ? '✓ Hoàn thành' :
+      d.status === 'error'   ? '✕ Lỗi'        : '';
+
+    if (d.status !== 'running') {
+      clearInterval(_pollTimer);
+      document.getElementById('run-btn').style.display  = '';
+      document.getElementById('stop-btn').style.display = 'none';
+      if (d.status === 'done')  toast('Pipeline hoàn thành ✓', 'ok');
+      if (d.status === 'error') toast('Pipeline gặp lỗi ✕', 'err');
+    }
+  } catch(e) {}
+}
+
+function appendLog(l) {
+  const box = document.getElementById('pipeline-log');
+  const div = document.createElement('div');
+  div.className = `log-line log-${l.level}`;
+  div.innerHTML = `<span class="log-ts">${l.ts}</span><span>${escHtml(l.text)}</span>`;
+  box.appendChild(div);
+  if (box.children.length > 200) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+
+function renderFullLog() {
+  const box = document.getElementById('full-log');
+  box.innerHTML = '';
+  _logStore.forEach(l => {
+    const div = document.createElement('div');
+    div.className = `log-line log-${l.level}`;
+    div.innerHTML = `<span class="log-ts">${l.ts}</span><span>${escHtml(l.text)}</span>`;
+    box.appendChild(div);
+  });
+  box.scrollTop = box.scrollHeight;
+}
+function clearLog() {
+  _logStore = [];
+  document.getElementById('full-log').innerHTML = '';
+  document.getElementById('pipeline-log').innerHTML = '';
+}
+
+async function loadDefaults() {
+  try {
+    const r = await fetch('/pipeline_defaults');
+    const d = await r.json();
+    if (d.yolo_model)   document.getElementById('pl-yolo').value    = d.yolo_model;
+    if (d.depth_model)  document.getElementById('pl-depth').value   = d.depth_model;
+    if (d.output_dir)   document.getElementById('pl-output').value  = d.output_dir;
+    if (d.drive_folder) document.getElementById('pl-drive').value   = d.drive_folder;
+    toast('Đã load từ config.yaml ✓', 'ok');
+  } catch(e) { toast('Không đọc được config.yaml', 'warn'); }
+}
+
+// ── History (merged live + run) ────────────────────────────────────────────
+let _histData   = [];
+let _histFilter = 'all';
+let _histSearch = '';
+
+const LEVEL_COLORS = {
+  'Không ngập':'#22c984','NO_FLOOD':'#22c984',
+  'Ngập nhẹ':'#34d399','PUDDLE':'#34d399','ANKLE':'#6dd9a8',
+  'Ngập đầu gối':'#f0a428','KNEE':'#f0a428',
+  'Ngập ngang hông':'#f97316','WAIST':'#f97316',
+  'Ngập ngang ngực':'#e85065','CHEST':'#e85065',
+  'Ngập hoàn toàn':'#7f1d1d','SUBMERGED':'#991b1b',
+};
+
+async function loadHistory() {
+  document.getElementById('hist-container').innerHTML =
+    '<div class="empty-state"><div class="spin">↻</div><div class="empty-msg" style="margin-top:8px">Đang tải…</div></div>';
+  try {
+    const [lr, rr] = await Promise.all([
+      fetch('/live_history').then(r=>r.json()).catch(()=>({items:[]})),
+      fetch('/run_history').then(r=>r.json()).catch(()=>[]),
+    ]);
+
+    _histData = [];
+
+    // Live items
+    (lr.items||[]).forEach(item => {
+      _histData.push({ type:'live', item });
+    });
+
+    // Run items
+    (rr||[]).forEach(run => {
+      _histData.push({ type:'run', item: run });
+    });
+
+    // Sort by timestamp (newest first)
+    _histData.sort((a, b) => {
+      const tA = a.type==='live' ? (a.item.mtime||'') : (a.item.run_dir||'');
+      const tB = b.type==='live' ? (b.item.mtime||'') : (b.item.run_dir||'');
+      return tB.localeCompare(tA);
+    });
+
+    renderHistory();
+  } catch(e) {
+    toast('Lỗi tải lịch sử: ' + e.message, 'err');
+    document.getElementById('hist-container').innerHTML =
+      `<div class="empty-state"><div class="empty-icon">!</div><div class="empty-msg">${e.message}</div></div>`;
+  }
+}
+
+function setFilter(f, el) {
+  _histFilter = f;
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  renderHistory();
+}
+
+function filterHistory() {
+  _histSearch = document.getElementById('hist-search').value.toLowerCase();
+  renderHistory();
+}
+
+function renderHistory() {
+  const container = document.getElementById('hist-container');
+
+  let data = _histData;
+
+  // Type filter
+  if (_histFilter !== 'all') {
+    if (_histFilter === 'labeled') {
+      data = data.filter(d => d.type === 'live' && d.item.db);
+    } else {
+      data = data.filter(d => d.type === _histFilter);
+    }
+  }
+
+  // Search
+  if (_histSearch) {
+    data = data.filter(d => {
+      const name = d.type === 'live' ? d.item.name : (d.item.run_id||d.item.run_dir||'');
+      return name.toLowerCase().includes(_histSearch);
+    });
+  }
+
+  if (!data.length) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">○</div><div class="empty-title">Không có kết quả</div><div class="empty-msg">Thử thay đổi bộ lọc hoặc từ khóa tìm kiếm</div></div>';
+    return;
+  }
+
+  // Separate into two sections
+  const liveData = data.filter(d => d.type === 'live');
+  const runData  = data.filter(d => d.type === 'run');
+
+  let html = '';
+
+  if (liveData.length) {
+    html += `<div class="section-title" style="margin-bottom:14px">Live Model (${liveData.length})</div>`;
+    html += `<div class="hist-grid" style="margin-bottom:22px">`;
+    liveData.forEach(({item}) => {
+      const src = item.overlay ? `/live_image/${item.overlay}` : `/live_image/${item.name}`;
+      const db  = item.db;
+      const lvlColor = db ? (LEVEL_COLORS[db.actual_level]||'#888') : null;
+      html += `
+        <div class="hist-card" onclick="openModal('${escHtml(src)}','${escHtml(item.name)}')">
+          <div class="hist-thumb">
+            <img src="${escHtml(src)}" onerror="this.src='/live_image/${escHtml(item.name)}';this.onerror=null" loading="lazy">
+            <span class="hist-type-badge badge-live">live</span>
+            ${item.overlay ? `<span class="hist-type-badge badge-overlay">overlay</span>` : ''}
+          </div>
+          <div class="hist-meta">
+            <div class="hist-name" title="${escHtml(item.name)}">${escHtml(item.name)}</div>
+            ${db ? `
+              <div class="hist-badges">
+                <span class="level-badge" style="background:${lvlColor}20;color:${lvlColor};border:1px solid ${lvlColor}40">${escHtml(db.actual_level)}</span>
+                <span style="font-family:monospace;font-size:11px;font-weight:700;color:var(--tx)">${db.actual_depth} cm</span>
+              </div>
+            ` : `<div style="margin-bottom:6px"><span class="badge" style="background:var(--bg2);color:var(--tx3);font-size:10px">Chưa có nhãn</span></div>`}
+            <div class="hist-footer">
+              <span class="hist-size">${(item.size_kb||0).toFixed(0)} KB</span>
+              <button class="hist-annotate-btn" onclick="event.stopPropagation();openAnnotateFromHistory('${escHtml(item.name)}','${escHtml(src)}',${JSON.stringify(db||null)})">📝 Nhận xét</button>
+            </div>
+          </div>
+        </div>`;
+    });
+    html += `</div>`;
+  }
+
+  if (runData.length) {
+    html += `<div class="section-title" style="margin-bottom:14px">Pipeline Runs (${runData.length})</div>`;
+    html += `<div style="display:flex;flex-direction:column;gap:14px">`;
+    runData.forEach(({item: run}) => {
+      const badges = Object.entries(run.flood_summary||{})
+        .map(([lv,n]) => `<span class="run-badge">${lv}: ${n}</span>`).join('');
+      const overlays = (run.overlay_images||[]).slice(0,6)
+        .map(fn => `<img src="/run_image/${encodeURIComponent(run.run_dir)}/depth_overlays/${fn}"
+          onclick="openModal(this.src,'${escHtml(fn)}')" loading="lazy"
+          onerror="this.style.display='none'">`).join('');
+      const origs = (run.original_images||[]).slice(0,6)
+        .map(fn => `<img src="/run_image/${encodeURIComponent(run.run_dir)}/original_images/${fn}"
+          onclick="openModal(this.src,'${escHtml(fn)}')" loading="lazy"
+          onerror="this.style.display='none'">`).join('');
+      const safeDir = escHtml(run.run_dir||'');
+      html += `
+        <div class="run-hist-card" id="runcard-${safeDir}">
+          <div class="run-hdr">
+            <div>
+              <div class="run-id">${escHtml(run.run_id||run.run_dir||'Run')}</div>
+              <div class="run-meta">
+                <span>📥 ${run.total_crawled||0} ảnh vào</span>
+                <span>🔍 ${run.total_filtered||0} lọc</span>
+                <span>🧠 ${run.total_analyzed||0} phân tích</span>
+                ${run.drive_folder&&run.drive_folder!=='N/A'
+                  ? `<span><a href="https://drive.google.com/drive/folders/${run.drive_folder}" target="_blank" style="color:var(--primary)">Drive ↗</a></span>` : ''}
+              </div>
+            </div>
+            <div class="run-badges">${badges}</div>
+          </div>
+          ${overlays ? `<div style="font-size:11px;color:var(--tx3);margin:8px 0 4px;text-transform:uppercase;letter-spacing:.06em">AI Overlay</div><div class="img-strip">${overlays}</div>` : ''}
+          ${origs ? `<div style="font-size:11px;color:var(--tx3);margin:8px 0 4px;text-transform:uppercase;letter-spacing:.06em">Ảnh gốc</div><div class="img-strip">${origs}</div>` : ''}
+          <button class="run-detail-btn" onclick="toggleRunDetail('${safeDir}', this)">📊 Xem chi tiết</button>
+          <div class="run-detail-panel" id="rdpanel-${safeDir}">
+            <div class="run-detail-inner" id="rdinner-${safeDir}">
+              <div class="rd-empty">Đang tải…</div>
+            </div>
+          </div>
+        </div>`;
+    });
+    html += `</div>`;
+  }
+
+  container.innerHTML = html;
+}
+
+// ── Run Detail Panel ────────────────────────────────────────────────────────
+const _rdCache = {};
+
+async function toggleRunDetail(runDir, btn) {
+  const panel = document.getElementById('rdpanel-' + runDir);
+  const inner = document.getElementById('rdinner-' + runDir);
+  if (!panel) return;
+
+  const isOpen = panel.classList.contains('open');
+  if (isOpen) {
+    panel.classList.remove('open');
+    btn.textContent = '📊 Xem chi tiết';
+    return;
+  }
+
+  panel.classList.add('open');
+  btn.textContent = '▲ Thu gọn';
+
+  if (_rdCache[runDir]) {
+    renderRunDetail(inner, _rdCache[runDir], runDir);
+    return;
+  }
+
+  inner.innerHTML = '<div class="rd-empty"><div class="spin">↻</div><div style="margin-top:8px">Đang tải dữ liệu…</div></div>';
+  try {
+    const data = await fetch('/run_detail/' + encodeURIComponent(runDir)).then(r => r.json());
+    _rdCache[runDir] = data;
+    renderRunDetail(inner, data, runDir);
+  } catch(e) {
+    inner.innerHTML = `<div class="rd-empty">Lỗi tải chi tiết: ${e.message}</div>`;
+  }
+}
+
+const LEVEL_ORDER  = ['NO_FLOOD','PUDDLE','ANKLE','KNEE','WAIST','CHEST','SUBMERGED'];
+const LEVEL_LABELS = {
+  NO_FLOOD:'Không ngập', PUDDLE:'Vũng nước (<5cm)', ANKLE:'Mắt cá (5-20cm)',
+  KNEE:'Đầu gối (20-50cm)', WAIST:'Hông (50-120cm)', CHEST:'Ngực (120-200cm)',
+  SUBMERGED:'Ngập hoàn toàn (>200cm)',
+};
+const LEVEL_CHART_COLORS = {
+  NO_FLOOD:'#22c55e', PUDDLE:'#86efac', ANKLE:'#fde047',
+  KNEE:'#fb923c', WAIST:'#ef4444', CHEST:'#dc2626', SUBMERGED:'#7f1d1d',
+};
+
+function renderRunDetail(container, data, runDir) {
+  const s   = data.summary || {};
+  const rows = data.rows   || [];
+
+  // ── KPI row ──────────────────────────────────────────────────────────────
+  const crawled  = s.total_crawled  || 0;
+  const filtered = s.total_filtered || 0;
+  const analyzed = s.total_analyzed || 0;
+  const hasDrive = s.drive_folder && s.drive_folder !== 'N/A';
+  const kpis = `
+    <div class="rd-kpi-row">
+      <div class="rd-kpi"><div class="rd-kpi-num">${crawled}</div><div class="rd-kpi-lbl">📥 Ảnh đầu vào</div></div>
+      <div class="rd-kpi"><div class="rd-kpi-num">${filtered}</div><div class="rd-kpi-lbl">🔍 Sau lọc</div></div>
+      <div class="rd-kpi"><div class="rd-kpi-num">${analyzed}</div><div class="rd-kpi-lbl">🧠 Đã phân tích</div></div>
+      <div class="rd-kpi">
+        <div class="rd-kpi-num" style="font-size:18px">${hasDrive ? '✅' : '—'}</div>
+        <div class="rd-kpi-lbl">${hasDrive
+          ? `<a href="https://drive.google.com/drive/folders/${s.drive_folder}" target="_blank" style="color:var(--primary)">Drive ↗</a>`
+          : 'Drive'}</div>
+      </div>
+    </div>`;
+
+  // ── Level bar chart ───────────────────────────────────────────────────────
+  const floodSummary = s.flood_summary || {};
+  const maxCount = Math.max(1, ...Object.values(floodSummary));
+  const levelBars = LEVEL_ORDER.filter(k => floodSummary[k])
+    .map(k => {
+      const pct = Math.round((floodSummary[k] / maxCount) * 100);
+      return `<div class="rd-level-row">
+        <div class="rd-level-name">${LEVEL_LABELS[k]||k}</div>
+        <div class="rd-level-bar-wrap"><div class="rd-level-bar" style="width:${pct}%;background:${LEVEL_CHART_COLORS[k]||'#888'}"></div></div>
+        <div class="rd-level-count">${floodSummary[k]}</div>
+      </div>`;
+    }).join('');
+
+  const levelSection = levelBars
+    ? `<div class="rd-section">
+        <div class="rd-section-title">Phân bố mức lũ</div>
+        <div class="rd-level-bars">${levelBars}</div>
+      </div>`
+    : '';
+
+  // ── Confidence stats (from CSV rows) ─────────────────────────────────────
+  let confSection = '';
+  if (rows.length && rows[0].confidence !== undefined) {
+    const confs = rows.map(r => parseFloat(r.confidence)).filter(v => !isNaN(v));
+    if (confs.length) {
+      const high = confs.filter(v => v >= 0.7).length;
+      const med  = confs.filter(v => v >= 0.4 && v < 0.7).length;
+      const low  = confs.filter(v => v < 0.4).length;
+      const pHigh = ((high/confs.length)*100).toFixed(0);
+      const pMed  = ((med /confs.length)*100).toFixed(0);
+      const pLow  = ((low /confs.length)*100).toFixed(0);
+      confSection = `<div class="rd-section">
+        <div class="rd-section-title">Phân bố Confidence</div>
+        <div class="rd-conf-row">
+          <div class="rd-conf-card">
+            <div class="rd-conf-num" style="color:var(--ok)">${high}</div>
+            <div class="rd-conf-lbl">HIGH ≥0.7 (${pHigh}%)</div>
+          </div>
+          <div class="rd-conf-card">
+            <div class="rd-conf-num" style="color:var(--warn)">${med}</div>
+            <div class="rd-conf-lbl">MEDIUM 0.4–0.7 (${pMed}%)</div>
+          </div>
+          <div class="rd-conf-card">
+            <div class="rd-conf-num" style="color:var(--danger)">${low}</div>
+            <div class="rd-conf-lbl">LOW <0.4 — cần review (${pLow}%)</div>
+          </div>
+        </div>
+      </div>`;
+    }
+  }
+
+  // ── Results table ─────────────────────────────────────────────────────────
+  let tableSection = '';
+  if (rows.length) {
+    const cols = Object.keys(rows[0]);
+    const keyCols = ['image_id','flood_level','flood_depth','confidence','source'].filter(c => cols.includes(c));
+    const displayCols = keyCols.length ? keyCols : cols.slice(0, 6);
+    const levels = [...new Set(rows.map(r => r.flood_level).filter(Boolean))].sort();
+    const levelOptions = levels.map(l => `<option value="${escHtml(l)}">${escHtml(l)}</option>`).join('');
+    const rid = 'rdtbl-' + runDir.replace(/[^a-z0-9]/gi,'_');
+
+    const tableHead = displayCols.map(c => `<th>${escHtml(c)}</th>`).join('');
+    const tableRows = rows.slice(0, 500).map(r => {
+      const cells = displayCols.map(c => `<td>${escHtml(String(r[c]??''))}</td>`).join('');
+      const lvl = r.flood_level||'';
+      const conf = parseFloat(r.confidence||'1');
+      return `<tr data-level="${escHtml(lvl)}" data-conf="${isNaN(conf)?1:conf}">${cells}</tr>`;
+    }).join('');
+
+    tableSection = `<div class="rd-section">
+      <div class="rd-section-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Kết quả chi tiết (${rows.length} ảnh)</span>
+        <a class="rd-csv-btn" href="/run_csv/${encodeURIComponent(runDir)}">⬇ Tải CSV</a>
+      </div>
+      <div class="rd-table-toolbar">
+        <label style="font-size:12px;color:var(--tx2)" for="rdlevel-${runDir}">Mức lũ:</label>
+        <select id="rdlevel-${runDir}" style="background:var(--bg2);border:1px solid var(--border);color:var(--tx);border-radius:6px;padding:4px 8px;font-size:12px"
+          onchange="filterRdTable('${runDir}', this.value, null)">
+          <option value="">Tất cả</option>${levelOptions}
+        </select>
+        <label style="font-size:12px;color:var(--tx2)" id="rdconf-lbl-${runDir}" for="rdconf-input-${runDir}">Confidence ≥ 0.0</label>
+        <input id="rdconf-input-${runDir}" type="range" min="0" max="1" step="0.05" value="0"
+          style="width:100px"
+          oninput="document.getElementById('rdconf-lbl-${runDir}').textContent='Confidence ≥ '+parseFloat(this.value).toFixed(2);filterRdTable('${runDir}', null, this.value)">
+      </div>
+      <div class="rd-table-wrap" id="${rid}">
+        <table class="rd-table">
+          <thead><tr>${tableHead}</tr></thead>
+          <tbody id="${rid}-body">${tableRows}</tbody>
+        </table>
+      </div>
+      <div style="margin-top:6px;font-size:11px;color:var(--tx3)" id="${rid}-count">${rows.length} dòng</div>
+    </div>`;
+
+    // store filter state per run
+    window._rdFilter = window._rdFilter || {};
+    window._rdFilter[runDir] = { level: '', conf: 0 };
+  } else {
+    tableSection = `<div class="rd-section"><div class="rd-empty">Không có file CSV cho run này.</div></div>`;
+  }
+
+  container.innerHTML = kpis + levelSection + confSection + tableSection;
+}
+
+function filterRdTable(runDir, levelVal, confVal) {
+  if (!window._rdFilter) window._rdFilter = {};
+  if (!window._rdFilter[runDir]) window._rdFilter[runDir] = { level:'', conf:0 };
+  const f = window._rdFilter[runDir];
+  if (levelVal !== null) f.level = levelVal;
+  if (confVal  !== null) f.conf  = parseFloat(confVal);
+
+  const rid  = 'rdtbl-' + runDir.replace(/[^a-z0-9]/gi,'_');
+  const tbody = document.getElementById(rid + '-body');
+  const count = document.getElementById(rid + '-count');
+  if (!tbody) return;
+
+  let visible = 0;
+  tbody.querySelectorAll('tr').forEach(tr => {
+    const lvl  = tr.dataset.level || '';
+    const conf = parseFloat(tr.dataset.conf || '1');
+    const show = (!f.level || lvl === f.level) && conf >= f.conf;
+    tr.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  if (count) count.textContent = `${visible} dòng`;
+}
+
+
+// ── Live Model ─────────────────────────────────────────────────────────────
+function dropOver(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.add('drag-over');
+}
+function dropLeave(e) {
+  document.getElementById('drop-zone').classList.remove('drag-over');
+}
+function dropFile(e) {
+  e.preventDefault();
+  dropLeave(e);
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) analyzeImage(file);
+  else toast('Chỉ hỗ trợ file ảnh (JPG, PNG)', 'warn');
+}
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (file) analyzeImage(file);
+}
+
+async function analyzeImage(file) {
+  // Show preview
+  const reader = new FileReader();
+  reader.onload = async ev => {
+    const data_b64 = ev.target.result.split(',')[1];
+    document.getElementById('res-img').src = ev.target.result;
+    document.getElementById('live-result').classList.add('show');
+    document.getElementById('result-stats').innerHTML =
+      '<div style="grid-column:1/-1;text-align:center;padding:20px"><span class="spin">↻</span> Đang phân tích…</div>';
+
+    try {
+      const r = await fetch('/live_predict', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ data_b64, filename: file.name })
+      });
+      const d = await r.json();
+      if (d.error) { toast('Lỗi: ' + d.error, 'err'); return; }
+
+      const lvlCol = LEVEL_COLORS[d.flood_level] || '#888';
+      document.getElementById('result-stats').innerHTML = [
+        { num: d.flood_level, lbl: 'Mức lũ', col: lvlCol },
+        { num: d.flood_depth_cm + ' cm', lbl: 'Độ sâu', col: '' },
+        { num: Math.round(d.confidence * 100) + '%', lbl: 'Độ tin cậy', col: '' },
+        { num: d.detections, lbl: 'Phát hiện', col: '' },
+      ].map(s => `
+        <div class="result-stat">
+          <div class="result-stat-num" style="${s.col?`color:${s.col}`:''}">
+            ${escHtml(String(s.num))}
+          </div>
+          <div class="result-stat-lbl">${s.lbl}</div>
+        </div>`).join('');
+
+      if (d.overlay_name) {
+        document.getElementById('res-overlay').src = `/live_image/${d.overlay_name}`;
+        document.getElementById('res-overlay-row').style.display = '';
+      }
+
+      if (d.ai_active) {
+        document.getElementById('ai-info').innerHTML =
+          `🤖 AI correction active — ${escHtml(d.ai_explanation||'')}`;
+      }
+
+      toast('Phân tích xong ✓', 'ok');
+    } catch(e) {
+      toast('Lỗi phân tích: ' + e.message, 'err');
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── Review Tab ─────────────────────────────────────────────────────────────
+const LEVEL_VI = {
+  'NO_FLOOD':'Không ngập','PUDDLE':'Vũng nước','ANKLE':'Mắt cá',
+  'KNEE':'Đầu gối','WAIST':'Hông','CHEST':'Ngực','SUBMERGED':'Ngập hoàn toàn',
+};
+const LEVEL_COLORS_FULL = {
+  'NO_FLOOD':'#22c984','PUDDLE':'#34d399','ANKLE':'#6dd9a8',
+  'KNEE':'#f0a428','WAIST':'#f97316','CHEST':'#e85065','SUBMERGED':'#991b1b',
+};
+
+
+function renderReviewQueue(cases) {
+  const el = document.getElementById('rv-queue');
+  const countEl = document.getElementById('rv-queue-count');
+  countEl.textContent = cases.length ? `(${cases.length})` : '';
+
+  if (!cases.length) {
+    el.innerHTML = `<div class="empty-state" style="padding:40px 0">
+      <div class="empty-icon" style="font-size:28px">✓</div>
+      <div class="empty-title">Hàng chờ trống</div>
+      <div class="empty-msg">Chạy pipeline để tạo ảnh cần review, hoặc upload ảnh từ tab Live Model</div>
+    </div>`;
+    return;
+  }
+
+  el.innerHTML = cases.map(c => {
+    const conf = c.confidence || 0;
+    const confCls = conf >= 0.7 ? 'conf-high' : conf >= 0.4 ? 'conf-med' : 'conf-low';
+    const predLevel = c.predicted_level || '?';
+    const predDepth = c.predicted_depth != null ? `${c.predicted_depth} cm` : '?';
+    const imgSrc = `/case_image/${c.id}`;
+    return `
+      <div class="review-case-card" id="rvc-${c.id}">
+        <img class="review-case-img" src="${imgSrc}" alt=""
+             onclick="openModal('${imgSrc}','${escHtml(c.image_hash||String(c.id))}')"
+             onerror="this.style.background='var(--bg2)';this.style.minHeight='120px'">
+        <div class="review-case-body">
+          <div class="review-case-head">
+            <div>
+              <div class="review-pred">
+                <span class="reason-chip" style="background:${(LEVEL_COLORS_FULL[predLevel]||'#888')}22;color:${LEVEL_COLORS_FULL[predLevel]||'#888'};border-color:${LEVEL_COLORS_FULL[predLevel]||'#888'}44">
+                  ${escHtml(LEVEL_VI[predLevel]||predLevel)}
+                </span>
+                <span style="font-family:monospace;font-size:12px;font-weight:700;color:var(--tx)">${escHtml(predDepth)}</span>
+                <span class="reason-chip ${confCls}">${Math.round(conf*100)}% conf</span>
+              </div>
+              <div style="font-size:11px;color:var(--tx3);margin-top:4px">${escHtml(c.review_reason||'')}</div>
+            </div>
+            <span style="font-size:10px;color:var(--tx3);white-space:nowrap">${(c.timestamp||'').substring(5,16)}</span>
+          </div>
+          <div class="review-form">
+            <div class="form-group">
+              <label class="form-label" for="rvl-${c.id}">Mức lũ thực tế *</label>
+              <select class="form-select" id="rvl-${c.id}">
+                <option value="">— Chọn —</option>
+                <option value="NO_FLOOD">Không ngập</option>
+                <option value="PUDDLE">Vũng nước</option>
+                <option value="ANKLE">Mắt cá (5–20cm)</option>
+                <option value="KNEE">Đầu gối (20–50cm)</option>
+                <option value="WAIST">Hông (50–120cm)</option>
+                <option value="CHEST">Ngực (120–200cm)</option>
+                <option value="SUBMERGED">Ngập hoàn toàn</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="rvd-${c.id}">Độ sâu (cm)</label>
+              <input class="form-input" type="number" id="rvd-${c.id}" min="0" max="500"
+                     value="${c.predicted_depth != null ? Math.round(c.predicted_depth) : ''}"
+                     placeholder="cm">
+            </div>
+            <div class="form-group review-form-full">
+              <input class="form-input" id="rvn-${c.id}" placeholder="Ghi chú (tuỳ chọn)…">
+            </div>
+          </div>
+          <div class="review-actions">
+            <button class="btn btn-primary" style="font-size:12px;padding:7px 14px"
+                    onclick="submitQueueReview(${c.id})">✓ Xác nhận</button>
+            <button class="btn btn-ghost" style="font-size:12px;padding:7px 12px"
+                    onclick="skipQueueReview(${c.id})">→ Bỏ qua</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderTrainDist(byLevel) {
+  const el = document.getElementById('rv-train-dist');
+  const entries = Object.entries(byLevel).sort((a,b) => b[1]-a[1]);
+  if (!entries.length) {
+    el.innerHTML = '<div class="empty-state" style="padding:14px 0"><div class="empty-icon" style="font-size:24px">○</div><div class="empty-msg">Chưa có dữ liệu training</div></div>';
+    return;
+  }
+  const max = Math.max(...entries.map(e=>e[1]), 1);
+  const ORDER = ['NO_FLOOD','PUDDLE','ANKLE','KNEE','WAIST','CHEST','SUBMERGED'];
+  const sorted = [...entries].sort((a,b) => ORDER.indexOf(a[0]) - ORDER.indexOf(b[0]));
+  el.innerHTML = sorted.map(([lv, n]) => {
+    const c = LEVEL_COLORS_FULL[lv] || '#888';
+    const pct = Math.round(n/max*100);
+    return `<div class="level-bar-row">
+      <span class="level-bar-label">${LEVEL_VI[lv]||lv}</span>
+      <div class="level-bar-track"><div class="level-bar-fill" style="width:${pct}%;background:${c}"></div></div>
+      <span class="level-bar-count">${n}</span>
+    </div>`;
+  }).join('');
+}
+
+async function submitQueueReview(caseId) {
+  const level = document.getElementById(`rvl-${caseId}`).value;
+  const depth = parseFloat(document.getElementById(`rvd-${caseId}`).value) || 0;
+  const notes = document.getElementById(`rvn-${caseId}`).value;
+  if (!level) { toast('Vui lòng chọn mức lũ thực tế', 'warn'); return; }
+
+  try {
+    const r = await fetch(`/review/${caseId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actual_depth: depth, actual_level: level, notes }),
+    });
+    const d = await r.json();
+    if (d.status === 'ok') {
+      toast(`✓ Đã xác nhận — AI đang học từ nhãn "${LEVEL_VI[level]||level}"`, 'ok');
+      const card = document.getElementById(`rvc-${caseId}`);
+      if (card) { card.style.opacity='0.4'; card.style.pointerEvents='none'; }
+      setTimeout(() => loadReviewTab(), 1200);
+    } else {
+      toast('Lỗi: ' + (d.error||'unknown'), 'err');
+    }
+  } catch (e) {
+    toast('Lỗi kết nối: ' + e.message, 'err');
+  }
+}
+
+async function skipQueueReview(caseId) {
+  await fetch(`/skip/${caseId}`, { method: 'POST' });
+  toast('Đã bỏ qua ảnh này', 'warn');
+  const card = document.getElementById(`rvc-${caseId}`);
+  if (card) { card.style.opacity='0.3'; card.style.pointerEvents='none'; }
+}
+
+// Annotate modal state
+let _annImageName = null;
+
+function openAnnotateFromHistory(imageName, imgSrc, dbInfo) {
+  _annImageName = imageName;
+  document.getElementById('ann-img-preview').src = imgSrc;
+
+  // Pre-fill if already labeled
+  const predRow = document.getElementById('ann-pred-row');
+  if (dbInfo && dbInfo.actual_level) {
+    document.getElementById('ann-pred-level').textContent = LEVEL_VI[dbInfo.actual_level] || dbInfo.actual_level;
+    document.getElementById('ann-pred-depth').textContent = `${dbInfo.actual_depth} cm`;
+    document.getElementById('ann-pred-conf').textContent = 'Đã có nhãn';
+    document.getElementById('ann-level').value = dbInfo.actual_level;
+    document.getElementById('ann-depth').value = dbInfo.actual_depth;
+    predRow.style.display = 'flex';
+  } else {
+    predRow.style.display = 'none';
+    document.getElementById('ann-level').value = '';
+    document.getElementById('ann-depth').value = '';
+  }
+  document.getElementById('ann-notes').value = '';
+  document.getElementById('annotate-modal').classList.add('open');
+}
+
+function closeAnnotateModal() {
+  document.getElementById('annotate-modal').classList.remove('open');
+  _annImageName = null;
+}
+
+async function submitAnnotation() {
+  const level = document.getElementById('ann-level').value;
+  const depth = parseFloat(document.getElementById('ann-depth').value) || 0;
+  const notes = document.getElementById('ann-notes').value;
+  if (!level) { toast('Vui lòng chọn mức lũ thực tế', 'warn'); return; }
+  if (!_annImageName) { toast('Không tìm thấy ảnh', 'err'); return; }
+
+  const btn = document.getElementById('ann-submit-btn');
+  btn.disabled = true;
+  btn.textContent = '⟳ Đang lưu…';
+
+  try {
+    const r = await fetch('/annotate_live_image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_name: _annImageName, actual_depth: depth, actual_level: level, notes }),
+    });
+    const d = await r.json();
+    if (d.status === 'ok') {
+      toast(`✓ Đã lưu nhãn "${LEVEL_VI[level]||level}" — AI đang retrain`, 'ok');
+      closeAnnotateModal();
+      loadHistory();
+    } else {
+      toast('Lỗi: ' + (d.error || 'unknown'), 'err');
+    }
+  } catch (e) {
+    toast('Lỗi: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✓ Xác nhận & Học';
+  }
+}
+
+async function triggerRetrain() {
+  try {
+    const r = await fetch('/trigger_retrain', { method: 'POST' });
+    const d = await r.json();
+    toast('🧠 Retrain AI đã kích hoạt trong nền', 'ok');
+    setTimeout(() => loadReviewTab(), 1500);
+  } catch(e) {
+    toast('Lỗi retrain: ' + e.message, 'err');
+  }
+}
+
+// ── Utilities ──────────────────────────────────────────────────────────────
+function escHtml(s) {
+  // DOM-based: tránh regex chứa < > gây lỗi HTML parser trong <script>
+  var d = document.createElement('div');
+  d.textContent = String(s || '');
+  return d.innerHTML.replace(/"/g,'&quot;');
+}
+
+function refreshAll() {
+  if (activeTab === 'dashboard') loadDashboard();
+  if (activeTab === 'history')   loadHistory();
+  if (activeTab === 'review')    loadReviewTab();
+  toast('Đã làm mới ↺', 'ok');
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  loadDashboard();
+  // Resume log polling if server is running
+  fetch('/pipeline_log?offset=0').then(r=>r.json()).then(d => {
+    if (d.status === 'running') {
+      document.getElementById('run-btn').style.display  = 'none';
+      document.getElementById('stop-btn').style.display = '';
+      renderSteps(d.step||0);
+      _pollTimer = setInterval(pollLog, 800);
+    }
+  }).catch(()=>{});
+});
+
+// Keyboard shortcut: Escape to close modal
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    closeModalBtn();
+    closeAnnotateModal();
+    // Nếu chat đang mở, không đóng nó bằng Escape (để user gõ thoải mái)
+  }
+});
+</script>
+
+<!-- ════════════════════════════════════════════════════════════
+     AGENT CHAT WIDGET  — góc dưới phải, có thể thu nhỏ/phóng to
+     ════════════════════════════════════════════════════════════ -->
+<style>
+/* ── Chat Widget ──────────────────────────────────────────────── */
+/* Toggle bubble — standalone fixed element */
+#chat-widget {
+  position: fixed;
+  bottom: 28px;
+  right: 24px;
+  z-index: 99999;
+  pointer-events: auto;
+  isolation: isolate;
+}
+
+#chat-toggle-btn {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: none;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 4px 18px var(--shadow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition), transform 0.15s;
+  position: relative;
+  z-index: 99999;
+}
+#chat-toggle-btn:hover { background: var(--primary-d); transform: scale(1.07); }
+#chat-toggle-btn svg { width: 24px; height: 24px; fill: #fff; pointer-events: none; }
+
+/* Badge số tin nhắn chưa đọc */
+#chat-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  padding: 0 4px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Chat panel — fixed, tách hoàn toàn khỏi #chat-widget */
+#chat-panel {
+  position: fixed;
+  bottom: 92px;
+  right: 24px;
+  width: 360px;
+  max-height: 520px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px var(--shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: opacity 0.2s, transform 0.2s;
+  transform-origin: bottom right;
+  z-index: 99998;
+}
+#chat-panel.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.92) translateY(8px);
+}
+#chat-panel.maximized {
+  width: 520px;
+  max-height: 72vh;
+}
+
+/* Panel header */
+#chat-header {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+  gap: 8px;
+  flex-shrink: 0;
+}
+#chat-header-title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--tx);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#chat-status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  display: inline-block;
+  animation: pulse-dot 2s infinite;
+}
+@keyframes pulse-dot {
+  0%,100% { opacity:1; } 50% { opacity:0.4; }
+}
+.chat-hbtn {
+  width: 26px; height: 26px;
+  border: none; background: transparent; cursor: pointer;
+  border-radius: 6px; color: var(--tx2);
+  display: flex; align-items: center; justify-content: center;
+  transition: background var(--transition);
+  font-size: 14px;
+}
+.chat-hbtn:hover { background: var(--border); color: var(--tx); }
+
+/* Messages area */
+#chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  scroll-behavior: smooth;
+}
+#chat-messages::-webkit-scrollbar { width: 4px; }
+#chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+.chat-msg {
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  word-break: break-word;
+  animation: msg-in 0.18s ease;
+}
+@keyframes msg-in { from { opacity:0; transform:translateY(6px); } to { opacity:1; } }
+
+.chat-msg.user {
+  align-self: flex-end;
+  background: var(--primary);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.chat-msg.agent {
+  align-self: flex-start;
+  background: var(--bg2);
+  color: var(--tx);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+}
+.chat-msg.system {
+  align-self: center;
+  background: transparent;
+  color: var(--tx3);
+  font-size: 11px;
+  font-style: italic;
+}
+.chat-msg .msg-time {
+  font-size: 10px;
+  opacity: 0.55;
+  margin-top: 3px;
+  text-align: right;
+}
+.chat-msg.agent .msg-time { text-align: left; }
+
+/* Typing indicator */
+#chat-typing {
+  display: none;
+  align-self: flex-start;
+  padding: 8px 14px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  border-bottom-left-radius: 4px;
+  gap: 4px;
+}
+#chat-typing.show { display: flex; }
+#chat-typing span {
+  width: 6px; height: 6px; background: var(--tx3);
+  border-radius: 50%;
+  animation: typing-bounce 1.2s infinite;
+}
+#chat-typing span:nth-child(2) { animation-delay: 0.2s; }
+#chat-typing span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typing-bounce {
+  0%,80%,100% { transform:translateY(0); }
+  40%          { transform:translateY(-6px); }
+}
+
+/* Input area */
+#chat-input-area {
+  display: flex;
+  align-items: flex-end;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  gap: 8px;
+  background: var(--card);
+  flex-shrink: 0;
+}
+#chat-input {
+  flex: 1;
+  resize: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--tx);
+  outline: none;
+  max-height: 100px;
+  line-height: 1.4;
+  transition: border-color var(--transition);
+}
+#chat-input:focus { border-color: var(--primary); }
+#chat-send-btn {
+  width: 34px; height: 34px;
+  border-radius: 8px;
+  background: var(--primary);
+  border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: background var(--transition);
+}
+#chat-send-btn:hover { background: var(--primary-d); }
+#chat-send-btn:disabled { opacity: 0.5; cursor: default; }
+#chat-send-btn svg { width: 16px; height: 16px; fill: #fff; }
+
+/* Reset link */
+#chat-reset-btn {
+  font-size: 11px; color: var(--tx3); background: none; border: none;
+  cursor: pointer; padding: 0 2px; text-decoration: underline;
+  align-self: center;
+}
+#chat-reset-btn:hover { color: var(--danger); }
+</style>
+
+<div id="chat-widget">
+  <!-- Toggle bubble -->
+  <button id="chat-toggle-btn" type="button" title="Chat với Agent">
+    <svg viewBox="0 0 24 24"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/></svg>
+    <span id="chat-badge"></span>
+  </button>
+</div>
+
+<!-- Chat panel — standalone fixed element, không phụ thuộc vào #chat-widget -->
+<div id="chat-panel" class="hidden">
+  <!-- Header -->
+  <div id="chat-header">
+    <span id="chat-header-title">
+      <span id="chat-status-dot"></span>
+      FloodAI Agent
+    </span>
+    <button id="chat-maximize-btn" class="chat-hbtn" type="button" title="Phóng to / Thu nhỏ">⤢</button>
+    <button id="chat-close-btn"    class="chat-hbtn" type="button" title="Đóng">✕</button>
+  </div>
+
+  <!-- Messages -->
+  <div id="chat-messages">
+    <div class="chat-msg system">Xin chào! Tôi là FloodAI Agent. Bạn có thể hỏi về phân tích lũ, kết quả, hoặc yêu cầu chạy lại pipeline.</div>
+    <div id="chat-typing"><span></span><span></span><span></span></div>
+  </div>
+
+  <!-- Input -->
+  <div id="chat-input-area">
+    <textarea id="chat-input" rows="1" placeholder="Nhập tin nhắn…"></textarea>
+    <button id="chat-send-btn" type="button" title="Gửi">
+      <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+    </button>
+  </div>
+  <div style="text-align:center;padding:4px 0 8px">
+    <button id="chat-reset-btn" type="button">Reset phiên</button>
+  </div>
+</div>
+
+<script>
+// ── Agent Chat Widget ─────────────────────────────────────────────────────────
+function _initChatWidget() {
+  var btnToggle   = document.getElementById('chat-toggle-btn');
+  var btnClose    = document.getElementById('chat-close-btn');
+  var btnMaximize = document.getElementById('chat-maximize-btn');
+  var btnSend     = document.getElementById('chat-send-btn');
+  var btnReset    = document.getElementById('chat-reset-btn');
+  var panel       = document.getElementById('chat-panel');
+  var inp         = document.getElementById('chat-input');
+  var msgBox      = document.getElementById('chat-messages');
+  var typing      = document.getElementById('chat-typing');
+  var badge       = document.getElementById('chat-badge');
+
+  // Guard: nếu thiếu element nào thì không init
+  if (!btnToggle || !btnSend || !panel || !inp || !msgBox || !typing) {
+    console.error('[ChatWidget] Thiếu element, không thể init chat widget');
+    return;
+  }
+
+  var _open    = false;
+  var _max     = false;
+  var _unread  = 0;
+  var _sending = false;
+
+  function _toggle() {
+    _open = !_open;
+    if (_open) {
+      panel.classList.remove('hidden');
+      _unread = 0;
+      _updateBadge();
+      setTimeout(function() { inp.focus(); }, 80);
+    } else {
+      panel.classList.add('hidden');
+    }
+  }
+
+  function _maximize() {
+    _max = !_max;
+    panel.classList.toggle('maximized', _max);
+    btnMaximize.textContent = _max ? '⤡' : '⤢';
+  }
+
+  async function _send() {
+    var msg = inp.value.trim();
+    if (!msg || _sending) return;
+    inp.value = '';
+    inp.style.height = '';
+    _appendMsg(msg, 'user');
+    _setTyping(true);
+    _sending = true;
+    btnSend.disabled = true;
+
+    try {
+      const r = await fetch('/agent_chat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message: msg}),
+      });
+      const d = await r.json();
+      console.log('[ChatWidget] response:', d);
+      _setTyping(false);
+      _sending = false;
+      btnSend.disabled = false;
+      _appendMsg(d.message || (d.error ? '❌ ' + d.error : '…'), 'agent');
+      if (!_open) { _unread++; _updateBadge(); }
+    } catch(err) {
+      console.error('[ChatWidget] fetch error:', err);
+      _setTyping(false);
+      _sending = false;
+      btnSend.disabled = false;
+      _appendMsg('❌ Lỗi kết nối: ' + err.message, 'agent');
+    }
+  }
+
+  function _reset() {
+    fetch('/agent_reset', {method: 'POST'}).then(function() {
+      msgBox.innerHTML = '<div class="chat-msg system">Phiên mới bắt đầu. Xin chào!</div>' +
+        '<div id="chat-typing"><span></span><span></span><span></span></div>';
+      typing = document.getElementById('chat-typing');
+    });
+  }
+
+  function _appendMsg(text, role) {
+    var wrap = document.createElement('div');
+    wrap.className = 'chat-msg ' + role;
+    var now = new Date();
+    var ts  = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+    wrap.innerHTML = _esc(text).replace(/\\n/g,'<br>') + '<div class="msg-time">' + ts + '</div>';
+    msgBox.insertBefore(wrap, typing);
+    msgBox.scrollTop = msgBox.scrollHeight;
+  }
+
+  function _setTyping(show) {
+    typing.classList.toggle('show', show);
+    msgBox.scrollTop = msgBox.scrollHeight;
+  }
+
+  function _updateBadge() {
+    if (_unread > 0) {
+      badge.textContent = _unread > 9 ? '9+' : _unread;
+      badge.style.display = 'flex';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  function _esc(s) {
+    // DOM-based: tránh regex chứa < > gây lỗi HTML parser trong <script>
+    var d = document.createElement('div');
+    d.textContent = String(s || '');
+    return d.innerHTML;
+  }
+
+  // ── Bind events ──────────────────────────────────────────────────────────────
+  btnToggle.addEventListener('click',   _toggle);
+  if (btnClose)    btnClose.addEventListener('click',    _toggle);
+  if (btnMaximize) btnMaximize.addEventListener('click', _maximize);
+  btnSend.addEventListener('click',     _send);
+  if (btnReset) btnReset.addEventListener('click',  _reset);
+
+  inp.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); _send(); }
+  });
+  inp.addEventListener('input', function() {
+    this.style.height = '';
+    this.style.height = Math.min(this.scrollHeight, 100) + 'px';
+  });
+
+  console.log('[ChatWidget] init OK — btnSend listener attached');
+} // end _initChatWidget
+
+// ── Easter Egg: Music Player state (khai báo sớm để tránh undefined) ─────────
+var _mp = { audio: null, list: [], idx: 0, playing: false, loaded: false, open: false };
+
+// Chạy ngay nếu DOM sẵn sàng, hoặc đợi DOMContentLoaded
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _initChatWidget);
+} else {
+  _initChatWidget();
+}
+
+function _mpEl(id) { return document.getElementById(id); }
+
+function _mpFmt(s) {
+  if (!isFinite(s) || s < 0) return '0:00';
+  var m = Math.floor(s / 60), sec = Math.floor(s % 60);
+  return m + ':' + (sec < 10 ? '0' : '') + sec;
+}
+
+function _mpName(f) {
+  return f.split('/').pop().split('.').slice(0, -1).join('.').replace(/[_-]+/g, ' ') || f;
+}
+
+function _mpProgress() {
+  if (!_mp.audio || !_mp.audio.duration) return;
+  var pct = (_mp.audio.currentTime / _mp.audio.duration * 100).toFixed(2);
+  _mpEl('music-progress-fill').style.width = pct + '%';
+  _mpEl('music-meta').textContent = _mpFmt(_mp.audio.currentTime) + ' / ' + _mpFmt(_mp.audio.duration);
+}
+
+function _mpUI(spin) {
+  var disc = _mpEl('disc-svg'), btn = _mpEl('mc-play-btn'), logo = _mpEl('logo-icon');
+  if (disc)  { spin ? disc.classList.add('spinning')      : disc.classList.remove('spinning'); }
+  if (btn)   { btn.textContent = spin ? '\u23F8' : '\u25B6'; btn.title = spin ? 'T\u1EA1m d\u1EEBng' : 'Ph\u00E1t'; }
+  if (logo)  { _mp.open ? logo.classList.add('egg-active') : logo.classList.remove('egg-active'); }
+}
+
+function _mpLoad(autoplay) {
+  if (!_mp.list.length) {
+    _mpEl('music-title').textContent = 'Ch\u01B0a c\u00F3 b\u00E0i h\u00E1t';
+    _mpEl('music-meta').textContent  = '\u0110\u1EB7t nh\u1EA1c v\u00E0o /learning/music/';
+    _mpUI(false); return;
+  }
+  var fname = _mp.list[_mp.idx];
+  _mpEl('music-title').textContent = _mpName(fname);
+  _mpEl('music-progress-fill').style.width = '0%';
+  _mpEl('music-meta').textContent = '0:00 / 0:00';
+
+  if (_mp.audio) {
+    _mp.audio.pause();
+    _mp.audio.onended = null;
+    _mp.audio.ontimeupdate = null;
+    _mp.audio.src = '';
+  }
+  _mp.audio = new Audio('/music/' + encodeURIComponent(fname));
+  _mp.audio.volume = parseFloat((_mpEl('mc-vol-slider') || {value:'0.7'}).value);
+  _mp.audio.ontimeupdate = _mpProgress;
+  _mp.audio.onended = musicNext;
+  _mp.audio.onerror = function() {
+    _mpEl('music-meta').textContent = '\u26A0 Kh\u00F4ng th\u1EC3 t\u1EA3i b\u00E0i';
+    _mp.playing = false; _mpUI(false);
+  };
+  if (autoplay) {
+    var p = _mp.audio.play();
+    if (p !== undefined) {
+      p.then(function() { _mp.playing = true; _mpUI(true); }).catch(function() { _mp.playing = false; _mpUI(false); });
+    }
+  }
+}
+
+function toggleMusicEgg() {
+  var panel = _mpEl('music-player');
+  if (!panel) return;
+  if (!_mp.loaded) {
+    fetch('/music_list').then(function(r) { return r.json(); }).then(function(d) {
+      _mp.list = Array.isArray(d.files) ? d.files : [];
+      if (_mp.list.length > 0) _mp.idx = Math.floor(Math.random() * _mp.list.length);
+      _mp.loaded = true;
+      _mpOpenPanel(panel);
+    }).catch(function() { _mp.loaded = true; _mpOpenPanel(panel); });
+  } else {
+    _mpOpenPanel(panel);
+  }
+}
+
+function _mpOpenPanel(panel) {
+  _mp.open = !_mp.open;
+  if (_mp.open) {
+    panel.classList.add('open');
+    if (!_mp.audio) _mpLoad(true);
+  } else {
+    panel.classList.remove('open');
+  }
+  _mpUI(_mp.playing);
+}
+
+function musicToggle() {
+  if (!_mp.audio) { _mpLoad(true); return; }
+  if (_mp.playing) {
+    _mp.audio.pause(); _mp.playing = false; _mpUI(false);
+  } else {
+    var p = _mp.audio.play();
+    if (p !== undefined) p.then(function() { _mp.playing = true; _mpUI(true); }).catch(function(){});
+    else { _mp.playing = true; _mpUI(true); }
+  }
+}
+
+function musicNext() {
+  if (!_mp.list.length) return;
+  _mp.idx = (_mp.idx + 1) % _mp.list.length;
+  _mpLoad(_mp.playing);
+}
+
+function musicPrev() {
+  if (!_mp.list.length) return;
+  if (_mp.audio && _mp.audio.currentTime > 3) { _mp.audio.currentTime = 0; return; }
+  _mp.idx = (_mp.idx - 1 + _mp.list.length) % _mp.list.length;
+  _mpLoad(_mp.playing);
+}
+
+function musicSetVol(v) { if (_mp.audio) _mp.audio.volume = parseFloat(v); }
+
+function musicSeek(e) {
+  if (!_mp.audio || !_mp.audio.duration) return;
+  var rect = _mpEl('music-progress').getBoundingClientRect();
+  var pct  = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  _mp.audio.currentTime = pct * _mp.audio.duration;
+}
+
+// Gắn click handler sau khi DOM sẵn sàng (không dùng onclick attribute)
+(function attachMusicEgg() {
+  function doAttach() {
+    var logo = document.getElementById('logo-icon');
+    if (logo) {
+      logo.addEventListener('click', function() { toggleMusicEgg(); });
+      console.log('[FloodAI] Easter egg loaded OK');
+    } else {
+      console.warn('[FloodAI] logo-icon not found');
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', doAttach);
+  } else {
+    doAttach();
+  }
+})();
+</script>
+
+</body>
+</html>

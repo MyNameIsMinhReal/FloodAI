@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Logs
+*.log
+pipeline.log
+
+# Runtime databases
+learning/errors.db
+learning/review_queue.db
+learning/training_images.db
+
+# Temp / output images (tạo lúc chạy)
+learning/_live_results/
+learning/_live_tmp/
+learning/training_images/
+output/
+
+# Credentials (KHÔNG commit key lên git!)
+credentials.json
+token.json
+.env
+.env.example
+.setup_done.json
+ai_model_cache.json
+
+# Model files (tải tự động, quá lớn)
+*.pt
+models/
+
+# Large binaries
+cloudflared.exe
+*.exe
+
+# Media files (quá lớn cho git)
+*.mp3
+*.mp4
+*.wav
+
+# Temp / chat files
+_chat_tmp/
+
+# Static temp images (generated at runtime)
+static/tmp*
+
+# Claude Code settings (personal)
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp

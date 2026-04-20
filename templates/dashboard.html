@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block topbar_title %}Dashboard{% endblock %}
+{% block topbar_badge %}<span class="topbar-badge">Admin</span>{% endblock %}
+
+{% block topbar_right %}
+<a href="/api/dashboard/stats" target="_blank" class="icon-btn" title="Xem JSON stats">
+  <svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+</a>
+{% endblock %}
+
+{% block head %}
+<style>
+.dash{max-width:960px;margin:0 auto;padding:24px 20px 48px}
+.dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:28px}
+.dash-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px}
+.dc-num{font-family:var(--font-serif);font-size:32px;font-weight:600;color:var(--primary);line-height:1}
+.dc-lbl{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);margin-top:5px}
+.dc-sub{font-size:12px;color:var(--tx2);margin-top:3px}
+
+.section-hd{font-family:var(--font-serif);font-size:17px;font-weight:600;margin-bottom:14px;margin-top:24px}
+
+/* Run table */
+.run-table{width:100%;border-collapse:collapse;font-size:13px}
+.run-table th{text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.06em;color:var(--tx3);padding:8px 12px;
+  border-bottom:2px solid var(--border);background:var(--bg2)}
+.run-table td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+.run-table tr:last-child td{border-bottom:none}
+.run-table tr:hover td{background:var(--bg2)}
+.run-name{font-family:monospace;font-size:12px;color:var(--tx2)}
+.run-img-count{display:inline-block;background:color-mix(in srgb,var(--primary) 12%,transparent);
+  color:var(--primary);font-size:11px;font-weight:600;padding:2px 8px;border-radius:5px}
+.run-link{color:var(--primary);text-decoration:none;font-size:12px;
+  border:none;background:none;cursor:pointer;padding:0;font-family:inherit}
+.run-link:hover{text-decoration:underline}
+
+.empty-state{text-align:center;padding:40px 20px;color:var(--tx3);font-size:13px}
+.empty-state svg{width:36px;height:36px;stroke:var(--tx3);fill:none;stroke-width:1.5;stroke-linecap:round;margin-bottom:10px}
+
+.section-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+
+/* Quick links */
+.quick-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:20px}
+.quick-link{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:14px 16px;text-decoration:none;color:var(--tx2);
+  display:flex;align-items:center;gap:10px;font-size:13px;font-weight:500;
+  transition:border-color .15s,color .15s}
+.quick-link:hover{border-color:var(--primary);color:var(--primary)}
+.quick-link svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;flex-shrink:0}
+
+/* Pipeline command */
+.cmd-block{background:var(--bg2);border:1px solid var(--border);border-radius:10px;
+  padding:12px 16px;font-family:monospace;font-size:12px;color:var(--tx2);
+  margin-bottom:8px;white-space:pre-wrap;word-break:break-all}
+
+/* Admin panel shortcut */
+.admin-panel-btn{display:flex;align-items:center;gap:12px;
+  background:color-mix(in srgb,var(--primary) 10%,var(--card));
+  border:1.5px solid var(--primary);border-radius:var(--radius);
+  padding:16px 20px;text-decoration:none;color:var(--tx);
+  font-weight:600;font-size:14px;margin-bottom:20px;
+  transition:background .15s,border-color .15s}
+.admin-panel-btn:hover{background:color-mix(in srgb,var(--primary) 18%,var(--card))}
+.admin-panel-btn svg{width:18px;height:18px;stroke:var(--primary);fill:none;
+  stroke-width:1.8;stroke-linecap:round;flex-shrink:0}
+.admin-panel-badge{margin-left:auto;font-size:11px;font-weight:400;color:var(--tx3)}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dash">
+
+  <!-- Stats grid -->
+  <div class="dash-grid">
+    <div class="dash-card">
+      <div class="dc-num">{{ runs|length }}</div>
+      <div class="dc-lbl">Lần chạy pipeline</div>
+      <div class="dc-sub">trong thư mục output/</div>
+    </div>
+    <div class="dash-card">
+      <div class="dc-num">{% set total = namespace(n=0) %}{% for r in runs %}{% set total.n = total.n + r.images %}{% endfor %}{{ total.n }}</div>
+      <div class="dc-lbl">Ảnh đã xử lý</div>
+      <div class="dc-sub">tổng tất cả các run</div>
+    </div>
+    <div class="dash-card">
+      <div class="dc-num" style="font-size:20px">Qwen2.5</div>
+      <div class="dc-lbl">Model nền tảng</div>
+      <div class="dc-sub">1.5B-Instruct + LoRA</div>
+    </div>
+    <div class="dash-card">
+      <div class="dc-num">7</div>
+      <div class="dc-lbl">Cấp độ lũ</div>
+      <div class="dc-sub">NO_FLOOD → SUBMERGED</div>
+    </div>
+  </div>
+
+  <!-- Admin panel shortcut -->
+  <a href="/admin" class="admin-panel-btn">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+    Mở Admin Panel đầy đủ
+    <span class="admin-panel-badge">Review · Pipeline · Training · Active Learning</span>
+  </a>
+
+  <!-- Quick links -->
+  <div class="section-hd">Truy cập nhanh</div>
+  <div class="quick-grid">
+    <a href="/chat" class="quick-link">
+      <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      Trò chuyện AI
+    </a>
+    <a href="/news" class="quick-link">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Tin tức
+    </a>
+    <a href="/map" class="quick-link">
+      <svg viewBox="0 0 24 24"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/></svg>
+      Bản đồ lũ
+    </a>
+    <a href="/api/stats" target="_blank" class="quick-link">
+      <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      API Stats (JSON)
+    </a>
+  </div>
+
+  <!-- Run pipeline guide -->
+  <div class="section-hd">Chạy Pipeline</div>
+  <div class="dash-card" style="margin-bottom:20px;padding:20px">
+    <div style="font-size:13px;color:var(--tx2);margin-bottom:12px">Phân tích ảnh lũ từ command line:</div>
+    <div class="cmd-block">python main.py --input /path/to/images</div>
+    <div class="cmd-block">python main.py --input /path/to/images --async --debug</div>
+    <div style="font-size:11px;color:var(--tx3);margin-top:8px">
+      Kết quả lưu trong <code>output/</code> và hiển thị tự động trong bảng bên dưới.
+    </div>
+  </div>
+
+  <!-- Run history -->
+  <div class="section-hd">Lịch sử phân tích</div>
+  <div class="section-card">
+    {% if runs %}
+    <table class="run-table">
+      <thead>
+        <tr>
+          <th>Thư mục run</th>
+          <th>Số ảnh</th>
+          <th>Thao tác</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in runs %}
+        <tr>
+          <td><span class="run-name">{{ run.name }}</span></td>
+          <td><span class="run-img-count">{{ run.images }} ảnh</span></td>
+          <td>
+            <button class="run-link" onclick="toast('Mở thư mục output/{{ run.name }}/', 'ok')">Xem →</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+      <svg viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+      <div>Chưa có dữ liệu phân tích.</div>
+      <div style="font-size:11px;margin-top:4px">Chạy <code>python main.py --input ...</code> để bắt đầu.</div>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+{% endblock %}

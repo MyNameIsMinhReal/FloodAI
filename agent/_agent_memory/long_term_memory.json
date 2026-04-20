@@ -1,0 +1,14 @@
+{
+  "correction_log": [],
+  "error_counter": {},
+  "action_history": [],
+  "response_patterns": {
+    "analyze_KNEE_mid": {
+      "template": "Done 1 images (2.3s)\n   Depth: {depth_cm} cm\n   Conf: {conf_pct}%  | 3 objects",
+      "raw_text": "Done 1 images (2.3s)\n   Depth: 55 cm\n   Conf: 67%  | 3 objects",
+      "saved_at": "2026-04-16T18:18:42",
+      "times_used": 0
+    }
+  },
+  "saved_at": "2026-04-16T18:18:42"
+}
