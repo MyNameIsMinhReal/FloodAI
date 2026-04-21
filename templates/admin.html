@@ -353,21 +353,11 @@
 {% block content %}
 <!-- ── Tab bar ─────────────────────────────────────────────────────────── -->
 <div class="tab-bar">
-  <button class="tab-btn active" onclick="switchTab('dashboard',this)" data-tab="dashboard">
-    <span class="tb-icon">⬡</span> Dashboard
-  </button>
-  <button class="tab-btn" onclick="switchTab('pipeline',this)" data-tab="pipeline">
-    <span class="tb-icon">▷</span> Pipeline
-  </button>
-  <button class="tab-btn" onclick="switchTab('history',this)" data-tab="history">
-    <span class="tb-icon">◫</span> Lịch sử
-  </button>
-  <button class="tab-btn" onclick="switchTab('gallery',this)" data-tab="gallery">
-    <span class="tb-icon">🎨</span> Bộ lọc ảnh
-  </button>
-  <button class="tab-btn" onclick="switchTab('logs',this)" data-tab="logs">
-    <span class="tb-icon">≡</span> Logs
-  </button>
+  <button class="tab-btn active" onclick="switchTab('dashboard',this)" data-tab="dashboard">Dashboard</button>
+  <button class="tab-btn" onclick="switchTab('pipeline',this)" data-tab="pipeline">Pipeline</button>
+  <button class="tab-btn" onclick="switchTab('history',this)" data-tab="history">Lịch sử</button>
+  <button class="tab-btn" onclick="switchTab('gallery',this)" data-tab="gallery">Bộ lọc ảnh</button>
+  <button class="tab-btn" onclick="switchTab('logs',this)" data-tab="logs">Logs</button>
 </div>
 
 <div class="adm">
@@ -500,6 +490,10 @@
       <div class="step-labels" id="step-labels"></div>
     </div>
 
+    <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:var(--tx2);cursor:pointer;margin-bottom:12px">
+      <input type="checkbox" id="pl-delete-input" style="width:15px;height:15px;accent-color:var(--primary)">
+      Tự động xóa folder input sau khi xong
+    </label>
     <div class="flex-row">
       <button class="btn btn-primary" id="run-btn" onclick="startPipeline()">▷ Chạy</button>
       <button class="btn btn-danger" id="stop-btn" onclick="stopPipeline()" style="display:none">■ Dừng</button>
@@ -561,6 +555,51 @@
     </div>
     <button class="btn btn-ghost" style="margin-left:auto;font-size:12px;padding:6px 12px"
             onclick="copyDriveLink()">📋 Copy</button>
+  </div>
+
+  <!-- Upload new images to training library -->
+  <div class="card" style="padding:16px;margin-bottom:16px;border:1px dashed rgba(77,163,255,.4)">
+    <div class="sec-title" style="font-size:13px;margin-bottom:12px">Tải ảnh lên thư viện training</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div class="form-group" style="grid-column:1/-1">
+        <label class="form-label" for="up-files">Chọn ảnh (JPG, PNG, WEBP)</label>
+        <input type="file" id="up-files" multiple accept="image/*" style="display:none" onchange="handleFileSelect(event)">
+        <label for="up-files" id="up-dropzone"
+               style="display:block;border:2px dashed var(--border);border-radius:10px;padding:24px;text-align:center;
+                      cursor:pointer;background:var(--bg2);transition:border-color .2s;font-size:13px;color:var(--tx3)">
+          <div style="font-size:22px;margin-bottom:5px">+</div>
+          <div>Nhấn để chọn hoặc kéo ảnh vào đây</div>
+          <div id="up-file-list" style="margin-top:8px;font-size:12px;color:var(--primary)"></div>
+        </label>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="up-level">Mức lũ *</label>
+        <select class="form-select" id="up-level">
+          <option value="">— Chọn mức lũ —</option>
+          <option value="NO_FLOOD">Không ngập</option>
+          <option value="PUDDLE">Vũng nước (&lt;5cm)</option>
+          <option value="ANKLE">Ngập mắt cá (5–20cm)</option>
+          <option value="KNEE">Ngập đầu gối (20–50cm)</option>
+          <option value="WAIST">Ngập hông (50–120cm)</option>
+          <option value="CHEST">Ngập ngực (120–200cm)</option>
+          <option value="SUBMERGED">Ngập hoàn toàn (&gt;200cm)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="up-depth">Độ sâu (cm)</label>
+        <input class="form-input" type="number" id="up-depth" min="0" max="500" placeholder="VD: 45">
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label class="form-label" for="up-notes">Ghi chú</label>
+        <input class="form-input" id="up-notes" placeholder="Tùy chọn — VD: nguồn ảnh, góc chụp…">
+      </div>
+    </div>
+    <div class="flex-row">
+      <button class="btn btn-primary" id="up-submit-btn" onclick="uploadTrainingImages()" disabled>
+        ↑ Upload vào thư viện
+      </button>
+      <span id="up-status" style="font-size:12px;color:var(--tx3)"></span>
+    </div>
   </div>
 
   <!-- Filter chips -->
@@ -921,6 +960,7 @@ async function startPipeline() {
     output_dir:document.getElementById('pl-output').value,
     depth_model:document.getElementById('pl-depth').value,
     drive_folder:document.getElementById('pl-drive').value,
+    delete_input_folder:document.getElementById('pl-delete-input').checked,
   };
   try{
     const r=await fetch('/start_pipeline',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
@@ -1357,8 +1397,75 @@ function openModal(src,title){
 function closeModal(e){if(e.target===document.getElementById('modal'))closeModalBtn();}
 function closeModalBtn(){document.getElementById('modal').classList.remove('open');document.getElementById('modal-img').src='';}
 
+// ── Upload training images ────────────────────────────────────────────────
+let _upFiles = [];
+
+function _setUpFiles(files) {
+  _upFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+  const list = document.getElementById('up-file-list');
+  const btn  = document.getElementById('up-submit-btn');
+  if (_upFiles.length) {
+    list.textContent = `${_upFiles.length} file: ${_upFiles.map(f => f.name).join(', ')}`;
+    btn.disabled = false;
+  } else {
+    list.textContent = '';
+    btn.disabled = true;
+  }
+}
+
+function handleFileSelect(e) { _setUpFiles(e.target.files); }
+function handleFileDrop(e)   { _setUpFiles(e.dataTransfer.files); }
+
+async function uploadTrainingImages() {
+  const level = document.getElementById('up-level').value;
+  if (!level)       { toast('Chọn mức lũ trước!', 'warn'); return; }
+  if (!_upFiles.length) { toast('Chưa chọn ảnh!', 'warn'); return; }
+  const depth = Number.parseFloat(document.getElementById('up-depth').value || 0);
+  const notes = document.getElementById('up-notes').value;
+  const btn   = document.getElementById('up-submit-btn');
+  const status= document.getElementById('up-status');
+  btn.disabled = true;
+  let ok = 0, fail = 0;
+  for (const file of _upFiles) {
+    status.textContent = `Đang upload ${file.name}…`;
+    try {
+      const b64 = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload  = () => res(r.result.split(',')[1]);
+        r.onerror = rej;
+        r.readAsDataURL(file);
+      });
+      const resp = await fetch('/upload_training', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name, data_b64: b64,
+                               actual_level: level, actual_depth: depth, notes }),
+      });
+      const d = await resp.json();
+      if (d.status === 'ok' || d.status === 'duplicate') ok++; else fail++;
+    } catch (e) { fail++; console.error('Upload error:', e); }
+  }
+  status.textContent = `Xong: ${ok} ảnh OK${fail ? ', ' + fail + ' lỗi' : ''}`;
+  toast(`Upload xong: ${ok} ảnh ✓`, ok > 0 ? 'ok' : 'warn');
+  _upFiles = [];
+  document.getElementById('up-files').value = '';
+  document.getElementById('up-file-list').textContent = '';
+  btn.disabled = true;
+  loadGallery();
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────
 window.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModalBtn();closeAnnotateModal();}});
+
+// Wire up drag-and-drop on the upload dropzone after DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  const dz = document.getElementById('up-dropzone');
+  if (!dz) return;
+  dz.addEventListener('dragover',  e => { e.preventDefault(); dz.style.borderColor = 'var(--primary)'; });
+  dz.addEventListener('dragleave', () => { dz.style.borderColor = 'var(--border)'; });
+  dz.addEventListener('drop',      e => { e.preventDefault(); dz.style.borderColor = 'var(--border)'; handleFileDrop(e); });
+});
+
 loadDashboard();
 </script>
 {% endblock %}

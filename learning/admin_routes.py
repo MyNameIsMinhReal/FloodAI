@@ -141,6 +141,13 @@ def _trigger_ai_retrain():
     threading.Thread(target=_worker, daemon=True, name="ai-retrain").start()
 
 
+# ── Module-level string constants (avoid duplication) ─────────────────────────
+_MSG_STOPPED   = "\u23f9 Đã dừng."
+_MSG_NOT_FOUND = "Not found"
+_SQL_COUNT_TI  = "SELECT COUNT(*) FROM training_images"
+_SQL_LEVEL_TI  = "SELECT actual_level, COUNT(*) FROM training_images GROUP BY actual_level"
+_SQL_IMG_BY_ID = "SELECT image_path FROM training_images WHERE id=?"
+
 # ── Active learning state ──────────────────────────────────────────────────────
 _al_state = {
     "reviews_since_retrain": 0,
@@ -151,209 +158,259 @@ _al_state = {
 }
 
 
+# ── Pipeline step helpers ──────────────────────────────────────────────────────
+
+def _pl_load_images(cfg: dict, original_dir: Path):
+    """Step 0: Load images from local folder or Google Drive. Returns (images, mode)."""
+    from utils.constants import IMAGE_EXTENSIONS
+    mode = cfg.get("mode", "local")
+    _plog(f"═══ STEP 1/5 · Tải ảnh [{mode.upper()}] ═══")
+    if mode == "local":
+        img_dir = Path(cfg.get("input_path", ""))
+        if not img_dir.exists():
+            _plog(f"❌ Folder không tồn tại: {img_dir}", "ERROR")
+            return None, mode
+        images = sorted(
+            f for f in img_dir.iterdir()
+            if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS
+        )
+        _plog(f"✅ Tải {len(images)} ảnh từ {img_dir}", "SUCCESS")
+        return images, mode
+    if mode == "drive":
+        from uploader.drive_uploader import DriveUploader
+        _plog("☁️ Đang kết nối Google Drive...")
+        images = DriveUploader().download_folder(
+            drive_folder=cfg.get("input_path", ""),
+            local_dir=original_dir,
+            extensions=IMAGE_EXTENSIONS,
+        )
+        _plog(f"✅ Tải {len(images)} ảnh từ Drive", "SUCCESS")
+        return images, mode
+    return [], mode
+
+
+def _pl_copy_file(src: Path, dst: Path) -> Path:
+    """Copy one file with up to 5 retries on PermissionError."""
+    import time as _t
+    for attempt in range(5):
+        try:
+            shutil.copy2(str(src), str(dst))
+            return dst
+        except PermissionError as e:
+            if attempt < 4:
+                _t.sleep(0.5)
+            else:
+                _plog(f"⚠️ Bỏ qua {src.name}: file bị khóa ({e})", "WARNING")
+                return src
+    return dst
+
+
+def _pl_copy_to_output(images: list, original_dir: Path) -> list:
+    """Step 1: Copy images into original_dir, return list of destination paths."""
+    _plog(f"═══ STEP 2/5 · Sao chép {len(images)} ảnh sang output ═══")
+    original_dir.mkdir(parents=True, exist_ok=True)
+    copied = []
+    for src in images:
+        dst = original_dir / Path(src).name
+        copied.append(dst if Path(src).resolve() == dst.resolve() else _pl_copy_file(Path(src), dst))
+    _plog(f"✅ Sao chép xong: {len(copied)} ảnh", "SUCCESS")
+    return copied
+
+
+def _pl_detect_location(images: list, cfg: dict, results: dict):
+    """Step 2: Detect location for each image and store into results."""
+    _pstep(2)
+    if not cfg.get("detect_location", True):
+        _plog("⏭ Bỏ qua nhận diện địa điểm.")
+        return
+    _plog("═══ STEP 3/5 · Nhận diện địa điểm ═══")
+    from utils.location_detector import LocationDetector
+    loc_list = LocationDetector(
+        google_maps_key=cfg.get("google_maps_key", ""),
+        use_ocr=True, use_plate=True, use_exif=True,
+    ).detect_batch([Path(p) for p in images])
+    located = sum(1 for r in loc_list if r.method != "none")
+    results["location_map"] = {r.image_path: vars(r) for r in loc_list}
+    _plog(f"✅ Địa điểm: {located}/{len(images)} ảnh có vị trí", "SUCCESS")
+
+
+def _pl_move_depth_outputs(depth_results: list, overlay_dir: Path, depthmap_dir: Path):
+    for r in depth_results:
+        for attr, dest in [("overlay_path", overlay_dir), ("depth_map_path", depthmap_dir)]:
+            src = Path(getattr(r, attr, "") or "")
+            if src.exists():
+                dst = dest / src.name
+                shutil.move(str(src), str(dst))
+                setattr(r, attr, str(dst))
+
+
+def _pl_self_learning(depth_results: list, cfg: dict, images: list):
+    try:
+        from learning_update import SelfLearningPipeline
+        sl = SelfLearningPipeline()
+        sl.process_results(depth_results, cfg, images)
+        sl.close()
+        _plog("🧠 Self-learning: dữ liệu đã được xếp hàng review.", "SUCCESS")
+    except Exception as e:
+        _plog(f"⚠️ Self-learning skipped: {e}", "WARNING")
+
+
+def _pl_depth_analysis(images: list, cfg: dict,
+                       out_root: Path, overlay_dir: Path, depthmap_dir: Path) -> list:
+    """Step 3: Run depth analysis, move outputs, trigger self-learning."""
+    from utils.constants import (
+        OUTPUT_FOLDER_TMP_DEPTH, DEFAULT_DINO_MODEL, DEFAULT_POSE_MODEL,
+        DEFAULT_YOLO_MODEL, DEFAULT_DEPTH_MODEL,
+    )
+    _pstep(3)
+    if cfg.get("skip_depth", False):
+        _plog("⏭ Bỏ qua Depth Analysis.")
+        return []
+    _plog("═══ STEP 4/5 · Depth Anything V2 + YOLO ═══")
+    from depth_analysis.reference_estimator import ReferenceEstimator
+    tmp = out_root / OUTPUT_FOLDER_TMP_DEPTH
+    tmp.mkdir(exist_ok=True)
+    estimator = ReferenceEstimator(
+        yolo_model   =cfg.get("yolo_model",  DEFAULT_YOLO_MODEL),
+        depth_model  =cfg.get("depth_model", DEFAULT_DEPTH_MODEL),
+        output_dir   =tmp,
+        conf_thresh  =float(cfg.get("yolo_conf", 0.35)),
+        use_dino     =cfg.get("use_dino",      True),
+        dino_model   =cfg.get("dino_model",    DEFAULT_DINO_MODEL),
+        use_pose     =cfg.get("use_pose",      True),
+        pose_model   =cfg.get("pose_model",    DEFAULT_POSE_MODEL),
+        use_segformer=cfg.get("use_segformer", True),
+    )
+    chunk = cfg.get("depth_chunk_size", 8)
+    _plog(f"🔍 Phân tích {len(images)} ảnh, chunk_size={chunk}…")
+    depth_results = estimator.analyze_batch(images, chunk_size=chunk, stop_check=_stopped)
+    estimator.unload_heavy_models()
+    _pl_move_depth_outputs(depth_results, overlay_dir, depthmap_dir)
+    shutil.rmtree(tmp, ignore_errors=True)
+    _plog(f"✅ Depth xong: {len(depth_results)}/{len(images)} ảnh", "SUCCESS")
+    _pl_self_learning(depth_results, cfg, images)
+    return depth_results
+
+
+def _pl_write_reports(results: dict, out_root: Path):
+    try:
+        from utils.report_generator import ReportGeneratorV2
+        csv_p, html_p = ReportGeneratorV2(output_dir=out_root).generate(results)
+        _plog(f"✅ HTML → {html_p}", "SUCCESS")
+        _plog(f"✅ CSV  → {csv_p}",  "SUCCESS")
+    except Exception as e:
+        _plog(f"⚠️ HTML/CSV report failed: {e}", "WARNING")
+    try:
+        from utils.excel_reporter import ExcelReporter
+        xlsx_p = ExcelReporter(output_dir=out_root).generate(results)
+        if xlsx_p:
+            _plog(f"✅ XLSX → {xlsx_p}", "SUCCESS")
+    except Exception as e:
+        _plog(f"⚠️ Excel report skipped: {e}", "WARNING")
+
+
+def _pl_upload_drive(results: dict, out_root: Path, run_id: str, cfg: dict):
+    from utils.constants import DRIVE_UPLOAD_EXTENSIONS
+    _plog("☁️ Đang upload lên Google Drive…")
+    try:
+        from uploader.drive_uploader import DriveUploader
+        fid = DriveUploader().upload_folder(
+            local_dir=out_root,
+            folder_name=f"{cfg.get('drive_folder', 'FloodAnalysis')}/{run_id}",
+            extensions=DRIVE_UPLOAD_EXTENSIONS,
+        )
+        results["drive_folder_id"] = fid
+        _plog(f"✅ Drive → https://drive.google.com/drive/folders/{fid}", "SUCCESS")
+    except Exception as e:
+        _plog(f"❌ Drive upload thất bại: {e}", "ERROR")
+
+
+def _pl_generate_reports(results: dict, out_root: Path, run_id: str, cfg: dict):
+    """Step 4: Write reports, optionally upload to Drive, save summary JSON."""
+    from utils.constants import PIPELINE_SUMMARY_JSON
+    _pstep(4)
+    _plog("═══ STEP 5/5 · Tạo báo cáo ═══")
+    _pl_write_reports(results, out_root)
+    if not cfg.get("skip_drive", True) and not _stopped():
+        _pl_upload_drive(results, out_root, run_id, cfg)
+    dd = results.get("depth_data", [])
+    counts: dict = {}
+    for r in dd:
+        lvl = r.flood_level if hasattr(r, "flood_level") else r.get("flood_level", "?")
+        counts[lvl] = counts.get(lvl, 0) + 1
+    summary = {
+        "run_id": run_id, "query": "N/A", "sources": [],
+        "total_crawled":  len(results.get("raw",      [])),
+        "total_filtered": len(results.get("filtered", [])),
+        "total_analyzed": len(dd),
+        "flood_summary":  counts,
+    }
+    try:
+        (out_root / PIPELINE_SUMMARY_JSON).write_text(
+            json.dumps(summary, indent=2, ensure_ascii=False))
+    except Exception:
+        pass
+
+
+def _pl_cleanup_input(cfg: dict, mode: str):
+    """Auto-delete local input folder after successful run, if requested."""
+    if not cfg.get("delete_input_folder") or mode != "local":
+        return
+    try:
+        folder = Path(cfg.get("input_path", ""))
+        if folder.exists() and folder.is_dir():
+            shutil.rmtree(folder)
+            _plog(f"🗑 Đã xóa folder input: {folder}", "SUCCESS")
+    except Exception as e:
+        _plog(f"⚠️ Không xóa được folder input: {e}", "WARNING")
+
+
 # ── Pipeline thread ────────────────────────────────────────────────────────────
+
 def _run_pipeline(cfg: dict):
     try:
         from utils.constants import (
-            IMAGE_EXTENSIONS, DRIVE_UPLOAD_EXTENSIONS,
-            OUTPUT_FOLDER_ORIGINAL, OUTPUT_FOLDER_OVERLAY,
-            OUTPUT_FOLDER_DEPTHMAP, OUTPUT_FOLDER_TMP_DEPTH,
-            PIPELINE_SUMMARY_JSON,
+            OUTPUT_FOLDER_ORIGINAL, OUTPUT_FOLDER_OVERLAY, OUTPUT_FOLDER_DEPTHMAP,
         )
-        from utils.constants import DEFAULT_DINO_MODEL, DEFAULT_POSE_MODEL
-
         run_id       = datetime.now().strftime("%Y%m%d_%H%M%S")
         out_root     = Path(cfg.get("output_dir", "output")) / run_id
         original_dir = out_root / OUTPUT_FOLDER_ORIGINAL
         overlay_dir  = out_root / OUTPUT_FOLDER_OVERLAY
         depthmap_dir = out_root / OUTPUT_FOLDER_DEPTHMAP
-
         for d in (original_dir, overlay_dir, depthmap_dir):
             d.mkdir(parents=True, exist_ok=True)
-
         with _pl_lock:
             _pl["run_id"] = run_id
 
         results = {"run_id": run_id, "query": "N/A", "sources": [],
                    "raw": [], "filtered": [], "depth_data": []}
 
-        # STEP 0 — Load images
         _pstep(0)
-        mode = cfg.get("mode", "local")
-        _plog(f"═══ STEP 1/5 · Tải ảnh [{mode.upper()}] ═══")
-        images = []
-
-        if mode == "local":
-            img_dir = Path(cfg.get("input_path", ""))
-            if not img_dir.exists():
-                _plog(f"❌ Folder không tồn tại: {img_dir}", "ERROR")
-                with _pl_lock: _pl["status"] = "error"
-                return
-            images = sorted([f for f in img_dir.iterdir()
-                             if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS])
-            _plog(f"✅ Tải {len(images)} ảnh từ {img_dir}", "SUCCESS")
-
-        elif mode == "drive":
-            from uploader.drive_uploader import DriveUploader
-            _plog("☁️ Đang kết nối Google Drive...")
-            images = DriveUploader().download_folder(
-                drive_folder=cfg.get("input_path", ""),
-                local_dir=original_dir,
-                extensions=IMAGE_EXTENSIONS,
-            )
-            _plog(f"✅ Tải {len(images)} ảnh từ Drive", "SUCCESS")
-
+        images, mode = _pl_load_images(cfg, original_dir)
+        if images is None:
+            with _pl_lock: _pl["status"] = "error"
+            return
         results["raw"] = results["filtered"] = images
         if not images:
             _plog("❌ Không có ảnh nào để xử lý.", "ERROR")
             with _pl_lock: _pl["status"] = "error"
             return
+        if _stopped(): _plog(_MSG_STOPPED, "WARNING"); return
 
-        if _stopped(): _plog("⏹ Đã dừng.", "WARNING"); return
-
-        # STEP 1 — Copy to output
         _pstep(1)
-        _plog(f"═══ STEP 2/5 · Sao chép {len(images)} ảnh sang output ═══")
-        original_dir.mkdir(parents=True, exist_ok=True)
-        copied = []
-        for src in images:
-            dst = original_dir / Path(src).name
-            if Path(src).resolve() == dst.resolve():
-                copied.append(dst)
-                continue
-            for attempt in range(5):
-                try:
-                    shutil.copy2(str(src), str(dst))
-                    break
-                except PermissionError as e:
-                    if attempt < 4:
-                        import time as _t; _t.sleep(0.5)
-                    else:
-                        _plog(f"⚠️ Bỏ qua {Path(src).name}: file bị khóa ({e})", "WARNING")
-                        dst = src
-            copied.append(dst)
-        images = copied
+        images = _pl_copy_to_output(images, original_dir)
         results["filtered"] = images
-        _plog(f"✅ Sao chép xong: {len(images)} ảnh", "SUCCESS")
+        if _stopped(): _plog(_MSG_STOPPED, "WARNING"); return
 
-        if _stopped(): _plog("⏹ Đã dừng.", "WARNING"); return
+        _pl_detect_location(images, cfg, results)
+        if _stopped(): _plog(_MSG_STOPPED, "WARNING"); return
 
-        # STEP 2 — Location detection
-        _pstep(2)
-        location_map = {}
-        if cfg.get("detect_location", True):
-            _plog("═══ STEP 3/5 · Nhận diện địa điểm ═══")
-            from utils.location_detector import LocationDetector
-            loc_list = LocationDetector(
-                google_maps_key=cfg.get("google_maps_key", ""),
-                use_ocr=True, use_plate=True, use_exif=True,
-            ).detect_batch([Path(p) for p in images])
-            located = sum(1 for r in loc_list if r.method != "none")
-            location_map = {r.image_path: r for r in loc_list}
-            results["location_map"] = {k: vars(v) for k, v in location_map.items()}
-            _plog(f"✅ Địa điểm: {located}/{len(images)} ảnh có vị trí", "SUCCESS")
-        else:
-            _plog("⏭ Bỏ qua nhận diện địa điểm.")
+        depth_results = _pl_depth_analysis(images, cfg, out_root, overlay_dir, depthmap_dir)
+        results["depth_data"] = depth_results
+        if _stopped(): _plog(_MSG_STOPPED, "WARNING"); return
 
-        if _stopped(): _plog("⏹ Đã dừng.", "WARNING"); return
-
-        # STEP 3 — Depth analysis
-        _pstep(3)
-        depth_results = []
-        if not cfg.get("skip_depth", False):
-            _plog("═══ STEP 4/5 · Depth Anything V2 + YOLO ═══")
-            from depth_analysis.reference_estimator import ReferenceEstimator
-            tmp = out_root / OUTPUT_FOLDER_TMP_DEPTH
-            tmp.mkdir(exist_ok=True)
-            estimator = ReferenceEstimator(
-                yolo_model   = cfg.get("yolo_model",   "yolov8n.pt"),
-                depth_model  = cfg.get("depth_model",  "depth-anything/Depth-Anything-V2-Small-hf"),
-                output_dir   = tmp,
-                conf_thresh  = float(cfg.get("yolo_conf", 0.35)),
-                use_dino     = cfg.get("use_dino", True),
-                dino_model   = cfg.get("dino_model",   DEFAULT_DINO_MODEL),
-                use_pose     = cfg.get("use_pose",     True),
-                pose_model   = cfg.get("pose_model",   DEFAULT_POSE_MODEL),
-                use_segformer= cfg.get("use_segformer", True),
-            )
-            chunk = cfg.get("depth_chunk_size", 8)
-            _plog(f"🔍 Phân tích {len(images)} ảnh, chunk_size={chunk}…")
-            depth_results = estimator.analyze_batch(images, chunk_size=chunk, stop_check=_stopped)
-            estimator.unload_heavy_models()
-            for r in depth_results:
-                for attr, dest in [("overlay_path", overlay_dir), ("depth_map_path", depthmap_dir)]:
-                    src = Path(getattr(r, attr, "") or "")
-                    if src.exists():
-                        dst = dest / src.name
-                        shutil.move(str(src), str(dst))
-                        setattr(r, attr, str(dst))
-            shutil.rmtree(tmp, ignore_errors=True)
-            results["depth_data"] = depth_results
-            _plog(f"✅ Depth xong: {len(depth_results)}/{len(images)} ảnh", "SUCCESS")
-            try:
-                from learning_update import SelfLearningPipeline
-                sl = SelfLearningPipeline()
-                sl.process_results(depth_results=depth_results, cfg=cfg, image_paths=images)
-                sl.close()
-                _plog("🧠 Self-learning: dữ liệu đã được xếp hàng review.", "SUCCESS")
-            except Exception as e:
-                _plog(f"⚠️ Self-learning skipped: {e}", "WARNING")
-        else:
-            _plog("⏭ Bỏ qua Depth Analysis.")
-
-        if _stopped(): _plog("⏹ Đã dừng.", "WARNING"); return
-
-        # STEP 4 — Reports
-        _pstep(4)
-        _plog("═══ STEP 5/5 · Tạo báo cáo ═══")
-        try:
-            from utils.report_generator import ReportGeneratorV2
-            csv_p, html_p = ReportGeneratorV2(output_dir=out_root).generate(results)
-            _plog(f"✅ HTML → {html_p}", "SUCCESS")
-            _plog(f"✅ CSV  → {csv_p}",  "SUCCESS")
-        except Exception as e:
-            _plog(f"⚠️ HTML/CSV report failed: {e}", "WARNING")
-
-        try:
-            from utils.excel_reporter import ExcelReporter
-            xlsx_p = ExcelReporter(output_dir=out_root).generate(results)
-            if xlsx_p:
-                _plog(f"✅ XLSX → {xlsx_p}", "SUCCESS")
-        except Exception as e:
-            _plog(f"⚠️ Excel report skipped: {e}", "WARNING")
-
-        if not cfg.get("skip_drive", True) and not _stopped():
-            _plog("☁️ Đang upload lên Google Drive…")
-            try:
-                from uploader.drive_uploader import DriveUploader
-                fid = DriveUploader().upload_folder(
-                    local_dir=out_root,
-                    folder_name=f"{cfg.get('drive_folder', 'FloodAnalysis')}/{run_id}",
-                    extensions=DRIVE_UPLOAD_EXTENSIONS,
-                )
-                results["drive_folder_id"] = fid
-                _plog(f"✅ Drive → https://drive.google.com/drive/folders/{fid}", "SUCCESS")
-            except Exception as e:
-                _plog(f"❌ Drive upload thất bại: {e}", "ERROR")
-
-        dd     = results.get("depth_data", [])
-        counts = {}
-        for r in dd:
-            lvl = r.flood_level if hasattr(r, "flood_level") else r.get("flood_level", "?")
-            counts[lvl] = counts.get(lvl, 0) + 1
-
-        summary = {
-            "run_id": run_id, "query": "N/A", "sources": [],
-            "total_crawled": len(results.get("raw", [])),
-            "total_filtered": len(results.get("filtered", [])),
-            "total_analyzed": len(dd),
-            "flood_summary": counts,
-        }
-        try:
-            from utils.constants import PIPELINE_SUMMARY_JSON as _PSJ
-            (out_root / _PSJ).write_text(json.dumps(summary, indent=2, ensure_ascii=False))
-        except Exception:
-            pass
+        _pl_generate_reports(results, out_root, run_id, cfg)
+        _pl_cleanup_input(cfg, mode)
 
         _plog("═══ ✅ PIPELINE HOÀN THÀNH ═══", "SUCCESS")
         with _pl_lock:
@@ -368,142 +425,40 @@ def _run_pipeline(cfg: dict):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# REGISTRATION FUNCTION
+# ROUTE SUB-REGISTRARS
 # ══════════════════════════════════════════════════════════════════════════════
 
-def register_admin(app):
-    """Register all admin/review/pipeline routes onto a Flask app instance."""
-    from flask import g, jsonify, redirect, render_template, request, send_file, session
-
-    def login_required(f):
-        @wraps(f)
-        def wrapped(*args, **kwargs):
-            if not session.get("logged_in"):
-                if request.is_json or request.method != "GET":
-                    return jsonify({"error": "Chưa đăng nhập"}), 401
-                return redirect("/login")
-            return f(*args, **kwargs)
-        return wrapped
-
-    # ── Flask-g DB helpers ─────────────────────────────────────────────────────
-    def get_learner():
-        if "adm_learner" not in g:
-            from learning.active_learner import ActiveLearnerV2 as AL
-            g.adm_learner = AL()
-        return g.adm_learner
-
-    def get_train_conn():
-        if "adm_tc" not in g:
-            conn = sqlite3.connect(str(TRAIN_DB_PATH), check_same_thread=False)
-            conn.row_factory = sqlite3.Row
-            conn.executescript("""
-                CREATE TABLE IF NOT EXISTS training_images (
-                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                    added_at     TEXT NOT NULL,
-                    image_path   TEXT NOT NULL,
-                    image_hash   TEXT UNIQUE,
-                    actual_depth REAL NOT NULL,
-                    actual_level TEXT NOT NULL,
-                    notes        TEXT DEFAULT '',
-                    source       TEXT DEFAULT 'manual',
-                    verified     INTEGER DEFAULT 1,
-                    category     TEXT DEFAULT 'untagged'
-                );
-                CREATE INDEX IF NOT EXISTS idx_ti_level    ON training_images(actual_level);
-                CREATE INDEX IF NOT EXISTS idx_ti_category ON training_images(category);
-            """)
-            # Migration: add category column if missing
-            try:
-                conn.execute("ALTER TABLE training_images ADD COLUMN category TEXT DEFAULT 'untagged'")
-                conn.commit()
-            except Exception:
-                pass
-            g.adm_tc = conn
-        return g.adm_tc
-
-    @app.teardown_appcontext
-    def _close_admin(exc=None):
-        lrn = g.pop("adm_learner", None)
-        if lrn:
-            try: lrn.close()
-            except Exception: pass
-        tc = g.pop("adm_tc", None)
-        if tc:
-            try: tc.close()
-            except Exception: pass
-
-    def _get_live_estimator():
-        global _live_estimator
-        if _live_estimator is not None:
-            return _live_estimator, None
-        try:
-            from depth_analysis.reference_estimator import ReferenceEstimator
-            import yaml as _yaml
-            cfg_path = ROOT_DIR / "config.yaml"
-            raw_cfg = _yaml.safe_load(cfg_path.read_text(encoding="utf-8")) if cfg_path.exists() else {}
-            try:
-                from learning_update import SelfLearningPipeline
-                sl = SelfLearningPipeline()
-                raw_cfg = sl.get_adaptive_config(raw_cfg)
-                sl.close()
-            except Exception:
-                pass
-            LIVE_DIR.mkdir(parents=True, exist_ok=True)
-            _live_estimator = ReferenceEstimator(
-                yolo_model   = raw_cfg.get("yolo_model",  "yolov8n.pt"),
-                depth_model  = raw_cfg.get("depth_model", "depth-anything/Depth-Anything-V2-Small-hf"),
-                output_dir   = BASE_DIR / "_live_tmp",
-                conf_thresh  = float(raw_cfg.get("yolo_conf", 0.35)),
-                use_dino     = raw_cfg.get("use_dino",  True),
-                dino_model   = raw_cfg.get("dino_model", "facebook/dinov2-small"),
-                use_pose     = raw_cfg.get("use_pose",  True),
-                pose_model   = raw_cfg.get("pose_model", "yolov8n-pose.pt"),
-                use_segformer= raw_cfg.get("use_segformer", True),
-            )
-            return _live_estimator, None
-        except Exception as e:
-            return None, str(e)
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # ADMIN PANEL PAGE
-    # ══════════════════════════════════════════════════════════════════════════
+def _reg_core(app, lr, gl, gtc, send_file):
+    from flask import jsonify, redirect, render_template, request
 
     @app.route("/admin")
-    @login_required
+    @lr
     def admin_panel():
         return render_template("admin.html", active="admin", logged_in=True)
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # REVIEW
-    # ══════════════════════════════════════════════════════════════════════════
-
     @app.route("/review/<int:case_id>", methods=["POST"])
-    @login_required
+    @lr
     def submit_review(case_id):
         d = request.json or {}
-        get_learner().submit_review(
-            case_id=case_id,
-            actual_depth=d["actual_depth"],
-            actual_level=d["actual_level"],
-            reviewed_by="web_ui",
-            notes=d.get("notes", ""),
-        )
+        gl().submit_review(case_id=case_id, actual_depth=d["actual_depth"],
+                           actual_level=d["actual_level"], reviewed_by="web_ui",
+                           notes=d.get("notes", ""))
         get_ai_singleton()
         _trigger_ai_retrain()
         return jsonify({"status": "ok"})
 
     @app.route("/skip/<int:case_id>", methods=["POST"])
-    @login_required
+    @lr
     def skip_case(case_id):
-        lrn = get_learner()
+        lrn = gl()
         lrn.conn.execute("UPDATE review_queue SET status='skipped' WHERE id=?", (case_id,))
         lrn.conn.commit()
         return jsonify({"status": "ok"})
 
     @app.route("/image/<int:case_id>")
-    @login_required
+    @lr
     def get_image(case_id):
-        case = get_learner()._get_case_by_id(case_id)
+        case = gl()._get_case_by_id(case_id)
         if case:
             p = Path(case.image_path)
             for candidate in (p, TRAIN_IMG_DIR / p.name):
@@ -513,7 +468,7 @@ def register_admin(app):
         return "Image not found", 404
 
     @app.route("/run_image/<path:rel_path>")
-    @login_required
+    @lr
     def run_image(rel_path):
         output_root = ROOT_DIR / "output"
         full = (output_root / rel_path).resolve()
@@ -522,26 +477,26 @@ def register_admin(app):
         if full.exists():
             try: return send_file(str(full))
             except Exception: pass
-        return "Not found", 404
+        return _MSG_NOT_FOUND, 404
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # TRAINING DATA
-    # ══════════════════════════════════════════════════════════════════════════
+
+def _reg_training(app, lr, gl, gtc, send_file):
+    from flask import jsonify, request
 
     @app.route("/upload_training", methods=["POST"])
-    @login_required
+    @lr
     def upload_training():
         d = request.json or {}
         if not {"filename", "data_b64", "actual_depth", "actual_level"}.issubset(d):
             return jsonify({"error": "missing fields"}), 400
         TRAIN_IMG_DIR.mkdir(parents=True, exist_ok=True)
-        raw      = base64.b64decode(d["data_b64"])
-        img_hash = hashlib.sha256(raw).hexdigest()[:12]
-        suffix   = Path(d["filename"]).suffix.lower() or ".jpg"
+        raw       = base64.b64decode(d["data_b64"])
+        img_hash  = hashlib.sha256(raw).hexdigest()[:12]
+        suffix    = Path(d["filename"]).suffix.lower() or ".jpg"
         save_path = TRAIN_IMG_DIR / f"{img_hash}{suffix}"
         save_path.write_bytes(raw)
         try:
-            conn = get_train_conn()
+            conn = gtc()
             conn.execute(
                 "INSERT INTO training_images "
                 "(added_at,image_path,image_hash,actual_depth,actual_level,notes,source) "
@@ -557,33 +512,29 @@ def register_admin(app):
         return jsonify({"status": "ok", "path": str(save_path)})
 
     @app.route("/training_stats")
-    @login_required
+    @lr
     def training_stats():
-        conn     = get_train_conn()
-        total    = conn.execute("SELECT COUNT(*) FROM training_images").fetchone()[0]
-        by_level = dict(conn.execute(
-            "SELECT actual_level, COUNT(*) FROM training_images GROUP BY actual_level"
-        ).fetchall())
+        conn     = gtc()
+        total    = conn.execute(_SQL_COUNT_TI).fetchone()[0]
+        by_level = dict(conn.execute(_SQL_LEVEL_TI).fetchall())
         recent   = [dict(r) for r in conn.execute(
             "SELECT * FROM training_images ORDER BY id DESC LIMIT 50"
         ).fetchall()]
         return jsonify({"total": total, "by_level": by_level, "recent": recent})
 
     @app.route("/training_summary")
-    @login_required
+    @lr
     def training_summary():
-        conn     = get_train_conn()
-        total    = conn.execute("SELECT COUNT(*) FROM training_images").fetchone()[0]
-        by_level = dict(conn.execute(
-            "SELECT actual_level, COUNT(*) FROM training_images GROUP BY actual_level"
-        ).fetchall())
+        conn     = gtc()
+        total    = conn.execute(_SQL_COUNT_TI).fetchone()[0]
+        by_level = dict(conn.execute(_SQL_LEVEL_TI).fetchall())
         return jsonify({"total": total, "by_level": by_level})
 
     @app.route("/delete_training/<int:tid>", methods=["DELETE"])
-    @login_required
+    @lr
     def delete_training(tid):
-        conn = get_train_conn()
-        row  = conn.execute("SELECT image_path FROM training_images WHERE id=?", (tid,)).fetchone()
+        conn = gtc()
+        row  = conn.execute(_SQL_IMG_BY_ID, (tid,)).fetchone()
         if row:
             Path(row["image_path"]).unlink(missing_ok=True)
             conn.execute("DELETE FROM training_images WHERE id=?", (tid,))
@@ -591,13 +542,27 @@ def register_admin(app):
         return jsonify({"status": "ok"})
 
     @app.route("/review_stats")
-    @login_required
+    @lr
     def review_stats_api():
-        return jsonify({k: (v or 0) for k, v in get_learner().get_review_stats().items()})
+        return jsonify({k: (v or 0) for k, v in gl().get_review_stats().items()})
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # LIVE PREDICT
-    # ══════════════════════════════════════════════════════════════════════════
+    @app.route("/training_image/<int:tid>")
+    @lr
+    def training_image(tid):
+        try:
+            row = gtc().execute(_SQL_IMG_BY_ID, (tid,)).fetchone()
+            if row:
+                p = Path(row["image_path"])
+                for candidate in (p, TRAIN_IMG_DIR / p.name, LIVE_DIR / p.name):
+                    if candidate.exists():
+                        return send_file(str(candidate.resolve()))
+        except Exception:
+            pass
+        return _MSG_NOT_FOUND, 404
+
+
+def _reg_live(app, gl, gtc, gle, send_file):
+    from flask import jsonify, request
 
     @app.route("/live_predict", methods=["POST"])
     def live_predict():
@@ -610,8 +575,7 @@ def register_admin(app):
         suffix   = Path(d["filename"]).suffix.lower() or ".jpg"
         img_path = LIVE_DIR / f"live_{img_hash}{suffix}"
         img_path.write_bytes(raw)
-
-        estimator, err = _get_live_estimator()
+        estimator, err = gle()
         if estimator is None:
             return jsonify({"error": f"Không thể tải model: {err}"}), 503
         try:
@@ -671,7 +635,7 @@ def register_admin(app):
         if full.exists():
             try: return send_file(str(full))
             except Exception: pass
-        return "Not found", 404
+        return _MSG_NOT_FOUND, 404
 
     @app.route("/live_feedback", methods=["POST"])
     def live_feedback():
@@ -684,7 +648,7 @@ def register_admin(app):
             suffix   = Path(d["filename"]).suffix.lower() or ".jpg"
             img_path = LIVE_DIR / f"live_{img_hash}{suffix}"
             img_path.write_bytes(raw)
-            conn = get_train_conn()
+            conn = gtc()
             conn.execute(
                 "INSERT OR IGNORE INTO training_images "
                 "(added_at,image_path,image_hash,actual_depth,actual_level,notes,source,verified) "
@@ -719,20 +683,19 @@ def register_admin(app):
                     continue
                 overlay_name = f.stem + "_overlay.jpg"
                 items.append({
-                    "name":     f.name,
-                    "overlay":  overlay_name if (LIVE_DIR / overlay_name).exists() else None,
-                    "size_kb":  round(f.stat().st_size / 1024, 1),
-                    "mtime":    datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                    "name":    f.name,
+                    "overlay": overlay_name if (LIVE_DIR / overlay_name).exists() else None,
+                    "size_kb": round(f.stat().st_size / 1024, 1),
+                    "mtime":   datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
                 })
         db_map = {}
         try:
-            conn = get_train_conn()
-            rows = conn.execute(
+            rows = gtc().execute(
                 "SELECT image_hash, actual_depth, actual_level, notes, source, added_at "
                 "FROM training_images WHERE source LIKE 'live%' ORDER BY id DESC"
             ).fetchall()
-            for r in rows:
-                db_map[r["image_hash"]] = dict(r)
+            for row in rows:
+                db_map[row["image_hash"]] = dict(row)
         except Exception:
             pass
         for item in items:
@@ -741,40 +704,42 @@ def register_admin(app):
                 item["db"] = db_map[h]
         return jsonify({"items": items, "total": len(items)})
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # RUN HISTORY
-    # ══════════════════════════════════════════════════════════════════════════
+
+def _reg_history(app, lr, send_file):
+    from flask import jsonify, request
 
     @app.route("/run_history")
-    @login_required
+    @lr
     def run_history():
         output_root = ROOT_DIR / "output"
         runs = []
         if output_root.exists():
             for run_dir in sorted(output_root.iterdir(), reverse=True):
-                if not run_dir.is_dir(): continue
+                if not run_dir.is_dir():
+                    continue
                 sf = run_dir / "pipeline_summary.json"
                 try:    s = json.loads(sf.read_text(encoding="utf-8")) if sf.exists() else {}
-                except: s = {}
+                except Exception: s = {}
                 s["run_dir"] = run_dir.name
                 exts = {".jpg", ".jpeg", ".png", ".webp"}
-                for key, sub in [("overlay_images", "depth_overlays"), ("original_images", "original_images")]:
+                for key, sub in [("overlay_images", "depth_overlays"),
+                                  ("original_images", "original_images")]:
                     sub_dir = run_dir / sub
-                    s[key] = [f.name for f in sorted(sub_dir.glob("*")) if f.suffix.lower() in exts] \
-                             if sub_dir.exists() else []
+                    s[key] = [f.name for f in sorted(sub_dir.glob("*"))
+                              if f.suffix.lower() in exts] if sub_dir.exists() else []
                 runs.append(s)
         return jsonify(runs)
 
     @app.route("/run_detail/<run_dir>")
-    @login_required
+    @lr
     def run_detail(run_dir):
         import csv as _csv
         run_path = ROOT_DIR / "output" / run_dir
         if not run_path.exists():
-            return jsonify({"error": "Not found"}), 404
+            return jsonify({"error": _MSG_NOT_FOUND}), 404
         sf = run_path / "pipeline_summary.json"
         try:    summary = json.loads(sf.read_text(encoding="utf-8")) if sf.exists() else {}
-        except: summary = {}
+        except Exception: summary = {}
         rows = []
         for csv_name in ("flood_analysis_report.csv", "results.csv", "report.csv"):
             csv_path = run_path / csv_name
@@ -787,7 +752,7 @@ def register_admin(app):
         return jsonify({"summary": summary, "rows": rows, "run_dir": run_dir})
 
     @app.route("/run_csv/<run_dir>")
-    @login_required
+    @lr
     def run_csv_download(run_dir):
         run_path = ROOT_DIR / "output" / run_dir
         for csv_name in ("flood_analysis_report.csv", "results.csv", "report.csv"):
@@ -798,21 +763,22 @@ def register_admin(app):
                                  mimetype="text/csv")
         return jsonify({"error": "CSV not found"}), 404
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # PIPELINE CONTROL
-    # ══════════════════════════════════════════════════════════════════════════
+
+def _reg_pipeline_ctrl(app, lr):
+    from flask import jsonify, request
 
     @app.route("/pipeline_defaults")
-    @login_required
+    @lr
     def pipeline_defaults():
         try:
             import yaml as _yaml
             cfg_path = ROOT_DIR / "config.yaml"
             if cfg_path.exists():
                 raw = _yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+                from utils.constants import DEFAULT_YOLO_MODEL, DEFAULT_DEPTH_MODEL
                 return jsonify({
-                    "yolo_model":   raw.get("yolo_model",   "yolov8n.pt"),
-                    "depth_model":  raw.get("depth_model",  "depth-anything/Depth-Anything-V2-Small-hf"),
+                    "yolo_model":   raw.get("yolo_model",   DEFAULT_YOLO_MODEL),
+                    "depth_model":  raw.get("depth_model",  DEFAULT_DEPTH_MODEL),
                     "output_dir":   raw.get("output_dir",   "output"),
                     "drive_folder": raw.get("drive_folder", "FloodAnalysis"),
                 })
@@ -820,7 +786,7 @@ def register_admin(app):
         return jsonify({})
 
     @app.route("/start_pipeline", methods=["POST"])
-    @login_required
+    @lr
     def start_pipeline():
         with _pl_lock:
             if _pl["status"] == "running":
@@ -832,7 +798,7 @@ def register_admin(app):
         return jsonify({"status": "started"})
 
     @app.route("/pipeline_log")
-    @login_required
+    @lr
     def pipeline_log():
         offset = int(request.args.get("offset", 0))
         with _pl_lock:
@@ -843,30 +809,28 @@ def register_admin(app):
         return jsonify({"lines": lines, "next_offset": nxt, "status": status, "step": step})
 
     @app.route("/stop_pipeline", methods=["POST"])
-    @login_required
+    @lr
     def stop_pipeline():
         with _pl_lock:
             _pl["stop_flag"] = True
             _pl["status"]    = "idle"
         return jsonify({"status": "ok"})
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # REVIEW CASES
-    # ══════════════════════════════════════════════════════════════════════════
+
+def _reg_cases(app, lr, gl, gtc, send_file):
+    from flask import jsonify, request
 
     @app.route("/review_cases")
-    @login_required
+    @lr
     def review_cases():
         try:
-            learner = get_learner()
+            learner = gl()
             cases   = learner.get_pending_reviews(max_count=20)
-            result  = []
-            for c in cases:
-                d = c.to_dict() if hasattr(c, "to_dict") else {}
-                result.append({k: d.get(k) for k in
-                               ["id", "timestamp", "image_hash", "image_path",
-                                "predicted_depth", "predicted_level", "confidence",
-                                "review_reason", "score"]})
+            fields  = ["id", "timestamp", "image_hash", "image_path",
+                       "predicted_depth", "predicted_level", "confidence",
+                       "review_reason", "score"]
+            result  = [{k: (c.to_dict() if hasattr(c, "to_dict") else {}).get(k)
+                        for k in fields} for c in cases]
             underrepresented = []
             try:
                 underrepresented = learner.get_underrepresented_levels() \
@@ -877,10 +841,10 @@ def register_admin(app):
             return jsonify({"cases": [], "underrepresented": [], "error": str(e)})
 
     @app.route("/case_image/<int:case_id>")
-    @login_required
+    @lr
     def case_image(case_id):
         try:
-            case = get_learner()._get_case_by_id(case_id)
+            case = gl()._get_case_by_id(case_id)
             if case:
                 p = Path(case.image_path)
                 for candidate in (p, TRAIN_IMG_DIR / p.name, LIVE_DIR / p.name):
@@ -890,7 +854,7 @@ def register_admin(app):
         return "Image not found", 404
 
     @app.route("/annotate_live_image", methods=["POST"])
-    @login_required
+    @lr
     def annotate_live_image():
         d            = request.json or {}
         image_name   = d.get("image_name", "")
@@ -909,7 +873,7 @@ def register_admin(app):
         if not train_dst.exists():
             shutil.copy2(str(img_path), str(train_dst))
         try:
-            conn = get_train_conn()
+            conn = gtc()
             conn.execute(
                 "INSERT OR REPLACE INTO training_images "
                 "(added_at,image_path,image_hash,actual_depth,actual_level,notes,source,verified) "
@@ -925,67 +889,67 @@ def register_admin(app):
         return jsonify({"status": "ok", "image_hash": img_hash, "train_path": str(train_dst)})
 
     @app.route("/trigger_retrain", methods=["POST"])
-    @login_required
+    @lr
     def trigger_retrain():
         get_ai_singleton()
         _trigger_ai_retrain()
         return jsonify({"status": "ok", "message": "Retrain đã được kích hoạt trong nền"})
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # ACTIVE LEARNING
-    # ══════════════════════════════════════════════════════════════════════════
+
+def _reg_active_learning(app, lr, gl, gtc):
+    from flask import jsonify, request
+
+    def _score_case(c, level_counts, max_count):
+        d       = c.to_dict() if hasattr(c, "to_dict") else {}
+        conf    = float(d.get("confidence", 0.5) or 0.5)
+        level   = str(d.get("predicted_level", "MEDIUM") or "MEDIUM")
+        p       = max(1e-6, min(1 - 1e-6, conf))
+        entropy = -(p * math.log2(p) + (1 - p) * math.log2(1 - p))
+        margin  = max(0, 1.0 - min(abs(conf - 0.40), abs(conf - 0.70)) / 0.70)
+        underrep = max(0, 1.0 - level_counts.get(level, 0) / max(max_count, 1))
+        priority = entropy * 0.40 + margin * 0.35 + underrep * 0.25
+        if entropy > 0.85:
+            tag = "🔴 Rất không chắc"
+        elif entropy > 0.65:
+            tag = "🟠 Không chắc"
+        elif margin > 0.70:
+            tag = "🟡 Gần ngưỡng"
+        else:
+            tag = "🟢 Tương đối chắc"
+        return {
+            **{k: d.get(k) for k in ["id", "timestamp", "image_hash", "image_path",
+                                      "predicted_depth", "review_reason", "score"]},
+            "predicted_level": level, "confidence": round(conf, 3),
+            "priority_score": round(priority, 4), "entropy_score": round(entropy, 3),
+            "margin_score": round(margin, 3), "underrep_score": round(underrep, 3),
+            "uncertainty_tag": tag,
+        }
 
     @app.route("/uncertainty_ranking")
-    @login_required
+    @lr
     def uncertainty_ranking():
         try:
-            learner = get_learner()
+            learner = gl()
             cases   = learner.get_pending_reviews(max_count=100)
             if not cases:
                 return jsonify({"ranked_cases": [], "total_pending": 0,
                                 "recommendation": "Không có ảnh cần review"})
-            conn = get_train_conn()
-            level_counts = dict(conn.execute(
-                "SELECT actual_level, COUNT(*) FROM training_images GROUP BY actual_level"
-            ).fetchall())
-            max_count = max(level_counts.values()) if level_counts else 1
-            scored = []
-            for c in cases:
-                d     = c.to_dict() if hasattr(c, "to_dict") else {}
-                conf  = float(d.get("confidence", 0.5) or 0.5)
-                level = str(d.get("predicted_level", "MEDIUM") or "MEDIUM")
-                p     = max(1e-6, min(1 - 1e-6, conf))
-                entropy   = -(p * math.log2(p) + (1 - p) * math.log2(1 - p))
-                margin    = max(0, 1.0 - min(abs(conf - 0.40), abs(conf - 0.70)) / 0.70)
-                underrep  = max(0, 1.0 - level_counts.get(level, 0) / max(max_count, 1))
-                priority  = entropy * 0.40 + margin * 0.35 + underrep * 0.25
-                tag = ("🔴 Rất không chắc" if entropy > 0.85 else
-                       "🟠 Không chắc"     if entropy > 0.65 else
-                       "🟡 Gần ngưỡng"     if margin > 0.70  else
-                       "🟢 Tương đối chắc")
-                scored.append({
-                    **{k: d.get(k) for k in ["id", "timestamp", "image_hash", "image_path",
-                                              "predicted_depth", "review_reason", "score"]},
-                    "predicted_level": level, "confidence": round(conf, 3),
-                    "priority_score": round(priority, 4), "entropy_score": round(entropy, 3),
-                    "margin_score": round(margin, 3), "underrep_score": round(underrep, 3),
-                    "uncertainty_tag": tag,
-                })
+            level_counts = dict(gtc().execute(_SQL_LEVEL_TI).fetchall())
+            max_count    = max(level_counts.values()) if level_counts else 1
+            scored = [_score_case(c, level_counts, max_count) for c in cases]
             scored.sort(key=lambda x: x["priority_score"], reverse=True)
             return jsonify({"ranked_cases": scored[:50], "total_pending": len(scored)})
         except Exception as e:
             return jsonify({"ranked_cases": [], "error": str(e)}), 500
 
     @app.route("/active_learning_status")
-    @login_required
+    @lr
     def active_learning_status():
         try:
-            stats = get_learner().get_review_stats()
-            conn  = get_train_conn()
-            total = conn.execute("SELECT COUNT(*) FROM training_images").fetchone()[0]
-            by_level = dict(conn.execute(
-                "SELECT actual_level, COUNT(*) FROM training_images GROUP BY actual_level"
-            ).fetchall())
+            stats    = gl().get_review_stats()
+            conn     = gtc()
+            total    = conn.execute(_SQL_COUNT_TI).fetchone()[0]
+            by_level = dict(conn.execute(_SQL_LEVEL_TI).fetchall())
             retrain_count = 0
             cache_path = BASE_DIR / "ai_model_cache.json"
             if cache_path.exists():
@@ -993,19 +957,19 @@ def register_admin(app):
                 except Exception: pass
             return jsonify({
                 "status": "active",
-                "total_training_images": total,
-                "training_by_level": by_level,
-                "pending_reviews": stats.get("pending", 0),
-                "reviewed_total":  stats.get("reviewed", 0),
-                "retrain_count":   retrain_count,
-                "auto_retrain_threshold": _al_state.get("retrain_threshold", 10),
+                "total_training_images":     total,
+                "training_by_level":         by_level,
+                "pending_reviews":           stats.get("pending", 0),
+                "reviewed_total":            stats.get("reviewed", 0),
+                "retrain_count":             retrain_count,
+                "auto_retrain_threshold":    _al_state.get("retrain_threshold", 10),
                 "reviews_since_last_retrain": _al_state.get("reviews_since_retrain", 0),
             })
         except Exception as e:
             return jsonify({"status": "error", "error": str(e)}), 500
 
     @app.route("/configure_active_learning", methods=["POST"])
-    @login_required
+    @lr
     def configure_active_learning():
         try:
             data = request.get_json() or {}
@@ -1014,47 +978,42 @@ def register_admin(app):
             if "auto_retrain_enabled" in data:
                 _al_state["auto_retrain_enabled"] = bool(data["auto_retrain_enabled"])
             return jsonify({"status": "ok", "config": {
-                "retrain_threshold":     _al_state["retrain_threshold"],
-                "auto_retrain_enabled":  _al_state["auto_retrain_enabled"],
+                "retrain_threshold":    _al_state["retrain_threshold"],
+                "auto_retrain_enabled": _al_state["auto_retrain_enabled"],
             }})
         except Exception as e:
             return jsonify({"status": "error", "error": str(e)}), 400
 
     @app.route("/al_review_complete", methods=["POST"])
-    @login_required
+    @lr
     def al_review_complete():
+        def _hook():
+            if not _al_state.get("auto_retrain_enabled", True):
+                return
+            with _al_state["retrain_lock"]:
+                _al_state["reviews_since_retrain"] += 1
+                if _al_state["reviews_since_retrain"] >= _al_state.get("retrain_threshold", 10):
+                    _al_state["reviews_since_retrain"] = 0
+                    _al_state["last_retrain_ts"] = datetime.now().isoformat()
+                    get_ai_singleton()
+                    _trigger_ai_retrain()
         try:
-            data           = request.get_json() or {}
-            verified_depth = float(data.get("verified_depth", 0))
-            verified_level = str(data.get("verified_level", "MEDIUM"))
-
-            def _hook():
-                if not _al_state.get("auto_retrain_enabled", True): return
-                with _al_state["retrain_lock"]:
-                    _al_state["reviews_since_retrain"] += 1
-                    if _al_state["reviews_since_retrain"] >= _al_state.get("retrain_threshold", 10):
-                        _al_state["reviews_since_retrain"] = 0
-                        _al_state["last_retrain_ts"] = datetime.now().isoformat()
-                        get_ai_singleton()
-                        _trigger_ai_retrain()
             threading.Thread(target=_hook, daemon=True).start()
-
             return jsonify({
                 "status": "ok",
                 "reviews_since_last_retrain": _al_state.get("reviews_since_retrain", 0),
                 "reviews_until_retrain": max(
                     0, _al_state.get("retrain_threshold", 10)
-                       - _al_state.get("reviews_since_retrain", 0) - 1
-                ),
+                       - _al_state.get("reviews_since_retrain", 0) - 1),
             })
         except Exception as e:
             return jsonify({"status": "error", "error": str(e)}), 500
 
     @app.route("/uncertainty_heatmap")
-    @login_required
+    @lr
     def uncertainty_heatmap():
         try:
-            cases = get_learner().get_pending_reviews(max_count=200)
+            cases = gl().get_pending_reviews(max_count=200)
             bins  = {"0.0-0.2": 0, "0.2-0.4": 0, "0.4-0.6": 0, "0.6-0.8": 0, "0.8-1.0": 0}
             level_conf: dict = {}
             for c in cases:
@@ -1076,91 +1035,57 @@ def register_admin(app):
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # GALLERY / IMAGE FILTER
-    # ══════════════════════════════════════════════════════════════════════════
+
+def _reg_gallery(app, lr, gtc, send_file):
+    from flask import jsonify, request
 
     @app.route("/gallery_images")
-    @login_required
+    @lr
     def gallery_images():
         try:
-            conn = get_train_conn()
-            rows = conn.execute(
+            rows = gtc().execute(
                 "SELECT id, image_path, image_hash, actual_level, actual_depth, "
                 "notes, source, added_at, category "
                 "FROM training_images ORDER BY id DESC"
             ).fetchall()
-            images = []
-            for r in rows:
-                p = Path(r["image_path"])
-                images.append({
-                    "id":          r["id"],
-                    "filename":    p.name,
-                    "actual_level": r["actual_level"],
-                    "actual_depth": r["actual_depth"],
-                    "notes":       r["notes"],
-                    "source":      r["source"],
-                    "added_at":    r["added_at"],
-                    "category":    r["category"] or "untagged",
-                    "exists":      p.exists(),
-                })
+            images = [{"id": r["id"], "filename": Path(r["image_path"]).name,
+                       "actual_level": r["actual_level"], "actual_depth": r["actual_depth"],
+                       "notes": r["notes"], "source": r["source"], "added_at": r["added_at"],
+                       "category": r["category"] or "untagged",
+                       "exists": Path(r["image_path"]).exists()} for r in rows]
             return jsonify({"images": images, "total": len(images)})
         except Exception as e:
             return jsonify({"images": [], "error": str(e)}), 500
 
-    @app.route("/training_image/<int:tid>")
-    @login_required
-    def training_image(tid):
-        try:
-            conn = get_train_conn()
-            row  = conn.execute(
-                "SELECT image_path FROM training_images WHERE id=?", (tid,)
-            ).fetchone()
-            if row:
-                p = Path(row["image_path"])
-                candidates = [p, TRAIN_IMG_DIR / p.name, LIVE_DIR / p.name]
-                for c in candidates:
-                    if c.exists():
-                        return send_file(str(c.resolve()))
-        except Exception:
-            pass
-        return "Not found", 404
-
     @app.route("/tag_image/<int:tid>", methods=["POST"])
-    @login_required
+    @lr
     def tag_image(tid):
-        data = request.get_json() or {}
-        cat  = data.get("category", "untagged")
+        data    = request.get_json() or {}
+        cat     = data.get("category", "untagged")
         allowed = {"ai", "hand_drawn", "oil_painting", "photo", "untagged"}
         if cat not in allowed:
             return jsonify({"error": f"category phải là một trong {allowed}"}), 400
         try:
-            conn = get_train_conn()
-            conn.execute(
-                "UPDATE training_images SET category=? WHERE id=?", (cat, tid)
-            )
+            conn = gtc()
+            conn.execute("UPDATE training_images SET category=? WHERE id=?", (cat, tid))
             conn.commit()
             return jsonify({"status": "ok", "id": tid, "category": cat})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
     @app.route("/upload_gallery_to_drive", methods=["POST"])
-    @login_required
+    @lr
     def upload_gallery_to_drive():
         data        = request.get_json() or {}
         image_ids   = [int(i) for i in (data.get("image_ids") or [])]
         folder_name = str(data.get("folder_name") or "FloodAI_Gallery").strip() or "FloodAI_Gallery"
-
         if not image_ids:
             return jsonify({"error": "Không có ảnh nào được chọn"}), 400
-
         try:
-            conn  = get_train_conn()
+            conn  = gtc()
             paths = []
             for tid in image_ids:
-                row = conn.execute(
-                    "SELECT image_path FROM training_images WHERE id=?", (tid,)
-                ).fetchone()
+                row = conn.execute(_SQL_IMG_BY_ID, (tid,)).fetchone()
                 if not row:
                     continue
                 p = Path(row["image_path"])
@@ -1168,23 +1093,121 @@ def register_admin(app):
                     if candidate.exists():
                         paths.append(candidate)
                         break
-
             if not paths:
                 return jsonify({"error": "Không tìm thấy file ảnh nào trên đĩa"}), 404
-
             from uploader.drive_uploader import DriveUploader
-            uploader   = DriveUploader()
-            share_link = uploader.upload_images_public(paths, folder_name)
-            return jsonify({
-                "status":     "ok",
-                "share_link": share_link,
-                "uploaded":   len(paths),
-                "folder_name": folder_name,
-            })
+            share_link = DriveUploader().upload_images_public(paths, folder_name)
+            return jsonify({"status": "ok", "share_link": share_link,
+                            "uploaded": len(paths), "folder_name": folder_name})
         except FileNotFoundError as e:
             return jsonify({"error": f"Drive chưa cấu hình: {e}"}), 503
         except Exception as e:
             log.exception("[gallery_upload] %s", e)
             return jsonify({"error": str(e)}), 500
 
-    log.info("[admin_routes] %d routes registered ✓", len([r for r in app.url_map.iter_rules()]))
+
+# ══════════════════════════════════════════════════════════════════════════════
+# REGISTRATION FUNCTION
+# ══════════════════════════════════════════════════════════════════════════════
+
+def register_admin(app):
+    """Register all admin/review/pipeline routes onto a Flask app instance."""
+    from flask import g, jsonify, redirect, request, send_file, session
+
+    def login_required(f):
+        @wraps(f)
+        def wrapped(*args, **kwargs):
+            if not session.get("logged_in"):
+                if request.is_json or request.method != "GET":
+                    return jsonify({"error": "Chưa đăng nhập"}), 401
+                return redirect("/login")
+            return f(*args, **kwargs)
+        return wrapped
+
+    def get_learner():
+        if "adm_learner" not in g:
+            from learning.active_learner import ActiveLearnerV2 as AL
+            g.adm_learner = AL()
+        return g.adm_learner
+
+    def get_train_conn():
+        if "adm_tc" not in g:
+            conn = sqlite3.connect(str(TRAIN_DB_PATH), check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS training_images (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    added_at     TEXT NOT NULL,
+                    image_path   TEXT NOT NULL,
+                    image_hash   TEXT UNIQUE,
+                    actual_depth REAL NOT NULL,
+                    actual_level TEXT NOT NULL,
+                    notes        TEXT DEFAULT '',
+                    source       TEXT DEFAULT 'manual',
+                    verified     INTEGER DEFAULT 1,
+                    category     TEXT DEFAULT 'untagged'
+                );
+                CREATE INDEX IF NOT EXISTS idx_ti_level    ON training_images(actual_level);
+                CREATE INDEX IF NOT EXISTS idx_ti_category ON training_images(category);
+            """)
+            try:
+                conn.execute("ALTER TABLE training_images ADD COLUMN category TEXT DEFAULT 'untagged'")
+                conn.commit()
+            except Exception:
+                pass
+            g.adm_tc = conn
+        return g.adm_tc
+
+    @app.teardown_appcontext
+    def _close_admin(exc=None):
+        lrn = g.pop("adm_learner", None)
+        if lrn:
+            try: lrn.close()
+            except Exception: pass
+        tc = g.pop("adm_tc", None)
+        if tc:
+            try: tc.close()
+            except Exception: pass
+
+    def _get_live_estimator():
+        global _live_estimator
+        if _live_estimator is not None:
+            return _live_estimator, None
+        try:
+            from depth_analysis.reference_estimator import ReferenceEstimator
+            import yaml as _yaml
+            cfg_path = ROOT_DIR / "config.yaml"
+            raw_cfg = _yaml.safe_load(cfg_path.read_text(encoding="utf-8")) if cfg_path.exists() else {}
+            try:
+                from learning_update import SelfLearningPipeline
+                sl = SelfLearningPipeline()
+                raw_cfg = sl.get_adaptive_config(raw_cfg)
+                sl.close()
+            except Exception:
+                pass
+            LIVE_DIR.mkdir(parents=True, exist_ok=True)
+            _live_estimator = ReferenceEstimator(
+                yolo_model   = raw_cfg.get("yolo_model",  "yolov8n.pt"),
+                depth_model  = raw_cfg.get("depth_model", "depth-anything/Depth-Anything-V2-Small-hf"),
+                output_dir   = BASE_DIR / "_live_tmp",
+                conf_thresh  = float(raw_cfg.get("yolo_conf", 0.35)),
+                use_dino     = raw_cfg.get("use_dino",  True),
+                dino_model   = raw_cfg.get("dino_model", "facebook/dinov2-small"),
+                use_pose     = raw_cfg.get("use_pose",  True),
+                pose_model   = raw_cfg.get("pose_model", "yolov8n-pose.pt"),
+                use_segformer= raw_cfg.get("use_segformer", True),
+            )
+            return _live_estimator, None
+        except Exception as e:
+            return None, str(e)
+
+    lr, gl, gtc, gle = login_required, get_learner, get_train_conn, _get_live_estimator
+    _reg_core(app, lr, gl, gtc, send_file)
+    _reg_training(app, lr, gl, gtc, send_file)
+    _reg_live(app, gl, gtc, gle, send_file)
+    _reg_history(app, lr, send_file)
+    _reg_pipeline_ctrl(app, lr)
+    _reg_cases(app, lr, gl, gtc, send_file)
+    _reg_active_learning(app, lr, gl, gtc)
+    _reg_gallery(app, lr, gtc, send_file)
+    log.info("[admin_routes] %d routes registered ✓", sum(1 for _ in app.url_map.iter_rules()))
