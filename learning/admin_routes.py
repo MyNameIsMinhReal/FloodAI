@@ -511,6 +511,62 @@ def _reg_training(app, lr, gl, gtc, send_file):
         _trigger_ai_retrain()
         return jsonify({"status": "ok", "path": str(save_path)})
 
+    @app.route("/pull_from_drive", methods=["POST"])
+    @lr
+    def pull_from_drive():
+        import tempfile
+        d = request.json or {}
+        drive_link   = (d.get("drive_link") or "").strip()
+        actual_level = (d.get("actual_level") or "").strip()
+        actual_depth = d.get("actual_depth", 0)
+        notes        = d.get("notes", "")
+
+        if not drive_link:
+            return jsonify({"error": "missing drive_link"}), 400
+        if not actual_level:
+            return jsonify({"error": "missing actual_level"}), 400
+
+        try:
+            from uploader.drive_uploader import DriveUploader
+            uploader = DriveUploader()
+        except Exception as e:
+            return jsonify({"error": f"Drive auth failed: {e}"}), 500
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                files = uploader.download_folder(drive_link, Path(tmp))
+            except Exception as e:
+                return jsonify({"error": f"Download failed: {e}"}), 500
+
+            TRAIN_IMG_DIR.mkdir(parents=True, exist_ok=True)
+            imported = skipped = errors = 0
+
+            for f in files:
+                try:
+                    raw      = f.read_bytes()
+                    img_hash = hashlib.sha256(raw).hexdigest()[:12]
+                    suffix   = f.suffix.lower() or ".jpg"
+                    dest     = TRAIN_IMG_DIR / f"{img_hash}{suffix}"
+                    dest.write_bytes(raw)
+                    conn = gtc()
+                    conn.execute(
+                        "INSERT INTO training_images "
+                        "(added_at,image_path,image_hash,actual_depth,actual_level,notes,source) "
+                        "VALUES (?,?,?,?,?,?,'drive')",
+                        (datetime.now().isoformat(), str(dest), img_hash,
+                         float(actual_depth), actual_level, notes),
+                    )
+                    conn.commit()
+                    imported += 1
+                except sqlite3.IntegrityError:
+                    skipped += 1
+                except Exception:
+                    errors += 1
+
+        if imported:
+            _trigger_ai_retrain()
+        return jsonify({"imported": imported, "skipped": skipped, "errors": errors})
+
     @app.route("/training_stats")
     @lr
     def training_stats():

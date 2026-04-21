@@ -557,6 +557,50 @@
             onclick="copyDriveLink()">📋 Copy</button>
   </div>
 
+  <!-- Pull images from Google Drive -->
+  <div class="card" style="padding:16px;margin-bottom:16px;border:1px dashed rgba(52,193,89,.4)">
+    <div class="sec-title" style="font-size:13px;margin-bottom:12px">☁️ Kéo ảnh từ Google Drive</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div class="form-group" style="grid-column:1/-1">
+        <label class="form-label" for="drv-link">Link folder Google Drive</label>
+        <input class="form-input" id="drv-link"
+               placeholder="VD: https://drive.google.com/drive/folders/1BxiM…"
+               style="width:100%">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="drv-level">Mức lũ *</label>
+        <select class="form-select" id="drv-level">
+          <option value="">— Chọn mức lũ —</option>
+          <option value="NO_FLOOD">Không ngập</option>
+          <option value="PUDDLE">Vũng nước (&lt;5cm)</option>
+          <option value="ANKLE">Ngập mắt cá (5–20cm)</option>
+          <option value="KNEE">Ngập đầu gối (20–50cm)</option>
+          <option value="WAIST">Ngập hông (50–120cm)</option>
+          <option value="CHEST">Ngập ngực (120–200cm)</option>
+          <option value="SUBMERGED">Ngập hoàn toàn (&gt;200cm)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="drv-depth">Độ sâu (cm)</label>
+        <input class="form-input" type="number" id="drv-depth" min="0" max="500" placeholder="VD: 45">
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label class="form-label" for="drv-notes">Ghi chú</label>
+        <input class="form-input" id="drv-notes" placeholder="Tùy chọn — nguồn ảnh, vị trí…">
+      </div>
+    </div>
+    <div class="flex-row" style="align-items:center;gap:10px">
+      <button class="btn btn-primary" id="drv-pull-btn" onclick="pullFromDrive()"
+              style="background:var(--ok);box-shadow:0 2px 8px rgba(52,193,89,.35)">
+        ↓ Pull từ Drive
+      </button>
+      <span id="drv-status" style="font-size:12px;color:var(--tx3)"></span>
+    </div>
+    <div id="drv-result" style="display:none;margin-top:10px;padding:10px 14px;
+         background:rgba(52,193,89,.08);border:1px solid rgba(52,193,89,.25);
+         border-radius:8px;font-size:13px;color:var(--tx2)"></div>
+  </div>
+
   <!-- Upload new images to training library -->
   <div class="card" style="padding:16px;margin-bottom:16px;border:1px dashed rgba(77,163,255,.4)">
     <div class="sec-title" style="font-size:13px;margin-bottom:12px">Tải ảnh lên thư viện training</div>
@@ -1415,6 +1459,49 @@ function _setUpFiles(files) {
 
 function handleFileSelect(e) { _setUpFiles(e.target.files); }
 function handleFileDrop(e)   { _setUpFiles(e.dataTransfer.files); }
+
+async function pullFromDrive() {
+  const link  = document.getElementById('drv-link').value.trim();
+  const level = document.getElementById('drv-level').value;
+  if (!link)  { toast('Nhập link Google Drive!', 'warn'); return; }
+  if (!level) { toast('Chọn mức lũ trước!', 'warn'); return; }
+
+  const depth  = Number.parseFloat(document.getElementById('drv-depth').value || 0);
+  const notes  = document.getElementById('drv-notes').value;
+  const btn    = document.getElementById('drv-pull-btn');
+  const status = document.getElementById('drv-status');
+  const result = document.getElementById('drv-result');
+
+  btn.disabled  = true;
+  btn.textContent = '⏳ Đang kéo…';
+  status.textContent = 'Đang kết nối Drive và tải ảnh, vui lòng chờ…';
+  result.style.display = 'none';
+
+  try {
+    const r = await fetch('/pull_from_drive', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({drive_link: link, actual_level: level,
+                            actual_depth: depth, notes}),
+    });
+    const d = await r.json();
+    if (!r.ok) { toast('Lỗi: ' + (d.error || r.status), 'err'); return; }
+    result.style.display = 'block';
+    result.innerHTML =
+      `✅ Đã nhập <strong>${d.imported}</strong> ảnh` +
+      (d.skipped ? ` · ⏭ Bỏ qua (trùng): ${d.skipped}` : '') +
+      (d.errors  ? ` · ❌ Lỗi: ${d.errors}`              : '');
+    status.textContent = '';
+    if (d.imported) { loadGallery(); toast(`Đã pull ${d.imported} ảnh từ Drive`, 'ok'); }
+    else toast('Không có ảnh mới (có thể đã tồn tại)', 'warn');
+  } catch(e) {
+    toast('Lỗi kết nối: ' + e.message, 'err');
+    status.textContent = '';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '↓ Pull từ Drive';
+  }
+}
 
 async function uploadTrainingImages() {
   const level = document.getElementById('up-level').value;

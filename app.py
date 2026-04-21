@@ -6,6 +6,7 @@ FloodAI Web — Main Entry Point
 
 import base64
 import hashlib
+import html
 import json
 import logging
 import os
@@ -190,11 +191,11 @@ def _entry_to_article(src: str, e) -> dict:
     ts = _parse_entry_ts(e)
     return {
         "source":    src,
-        "title":     e.get("title", ""),
+        "title":     html.unescape(e.get("title", "")),
         "link":      e.get("link", ""),
         "published": _format_ts(ts, e.get("published", "")),
         "ts":        ts,
-        "body":      e.get("summary", "")[:800],
+        "body":      html.unescape(e.get("summary", "")[:800]),
         "summary":   None,
     }
 
