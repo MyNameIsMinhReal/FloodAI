@@ -59,27 +59,53 @@ class DriveUploader:
             )
 
         from google.oauth2.credentials import Credentials
-        from google_auth_oauthlib.flow import InstalledAppFlow
         from google.auth.transport.requests import Request
 
-        creds = None
+        # Priority 1: build from .env vars (GOOGLE_CLIENT_ID / SECRET / REFRESH_TOKEN)
+        try:
+            from utils.env_loader import get_env
+        except ImportError:
+            get_env = lambda k, d="": os.getenv(k, d)
+
+        client_id     = get_env("GOOGLE_CLIENT_ID")
+        client_secret = get_env("GOOGLE_CLIENT_SECRET")
+        refresh_token = get_env("GOOGLE_REFRESH_TOKEN")
+
+        if client_id and client_secret and refresh_token:
+            creds = Credentials(
+                token=None,
+                refresh_token=refresh_token,
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=client_id,
+                client_secret=client_secret,
+                scopes=SCOPES,
+            )
+            creds.refresh(Request())
+            return creds
+
+        # Priority 2: token.json (cached from previous OAuth flow)
         if Path(self.token_path).exists():
             creds = Credentials.from_authorized_user_file(self.token_path, SCOPES)
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        if not creds or not creds.valid:
-            if not Path(self.credentials_path).exists():
-                raise FileNotFoundError(
-                    f"Khong tim thay {self.credentials_path}.\n"
-                    "  1. Vao https://console.cloud.google.com\n"
-                    "  2. Enable Google Drive API\n"
-                    "  3. Tao OAuth 2.0 Client ID (Desktop app)\n"
-                    "  4. Download -> dat vao thu muc project lam 'credentials.json'"
-                )
-            creds = InstalledAppFlow.from_client_secrets_file(
-                self.credentials_path, SCOPES
-            ).run_local_server(port=0)
-            Path(self.token_path).write_text(creds.to_json())
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            if creds and creds.valid:
+                return creds
+
+        # Priority 3: interactive OAuth via credentials.json
+        from google_auth_oauthlib.flow import InstalledAppFlow
+        if not Path(self.credentials_path).exists():
+            raise FileNotFoundError(
+                f"Khong tim thay {self.credentials_path}.\n"
+                "  1. Vao https://console.cloud.google.com\n"
+                "  2. Enable Google Drive API\n"
+                "  3. Tao OAuth 2.0 Client ID (Desktop app)\n"
+                "  4. Download -> dat vao thu muc project lam 'credentials.json'\n"
+                "  Hoac them GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REFRESH_TOKEN vao .env"
+            )
+        creds = InstalledAppFlow.from_client_secrets_file(
+            self.credentials_path, SCOPES
+        ).run_local_server(port=0)
+        Path(self.token_path).write_text(creds.to_json())
         return creds
 
     # ==========================================================================
