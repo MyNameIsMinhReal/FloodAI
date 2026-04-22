@@ -67,9 +67,10 @@ TMPL_DIR  = BASE_DIR / "templates"
 
 sys.path.insert(0, str(ROOT_DIR))
 
-TRAIN_DB_PATH = BASE_DIR / "training_images.db"
-TRAIN_IMG_DIR = BASE_DIR / "training_images"
-LIVE_DIR      = BASE_DIR / "_live_results"
+TRAIN_DB_PATH  = BASE_DIR / "training_images.db"
+TRAIN_IMG_DIR  = BASE_DIR / "training_images"
+LIVE_DIR       = BASE_DIR / "_live_results"
+DRIVE_PULL_DIR = BASE_DIR / "_drive_pull"
 
 # ── Pipeline state (module-level, shared across requests) ──────────────────────
 _pl = {
@@ -514,17 +515,11 @@ def _reg_training(app, lr, gl, gtc, send_file):
     @app.route("/pull_from_drive", methods=["POST"])
     @lr
     def pull_from_drive():
-        import tempfile
+        import tempfile, shutil
         d = request.json or {}
-        drive_link   = (d.get("drive_link") or "").strip()
-        actual_level = (d.get("actual_level") or "").strip()
-        actual_depth = d.get("actual_depth", 0)
-        notes        = d.get("notes", "")
-
+        drive_link = (d.get("drive_link") or "").strip()
         if not drive_link:
             return jsonify({"error": "missing drive_link"}), 400
-        if not actual_level:
-            return jsonify({"error": "missing actual_level"}), 400
 
         try:
             from uploader.drive_uploader import DriveUploader
@@ -532,40 +527,85 @@ def _reg_training(app, lr, gl, gtc, send_file):
         except Exception as e:
             return jsonify({"error": f"Drive auth failed: {e}"}), 500
 
+        # Clear previous pull results
+        if DRIVE_PULL_DIR.exists():
+            shutil.rmtree(DRIVE_PULL_DIR)
+        DRIVE_PULL_DIR.mkdir(parents=True)
+
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 files = uploader.download_folder(drive_link, Path(tmp))
             except Exception as e:
                 return jsonify({"error": f"Download failed: {e}"}), 500
 
-            TRAIN_IMG_DIR.mkdir(parents=True, exist_ok=True)
-            imported = skipped = errors = 0
+            saved = []
+            filtered_fake = errors = 0
 
             for f in files:
                 try:
-                    raw      = f.read_bytes()
-                    img_hash = hashlib.sha256(raw).hexdigest()[:12]
-                    suffix   = f.suffix.lower() or ".jpg"
-                    dest     = TRAIN_IMG_DIR / f"{img_hash}{suffix}"
+                    raw = f.read_bytes()
+
+                    # AI art / drawing filter: measure sensor noise via Gaussian residual.
+                    # Real camera photos always have noise (std > 3).
+                    # AI-generated images and drawings are unnaturally smooth (std < 3).
+                    try:
+                        import cv2
+                        import numpy as np
+                        arr = np.frombuffer(raw, np.uint8)
+                        img = cv2.imdecode(arr, cv2.IMREAD_GRAYSCALE)
+                        if img is not None:
+                            blurred   = cv2.GaussianBlur(img.astype(np.float32), (5, 5), 0)
+                            noise_std = (img.astype(np.float32) - blurred).std()
+                            if noise_std < 3.0:
+                                filtered_fake += 1
+                                continue
+                    except Exception:
+                        pass  # if cv2 unavailable, don't reject
+
+                    dest = DRIVE_PULL_DIR / f.name
                     dest.write_bytes(raw)
-                    conn = gtc()
-                    conn.execute(
-                        "INSERT INTO training_images "
-                        "(added_at,image_path,image_hash,actual_depth,actual_level,notes,source) "
-                        "VALUES (?,?,?,?,?,?,'drive')",
-                        (datetime.now().isoformat(), str(dest), img_hash,
-                         float(actual_depth), actual_level, notes),
-                    )
-                    conn.commit()
-                    imported += 1
-                except sqlite3.IntegrityError:
-                    skipped += 1
+                    saved.append(f.name)
                 except Exception:
                     errors += 1
 
-        if imported:
-            _trigger_ai_retrain()
-        return jsonify({"imported": imported, "skipped": skipped, "errors": errors})
+        return jsonify({"saved": len(saved), "files": saved,
+                        "filtered_fake": filtered_fake, "errors": errors})
+
+    @app.route("/drive_pull_image/<path:fname>")
+    @lr
+    def drive_pull_image(fname):
+        base = DRIVE_PULL_DIR.resolve()
+        full = (base / fname).resolve()
+        try: full.relative_to(base)
+        except ValueError: return "Forbidden", 403
+        if full.exists():
+            try: return send_file(str(full))
+            except Exception: pass
+        return _MSG_NOT_FOUND, 404
+
+    @app.route("/drive_pull_upload", methods=["POST"])
+    @lr
+    def drive_pull_upload():
+        import shutil
+        d           = request.json or {}
+        folder_name = (d.get("folder_name") or "FloodAI_Filtered").strip()
+
+        if not DRIVE_PULL_DIR.exists() or not any(DRIVE_PULL_DIR.iterdir()):
+            return jsonify({"error": "Không có ảnh nào để upload. Hãy pull trước."}), 400
+
+        try:
+            from uploader.drive_uploader import DriveUploader
+            uploader = DriveUploader()
+        except Exception as e:
+            return jsonify({"error": f"Drive auth failed: {e}"}), 500
+
+        try:
+            paths = list(DRIVE_PULL_DIR.iterdir())
+            share_link = uploader.upload_images_public(paths, folder_name)
+            shutil.rmtree(DRIVE_PULL_DIR, ignore_errors=True)
+            return jsonify({"status": "ok", "share_link": share_link})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
     @app.route("/training_stats")
     @lr

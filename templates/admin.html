@@ -560,33 +560,15 @@
   <!-- Pull images from Google Drive -->
   <div class="card" style="padding:16px;margin-bottom:16px;border:1px dashed rgba(52,193,89,.4)">
     <div class="sec-title" style="font-size:13px;margin-bottom:12px">☁️ Kéo ảnh từ Google Drive</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-      <div class="form-group" style="grid-column:1/-1">
+    <div style="font-size:11px;color:var(--tx3);margin-bottom:10px;line-height:1.5">
+      Tranh AI/vẽ sẽ bị lọc tự động. Ảnh hợp lệ hiển thị bên dưới để xem trước.
+    </div>
+    <div style="margin-bottom:10px">
+      <div class="form-group">
         <label class="form-label" for="drv-link">Link folder Google Drive</label>
         <input class="form-input" id="drv-link"
                placeholder="VD: https://drive.google.com/drive/folders/1BxiM…"
                style="width:100%">
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="drv-level">Mức lũ *</label>
-        <select class="form-select" id="drv-level">
-          <option value="">— Chọn mức lũ —</option>
-          <option value="NO_FLOOD">Không ngập</option>
-          <option value="PUDDLE">Vũng nước (&lt;5cm)</option>
-          <option value="ANKLE">Ngập mắt cá (5–20cm)</option>
-          <option value="KNEE">Ngập đầu gối (20–50cm)</option>
-          <option value="WAIST">Ngập hông (50–120cm)</option>
-          <option value="CHEST">Ngập ngực (120–200cm)</option>
-          <option value="SUBMERGED">Ngập hoàn toàn (&gt;200cm)</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="drv-depth">Độ sâu (cm)</label>
-        <input class="form-input" type="number" id="drv-depth" min="0" max="500" placeholder="VD: 45">
-      </div>
-      <div class="form-group" style="grid-column:1/-1">
-        <label class="form-label" for="drv-notes">Ghi chú</label>
-        <input class="form-input" id="drv-notes" placeholder="Tùy chọn — nguồn ảnh, vị trí…">
       </div>
     </div>
     <div class="flex-row" style="align-items:center;gap:10px">
@@ -599,6 +581,20 @@
     <div id="drv-result" style="display:none;margin-top:10px;padding:10px 14px;
          background:rgba(52,193,89,.08);border:1px solid rgba(52,193,89,.25);
          border-radius:8px;font-size:13px;color:var(--tx2)"></div>
+    <div id="drv-preview" style="display:none;margin-top:12px">
+      <div style="font-size:11px;font-weight:600;color:var(--tx3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">Ảnh sau lọc</div>
+      <div id="drv-thumbs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+      <div class="flex-row" style="align-items:center;gap:10px">
+        <button class="btn btn-primary" id="drv-upload-btn" onclick="drivePullUpload()"
+                style="font-size:12px;padding:6px 14px">
+          ↑ Gửi lên Drive
+        </button>
+        <span id="drv-upload-status" style="font-size:12px;color:var(--tx3)"></span>
+      </div>
+      <div id="drv-share-link" style="display:none;margin-top:8px;padding:8px 12px;
+           background:rgba(77,163,255,.08);border:1px solid rgba(77,163,255,.25);
+           border-radius:8px;font-size:12px;word-break:break-all"></div>
+    </div>
   </div>
 
   <!-- Upload new images to training library -->
@@ -1461,45 +1457,98 @@ function handleFileSelect(e) { _setUpFiles(e.target.files); }
 function handleFileDrop(e)   { _setUpFiles(e.dataTransfer.files); }
 
 async function pullFromDrive() {
-  const link  = document.getElementById('drv-link').value.trim();
-  const level = document.getElementById('drv-level').value;
-  if (!link)  { toast('Nhập link Google Drive!', 'warn'); return; }
-  if (!level) { toast('Chọn mức lũ trước!', 'warn'); return; }
+  const link = document.getElementById('drv-link').value.trim();
+  if (!link) { toast('Nhập link Google Drive!', 'warn'); return; }
 
-  const depth  = Number.parseFloat(document.getElementById('drv-depth').value || 0);
-  const notes  = document.getElementById('drv-notes').value;
-  const btn    = document.getElementById('drv-pull-btn');
-  const status = document.getElementById('drv-status');
-  const result = document.getElementById('drv-result');
+  const btn     = document.getElementById('drv-pull-btn');
+  const status  = document.getElementById('drv-status');
+  const result  = document.getElementById('drv-result');
+  const preview = document.getElementById('drv-preview');
+  const thumbs  = document.getElementById('drv-thumbs');
 
-  btn.disabled  = true;
+  btn.disabled = true;
   btn.textContent = '⏳ Đang kéo…';
-  status.textContent = 'Đang kết nối Drive và tải ảnh, vui lòng chờ…';
+  status.textContent = 'Đang kết nối Drive, tải và lọc ảnh — vui lòng chờ…';
   result.style.display = 'none';
+  preview.style.display = 'none';
+  thumbs.innerHTML = '';
 
   try {
     const r = await fetch('/pull_from_drive', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({drive_link: link, actual_level: level,
-                            actual_depth: depth, notes}),
+      body: JSON.stringify({drive_link: link}),
     });
     const d = await r.json();
     if (!r.ok) { toast('Lỗi: ' + (d.error || r.status), 'err'); return; }
+
     result.style.display = 'block';
     result.innerHTML =
-      `✅ Đã nhập <strong>${d.imported}</strong> ảnh` +
-      (d.skipped ? ` · ⏭ Bỏ qua (trùng): ${d.skipped}` : '') +
-      (d.errors  ? ` · ❌ Lỗi: ${d.errors}`              : '');
+      `✅ <strong>${d.saved}</strong> ảnh hợp lệ` +
+      (d.filtered_fake ? ` · 🎨 Tranh/AI bị lọc: ${d.filtered_fake}` : '') +
+      (d.errors        ? ` · ❌ Lỗi: ${d.errors}`                     : '');
+
+    if (d.files && d.files.length) {
+      preview.style.display = 'block';
+      d.files.forEach(fname => {
+        const img = document.createElement('img');
+        img.src = `/drive_pull_image/${encodeURIComponent(fname)}`;
+        img.title = fname;
+        img.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid rgba(255,255,255,.1)';
+        img.onclick = () => window.open(img.src, '_blank');
+        thumbs.appendChild(img);
+      });
+      toast(`Đã lọc xong ${d.saved} ảnh từ Drive`, 'ok');
+    } else {
+      toast('Không có ảnh nào hợp lệ sau khi lọc', 'warn');
+    }
     status.textContent = '';
-    if (d.imported) { loadGallery(); toast(`Đã pull ${d.imported} ảnh từ Drive`, 'ok'); }
-    else toast('Không có ảnh mới (có thể đã tồn tại)', 'warn');
   } catch(e) {
     toast('Lỗi kết nối: ' + e.message, 'err');
     status.textContent = '';
   } finally {
     btn.disabled = false;
     btn.textContent = '↓ Pull từ Drive';
+  }
+}
+
+async function drivePullUpload() {
+  const btn       = document.getElementById('drv-upload-btn');
+  const status    = document.getElementById('drv-upload-status');
+  const shareDiv  = document.getElementById('drv-share-link');
+  const thumbs    = document.getElementById('drv-thumbs');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Đang upload…';
+  status.textContent = 'Đang gửi lên Drive và tạo link chia sẻ…';
+  shareDiv.style.display = 'none';
+
+  try {
+    const r = await fetch('/drive_pull_upload', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({folder_name: 'FloodAI_Filtered'}),
+    });
+    const d = await r.json();
+    if (!r.ok) { toast('Lỗi: ' + (d.error || r.status), 'err'); return; }
+    shareDiv.style.display = 'block';
+    shareDiv.innerHTML = `🔗 Link Drive: <a href="${d.share_link}" target="_blank"
+      style="color:var(--primary)">${d.share_link}</a>`;
+    thumbs.innerHTML = '';
+    document.getElementById('drv-preview').style.display = 'none';
+    document.getElementById('drv-result').style.display = 'none';
+    shareDiv.style.display = 'block';
+    document.getElementById('drv-preview').style.display = 'block';
+    document.getElementById('drv-thumbs').style.display = 'none';
+    document.querySelector('#drv-preview .flex-row').style.display = 'none';
+    toast('Đã upload và xoá thư mục tạm', 'ok');
+    status.textContent = '';
+  } catch(e) {
+    toast('Lỗi kết nối: ' + e.message, 'err');
+    status.textContent = '';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '↑ Gửi lên Drive';
   }
 }
 
