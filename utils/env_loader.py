@@ -33,7 +33,9 @@ def _ensure_loaded():
         return
     _ENV_LOADED = True
 
-    env_file = Path(".env")
+    env_file = Path(__file__).resolve().parent.parent / ".env"
+    if not env_file.exists():
+        env_file = Path(".env")
     if not env_file.exists():
         return
 
