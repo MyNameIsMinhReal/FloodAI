@@ -26,6 +26,9 @@ output/
 # Credentials (KHÔNG commit key lên git!)
 credentials.json
 token.json
+token_new.json
+get_google_refresh_token.py
+client_secret_*.json
 .env
 .env.example
 .setup_done.json
