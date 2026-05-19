@@ -4,17 +4,30 @@ agent/flood_agent.py
 ====================
 FloodAgent — agent phân tích lũ lụt thuần nội bộ, không dùng external LLM API.
 
-Kiến trúc v2 (nâng cấp toàn diện):
-  AgentConfig     — structured config, type-safe (thay raw Dict)
-  EventBus        — event system: on("low_confidence", handler)
-  FeedbackParser  — hiểu ý kiến người dùng (tiếng Việt + English)
-  AgentMemory     — bộ nhớ session + lịch sử correction + persistent JSON
-                    + online calibration bias
-  PipelineTools   — tool registry với calibration + simulation mode
-  PolicyEngine    — scoring-based decision tree (thay hard-code if-else)
-  Planner         — multi-step planning (adjust → rerun → compare → decide)
-  FloodAgent      — điều phối toàn bộ + confidence-aware + self-reflection
-                    + context-aware response + decision trace logging
+Kiến trúc v3 (nâng cấp toàn diện):
+  ReportState       — state machine chuẩn: received→analyzed→verified→pending→published
+  AgentDecision     — JSON-first structured output (decision + reasons + advisory)
+  ConfidenceTranslator — map số kỹ thuật → tiếng Việt cho user/admin
+  EditorialPolicy   — guardrail nội dung: tránh giật tít, dùng ngôn ngữ chuẩn
+  PermissionLevel   — phân quyền agent: analyst/editor/admin
+  AuditLog          — ghi log mọi quyết định (agent, input, decision, reasons)
+  FallbackEngine    — rule-based fallback khi LLM/API lỗi
+  EventClusterer    — gom báo cáo gần nhau thành 1 event
+  AlertLifecycle    — vòng đời cảnh báo: new→active→worsening→stable→resolved
+  FloodAdvisory     — khuyến cáo theo đối tượng (xe máy, ô tô, người đi bộ)
+  MissingInfoChecker — phát hiện thiếu thông tin và sinh câu hỏi hỏi lại
+  AgentConfig       — structured config, type-safe (thay raw Dict)
+  EventBus          — event system: on("low_confidence", handler)
+  FeedbackParser    — hiểu ý kiến người dùng (tiếng Việt + English)
+  AgentMemory       — bộ nhớ session + lịch sử correction + persistent JSON
+  PipelineTools     — tool registry với calibration + simulation mode
+  PolicyEngine      — scoring-based decision tree
+  FloodAgent        — điều phối toàn bộ
+
+Response layer (v3 mới — xem agent/response_rewriter.py):
+  ResponseRewriter  — Decision JSON → natural language (5 modes)
+  ResponseValidator — Kiểm tra từ kỹ thuật rò rỉ + giật tít
+  ResponseMode      — public_user | admin_review | news_writer | alert_message | debug
 """
 
 from __future__ import annotations
@@ -29,6 +42,7 @@ import time
 from collections import Counter
 from dataclasses import dataclass, field, asdict, fields
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -40,6 +54,710 @@ log = logging.getLogger("flood_agent")
 
 _AGENT_DIR  = Path(__file__).parent / "_agent_memory"
 _MEMORY_FILE = _AGENT_DIR / "long_term_memory.json"
+_AUDIT_FILE  = _AGENT_DIR / "audit_log.jsonl"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PERMISSION SYSTEM  (#17)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PermissionLevel(Enum):
+    """Phân quyền cho agent — agent không được tự làm những gì vượt quyền."""
+    READ_ONLY = "read_only"
+    ANALYST   = "analyst"    # phân tích, tạo nháp, queue review
+    EDITOR    = "editor"     # + đăng mức thấp, gửi cảnh báo nhẹ
+    ADMIN     = "admin"      # toàn quyền
+
+
+class AgentPermissions:
+    """
+    Kiểm soát những gì agent có thể làm theo level.
+
+    Dùng:
+        AgentPermissions.can(PermissionLevel.ANALYST, "publish_high_alert")  # → False
+        AgentPermissions.can(PermissionLevel.ADMIN,   "publish_high_alert")  # → True
+    """
+
+    _ALLOWED: Dict[PermissionLevel, set] = {
+        PermissionLevel.READ_ONLY: set(),
+        PermissionLevel.ANALYST:  {
+            "create_draft", "queue_review", "add_to_map_draft",
+            "ask_followup", "update_state", "send_to_review",
+        },
+        PermissionLevel.EDITOR: {
+            "create_draft", "queue_review", "add_to_map_draft",
+            "ask_followup", "update_state", "send_to_review",
+            "publish_low", "publish_medium", "send_low_alert", "send_medium_alert",
+        },
+        PermissionLevel.ADMIN: {"*"},  # tất cả
+    }
+
+    # Những action này luôn cần ADMIN, kể cả Editor không được
+    _ALWAYS_REQUIRE_ADMIN = {
+        "publish_high_alert",
+        "publish_critical_alert",
+        "delete_source_data",
+        "modify_audit_log",
+        "change_production_config",
+        "override_verified",
+    }
+
+    @classmethod
+    def can(cls, level: PermissionLevel, action: str) -> bool:
+        if action in cls._ALWAYS_REQUIRE_ADMIN and level != PermissionLevel.ADMIN:
+            return False
+        allowed = cls._ALLOWED.get(level, set())
+        return "*" in allowed or action in allowed
+
+    @classmethod
+    def require(cls, level: PermissionLevel, action: str) -> None:
+        """Raise PermissionError nếu không đủ quyền."""
+        if not cls.can(level, action):
+            raise PermissionError(
+                f"Agent ({level.value}) không có quyền '{action}'. "
+                f"Cần ADMIN hoặc level cao hơn."
+            )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REPORT STATE MACHINE  (#2)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_REPORT_TRANSITIONS = {
+    "received":       ["analyzed", "rejected"],
+    "analyzed":       ["verified", "pending_review", "rejected"],
+    "verified":       ["drafted",  "pending_review", "rejected"],
+    "drafted":        ["pending_review", "rejected"],
+    "pending_review": ["published", "rejected"],
+    "published":      ["archived"],
+    "rejected":       [],
+    "archived":       [],
+}
+
+
+@dataclass
+class ReportState:
+    """
+    State machine cho một báo cáo lũ.
+    Agent KHÔNG tự đăng — chỉ advance đến pending_review, admin mới publish.
+    """
+    report_id:          str
+    source:             str          # "citizen_upload" | "camera" | "api"
+    image_path:         str
+    raw_description:    str  = ""
+    raw_location:       str  = ""
+    resolved_location:  Optional[str]  = None
+    analysis_result:    Optional[Dict] = None
+    verification_result: Optional[Dict] = None
+    news_draft:         Optional[str]  = None
+    alert_decision:     Optional[Dict] = None
+    status:             str  = "received"
+    missing_info:       List[str] = field(default_factory=list)
+    created_at:         str  = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
+    updated_at:         str  = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
+
+    def advance(self, new_status: str) -> None:
+        """Chuyển trạng thái hợp lệ — raise nếu transition không được phép."""
+        allowed = _REPORT_TRANSITIONS.get(self.status, [])
+        if new_status not in allowed:
+            raise ValueError(
+                f"Không thể chuyển từ '{self.status}' → '{new_status}'. "
+                f"Cho phép: {allowed}"
+            )
+        self.status     = new_status
+        self.updated_at = datetime.now().isoformat(timespec="seconds")
+
+    def can_advance_to(self, new_status: str) -> bool:
+        return new_status in _REPORT_TRANSITIONS.get(self.status, [])
+
+    def to_dict(self) -> Dict:
+        return asdict(self)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ALERT LIFECYCLE  (#11)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class AlertLifecycle(Enum):
+    NEW        = "new"
+    ACTIVE     = "active"
+    WORSENING  = "worsening"
+    STABLE     = "stable"
+    IMPROVING  = "improving"
+    RESOLVED   = "resolved"
+    EXPIRED    = "expired"
+
+
+def infer_alert_lifecycle(prev_depth: float, curr_depth: float,
+                           minutes_since_update: float) -> AlertLifecycle:
+    """
+    Suy luận vòng đời cảnh báo từ delta mực nước và thời gian.
+
+    Dùng khi có nhiều báo cáo cùng khu vực:
+        lifecycle = infer_alert_lifecycle(prev_depth, curr_depth, elapsed_min)
+    """
+    if minutes_since_update > 180:   # >3h không cập nhật
+        return AlertLifecycle.EXPIRED
+
+    delta = curr_depth - prev_depth
+    if curr_depth < 5:
+        return AlertLifecycle.RESOLVED
+
+    if delta > 10:
+        return AlertLifecycle.WORSENING
+    if delta < -10:
+        return AlertLifecycle.IMPROVING
+    if abs(delta) <= 5:
+        return AlertLifecycle.STABLE
+
+    return AlertLifecycle.ACTIVE
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONFIDENCE TRANSLATOR  (#9)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ConfidenceTranslator:
+    """
+    Map số kỹ thuật (0.0–1.0) → ngôn ngữ thân thiện cho 2 đối tượng:
+      - public: chỉ thấy label chung
+      - admin: thấy số + label
+    """
+
+    _BANDS: List[Tuple[float, str, str]] = [
+        # (ngưỡng_tối_thiểu, label_vi, key)
+        (0.85, "Độ tin cậy cao",        "HIGH"),
+        (0.65, "Cần xác minh thêm",     "MEDIUM"),
+        (0.0,  "Chưa đủ cơ sở kết luận","LOW"),
+    ]
+
+    @classmethod
+    def to_public(cls, conf: float) -> str:
+        """Dùng cho UI người dân — không hiện số."""
+        for threshold, label, _ in cls._BANDS:
+            if conf >= threshold:
+                return label
+        return cls._BANDS[-1][1]
+
+    @classmethod
+    def to_admin(cls, conf: float) -> str:
+        """Dùng cho admin dashboard — hiện số kèm label."""
+        for threshold, label, _ in cls._BANDS:
+            if conf >= threshold:
+                return f"{round(conf * 100)}% ({label})"
+        return f"{round(conf * 100)}% (Chưa đủ cơ sở)"
+
+    @classmethod
+    def status_label(cls, conf: float) -> str:
+        """Dùng cho trạng thái trên map / feed."""
+        for threshold, _, key in cls._BANDS:
+            if conf >= threshold:
+                return {
+                    "HIGH":   "Đã xác minh",
+                    "MEDIUM": "Đang chờ xác minh",
+                    "LOW":    "Cần kiểm tra thêm",
+                }.get(key, "Không rõ")
+        return "Không rõ"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EDITORIAL POLICY  (#8)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class EditorialPolicy:
+    """
+    Guardrail nội dung cho News Agent / bất kỳ text nào đăng công khai.
+
+    Không cho dùng ngôn ngữ giật tít chưa xác minh.
+    Tự động gợi ý thay thế.
+    """
+
+    _FORBIDDEN: List[str] = [
+        "kinh hoàng", "thảm họa", "chấn động", "nguy hiểm chết người",
+        "sốc:", "cực kỳ nguy hiểm", "chìm trong biển nước", "nhấn chìm",
+        "hãi hùng", "tang thương", "hoảng loạn",
+    ]
+
+    _REPLACEMENTS: Dict[str, str] = {
+        "kinh hoàng":             "đáng lo ngại",
+        "thảm họa":               "sự cố nghiêm trọng",
+        "chấn động":              "đáng chú ý",
+        "nguy hiểm chết người":   "nguy hiểm, cần thận trọng",
+        "chìm trong biển nước":   "ngập sâu",
+        "nhấn chìm":              "gây ngập",
+        "hãi hùng":               "nghiêm trọng",
+        "tang thương":            "thiệt hại",
+        "hoảng loạn":             "lo lắng",
+    }
+
+    # Từ nên dùng thay vì khẳng định chắc chắn khi chưa xác minh
+    _PREFERRED_PREFIXES = [
+        "Ghi nhận",
+        "Ước tính",
+        "Cần chú ý",
+        "Khuyến cáo",
+        "Đang chờ xác minh",
+    ]
+
+    @classmethod
+    def check(cls, text: str) -> Tuple[bool, List[str]]:
+        """
+        Kiểm tra text có vi phạm policy không.
+        Returns: (is_ok, violations)
+        """
+        violations = [w for w in cls._FORBIDDEN if w.lower() in text.lower()]
+        return len(violations) == 0, violations
+
+    @classmethod
+    def sanitize(cls, text: str) -> str:
+        """Thay thế từ vi phạm bằng từ phù hợp."""
+        result = text
+        for bad, good in cls._REPLACEMENTS.items():
+            result = re.sub(re.escape(bad), good, result, flags=re.IGNORECASE)
+        return result
+
+    @classmethod
+    def generate_title(cls, result: Dict, location: str = "",
+                       verified: bool = False) -> str:
+        """
+        Sinh tiêu đề chuẩn từ kết quả phân tích.
+        Không giật tít, dùng 'Ghi nhận' thay vì khẳng định.
+        """
+        depth    = float(result.get("water_height_cm", 0) or 0)
+        level    = result.get("flood_level", "UNKNOWN")
+        loc_part = f" tại {location}" if location else ""
+        status   = "" if verified else " (đang chờ xác minh)"
+
+        if level in ("NO_FLOOD", "UNKNOWN"):
+            return f"Kiểm tra tình trạng ngập{loc_part}"
+        if depth > 0:
+            lo = int(depth * 0.85)
+            hi = int(depth * 1.15)
+            return f"Ghi nhận ngập khoảng {lo}–{hi}cm{loc_part}{status}"
+        return f"Ghi nhận tình trạng ngập{loc_part}{status}"
+
+    @classmethod
+    def generate_summary(cls, result: Dict, n_reports: int = 1) -> str:
+        """Sinh tóm tắt ngắn chuẩn mực."""
+        depth = float(result.get("water_height_cm", 0) or 0)
+        conf  = ConfidenceTranslator.to_public(float(result.get("confidence", 0) or 0))
+        multi = f" ({n_reports} báo cáo)" if n_reports > 1 else ""
+        return (
+            f"Mực nước ước tính khoảng {int(depth)}cm{multi}. "
+            f"{conf}. Cần tiếp tục xác minh."
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FLOOD ADVISORY — khuyến cáo theo đối tượng  (#12)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class FloodAdvisory:
+    """
+    Sinh khuyến cáo cụ thể cho từng đối tượng dựa trên độ sâu.
+
+    Output:
+        {
+            "motorbike": "Không nên di chuyển...",
+            "car":       "Ô tô gầm thấp...",
+            "pedestrian": "Người đi bộ...",
+        }
+    """
+
+    # (depth_cm, motorbike_ok, car_low_ok, car_high_ok, pedestrian_note)
+    _THRESHOLDS = {
+        "motorbike":  30,   # >= 30cm → không nên
+        "car_low":    40,   # ô tô gầm thấp >= 40cm → không nên
+        "car_high":   80,   # ô tô gầm cao >= 80cm → không nên
+        "pedestrian": 15,   # >= 15cm → cần chú ý hố ga
+    }
+
+    @classmethod
+    def generate(cls, depth_cm: float) -> Dict[str, str]:
+        recs: Dict[str, str] = {}
+
+        # Xe máy
+        if depth_cm >= cls._THRESHOLDS["motorbike"]:
+            recs["motorbike"] = "Không nên di chuyển qua khu vực này bằng xe máy."
+        elif depth_cm >= 15:
+            recs["motorbike"] = "Xe máy có thể qua nhưng cần đi chậm, tránh tắt máy giữa chừng."
+        else:
+            recs["motorbike"] = "Xe máy có thể qua bình thường, nên đi chậm."
+
+        # Ô tô
+        if depth_cm >= cls._THRESHOLDS["car_high"]:
+            recs["car"] = "Ô tô không nên đi qua khu vực ngập sâu này."
+        elif depth_cm >= cls._THRESHOLDS["car_low"]:
+            recs["car"] = "Ô tô gầm thấp nên chọn tuyến thay thế."
+        else:
+            recs["car"] = "Ô tô có thể qua với tốc độ thấp và thận trọng."
+
+        # Người đi bộ
+        if depth_cm >= 60:
+            recs["pedestrian"] = "Người đi bộ không nên lội qua, nguy cơ bị cuốn nếu nước chảy mạnh."
+        elif depth_cm >= cls._THRESHOLDS["pedestrian"]:
+            recs["pedestrian"] = (
+                "Người đi bộ cần chú ý miệng cống và dòng nước chảy. "
+                "Không để trẻ em và người cao tuổi đi một mình."
+            )
+        else:
+            recs["pedestrian"] = "Người đi bộ qua được, cần chú ý bề mặt trơn."
+
+        # Học sinh / phụ huynh
+        if depth_cm >= 20:
+            recs["school"]  = "Phụ huynh/học sinh nên chọn tuyến khác hoặc chờ nước rút."
+
+        return recs
+
+    @classmethod
+    def to_text(cls, depth_cm: float) -> str:
+        recs  = cls.generate(depth_cm)
+        lines = ["**Khuyến cáo di chuyển:**"]
+        labels = {
+            "motorbike": "🛵 Xe máy",
+            "car":       "🚗 Ô tô",
+            "pedestrian":"🚶 Người đi bộ",
+            "school":    "🎒 Học sinh",
+        }
+        for key, label in labels.items():
+            if key in recs:
+                lines.append(f"• {label}: {recs[key]}")
+        return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MISSING INFO CHECKER  (#6)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class MissingInfoChecker:
+    """
+    Kiểm tra báo cáo có đủ thông tin không.
+    Trả về danh sách câu hỏi cần hỏi thêm.
+    """
+
+    @staticmethod
+    def check(report: Dict) -> List[Dict]:
+        """
+        Returns: list of {field, question, options}
+        Options = None → câu hỏi mở, List → câu hỏi có lựa chọn.
+        """
+        missing: List[Dict] = []
+
+        # Thiếu vị trí
+        if not report.get("location") and not report.get("gps") and not report.get("exif_gps"):
+            missing.append({
+                "field":    "location",
+                "question": (
+                    "📍 Bạn có thể cho biết ảnh này chụp ở khu vực nào không?\n"
+                    "Ví dụ: tên đường, cổng trường, chợ, phường/xã."
+                ),
+                "options":  None,
+                "required": True,
+            })
+
+        # Thiếu thời gian
+        if not report.get("timestamp") and not report.get("exif_datetime"):
+            missing.append({
+                "field":    "timestamp",
+                "question": "🕐 Ảnh này được chụp khi nào?",
+                "options":  ["Vừa chụp", "Trong vòng 1 giờ", "Hôm nay", "Không rõ"],
+                "required": False,
+            })
+
+        # Ảnh chất lượng kém (nếu có quality score)
+        quality = report.get("image_quality", {})
+        if quality.get("is_blurry"):
+            missing.append({
+                "field":    "image_quality",
+                "question": (
+                    "📷 Ảnh hơi mờ nên hệ thống khó xác định mức ngập.\n"
+                    "Bạn có thể gửi thêm một ảnh rõ hơn hoặc chụp từ góc rộng hơn không?"
+                ),
+                "options":  None,
+                "required": False,
+            })
+
+        return missing
+
+    @staticmethod
+    def format_question(item: Dict) -> str:
+        """Format câu hỏi thành text đẹp."""
+        q = item["question"]
+        if item.get("options"):
+            opts = "\n".join(f"  {i+1}. {o}" for i, o in enumerate(item["options"]))
+            return f"{q}\n{opts}"
+        return q
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AGENT DECISION — JSON-first structured output  (#4, #5, #16)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class AgentDecision:
+    """
+    Quyết định có cấu trúc của agent — JSON-first, render thành text sau.
+
+    Thiết kế:
+      - Agent KHÔNG bao giờ tự publish high alert
+      - Luôn phân biệt "đã xác minh" / "đang chờ xác minh"
+      - Lý do minh bạch → admin duyệt nhanh hơn
+    """
+    decision:         str   # "publish" | "needs_review" | "ask_for_more_info"
+                            # | "reject" | "update_existing_event"
+    alert_level:      str   # "none" | "low" | "medium" | "high" | "critical"
+    should_publish:   bool
+    needs_review:     bool
+    publish_target:   List[str]      # ["map", "news", "alert", "social"]
+    title:            str            # Tiêu đề chuẩn (qua EditorialPolicy)
+    summary:          str            # Tóm tắt 1–2 câu
+    reasons:          List[str]      # Lý do quyết định (cho admin)
+    required_actions: List[str]      # Việc cần làm trước khi đăng
+    public_message:   str            # Hiện cho người dân
+    admin_note:       str            # Ghi chú nội bộ cho admin
+    confidence_display: str          # VD: "Cần xác minh thêm"
+    recommendations:  Dict[str, str] = field(default_factory=dict)  # xe/người
+    report_id:        str  = ""
+    event_id:         str  = ""      # nếu gộp vào event có sẵn
+    alert_lifecycle:  str  = AlertLifecycle.NEW.value
+    created_at:       str  = field(
+        default_factory=lambda: datetime.now().isoformat(timespec="seconds")
+    )
+
+    def to_dict(self) -> Dict:
+        return asdict(self)
+
+    def to_admin_report(self) -> str:
+        """
+        Render reasoning report cho admin (#5).
+        Hiện đầy đủ lý do + việc cần làm.
+        """
+        icon = {"none": "✅", "low": "💧", "medium": "⚠️",
+                "high": "🚨", "critical": "🆘"}.get(self.alert_level, "❓")
+        lines = [
+            f"{icon} **Agent đề xuất: {self._decision_vi()}**\n",
+            f"📰 **Tiêu đề:** {self.title}",
+            f"📋 **Tóm tắt:** {self.summary}",
+            f"📊 **Mức cảnh báo:** {self.alert_level.upper()} | {self.confidence_display}\n",
+            "**Lý do:**",
+        ]
+        for r in self.reasons:
+            lines.append(f"  • {r}")
+        if self.required_actions:
+            lines.append("\n**Cần làm trước khi đăng:**")
+            for a in self.required_actions:
+                lines.append(f"  □ {a}")
+        if self.recommendations:
+            lines.append("\n" + FloodAdvisory.to_text(0))  # placeholder, gọi riêng nếu cần
+        if self.admin_note:
+            lines.append(f"\n📝 _Ghi chú nội bộ: {self.admin_note}_")
+        return "\n".join(lines)
+
+    def _decision_vi(self) -> str:
+        return {
+            "publish":              "Có thể đăng",
+            "needs_review":         "Cần duyệt trước khi đăng",
+            "ask_for_more_info":    "Cần thêm thông tin",
+            "reject":               "Từ chối",
+            "update_existing_event": "Cập nhật sự kiện hiện có",
+        }.get(self.decision, self.decision)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AUDIT LOG  (#18)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class AuditEntry:
+    """Một bản ghi audit cho mọi quyết định của agent."""
+    agent:          str
+    action:         str
+    decision:       str
+    input_snapshot: Dict
+    reasons:        List[str]
+    created_at:     str = field(
+        default_factory=lambda: datetime.now().isoformat(timespec="seconds")
+    )
+    model_version:  str = "agent-v3"
+    prompt_version: str = "v1"
+    report_id:      str = ""
+    user_id:        str = ""
+
+
+class AuditLog:
+    """
+    Ghi log mọi quyết định agent xuống file JSONL.
+    Mỗi dòng = 1 AuditEntry.
+    Không bao giờ sửa hay xóa log cũ.
+    """
+
+    def __init__(self, log_path: Optional[Path] = None):
+        self._path = log_path or _AUDIT_FILE
+        self._lock = threading.Lock()
+
+    def log(self, entry: AuditEntry) -> None:
+        with self._lock:
+            try:
+                self._path.parent.mkdir(parents=True, exist_ok=True)
+                with open(self._path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(asdict(entry), ensure_ascii=False) + "\n")
+            except Exception as e:
+                log.warning(f"[AuditLog] Không ghi được: {e}")
+
+    def log_decision(self, agent_name: str, action: str, decision: AgentDecision,
+                     input_snap: Dict, report_id: str = "") -> None:
+        """Shortcut tạo AuditEntry từ AgentDecision."""
+        self.log(AuditEntry(
+            agent          = agent_name,
+            action         = action,
+            decision       = decision.decision,
+            input_snapshot = input_snap,
+            reasons        = decision.reasons,
+            report_id      = report_id,
+        ))
+
+    def recent(self, n: int = 20) -> List[Dict]:
+        """Đọc n bản ghi gần nhất."""
+        entries: List[Dict] = []
+        try:
+            if not self._path.exists():
+                return []
+            with open(self._path, encoding="utf-8") as f:
+                lines = f.readlines()
+            for line in reversed(lines[-n:]):
+                line = line.strip()
+                if line:
+                    entries.append(json.loads(line))
+        except Exception as e:
+            log.warning(f"[AuditLog] Đọc lỗi: {e}")
+        return list(reversed(entries))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FALLBACK ENGINE — rule-based khi LLM/API lỗi  (#19)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def fallback_alert_decision(result: Dict) -> Dict:
+    """
+    Quyết định rule-based thuần túy — dùng khi LLM/model lỗi.
+    Hệ thống cảnh báo KHÔNG phụ thuộc hoàn toàn vào AI.
+    """
+    depth = float(result.get("water_height_cm", 0) or 0)
+    conf  = float(result.get("confidence",      0) or 0)
+
+    if conf < 0.65:
+        return {
+            "decision":    "needs_review",
+            "alert_level": "none",
+            "reason":      "low_confidence",
+            "fallback":    True,
+        }
+    if depth >= 120:
+        return {
+            "decision":    "needs_review",   # cao → bắt buộc duyệt
+            "alert_level": "high",
+            "reason":      "high_depth_requires_verification",
+            "fallback":    True,
+        }
+    if depth >= 60:
+        return {
+            "decision":    "needs_review",
+            "alert_level": "medium",
+            "reason":      "medium_depth",
+            "fallback":    True,
+        }
+    if depth >= 15:
+        return {
+            "decision":    "publish",
+            "alert_level": "low",
+            "reason":      "minor_flood",
+            "fallback":    True,
+        }
+    return {
+        "decision":    "needs_review",
+        "alert_level": "none",
+        "reason":      "insufficient_depth",
+        "fallback":    True,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EVENT CLUSTERER — gom báo cáo thành sự kiện  (#10)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class EventClusterer:
+    """
+    Tránh tạo 10 bài cho 10 ảnh cùng điểm ngập.
+    Nếu báo cáo mới gần cùng vị trí + gần thời gian → gộp vào event cũ.
+    """
+
+    TIME_WINDOW_MINUTES = 60
+    LOCATION_OVERLAP_THRESHOLD = 0.5   # Tỷ lệ overlap từ khóa vị trí
+
+    @classmethod
+    def should_update_existing(
+        cls,
+        new_location: str,
+        new_depth: float,
+        existing_events: List[Dict],
+    ) -> Optional[str]:
+        """
+        Trả về event_id nếu nên cập nhật event cũ, None nếu nên tạo mới.
+
+        existing_events: list of {"event_id", "location", "depth_cm", "updated_at"}
+        """
+        for event in existing_events:
+            if cls._same_area(new_location, event.get("location", "")):
+                # Kiểm tra thời gian
+                try:
+                    evt_time = datetime.fromisoformat(event.get("updated_at", ""))
+                    elapsed  = (datetime.now() - evt_time).total_seconds() / 60
+                    if elapsed <= cls.TIME_WINDOW_MINUTES:
+                        return event["event_id"]
+                except Exception:
+                    pass
+        return None
+
+    @classmethod
+    def _same_area(cls, loc1: str, loc2: str) -> bool:
+        """So sánh hai vị trí text — đơn giản theo từ khóa chung."""
+        if not loc1 or not loc2:
+            return False
+        tokens1 = set(loc1.lower().split())
+        tokens2 = set(loc2.lower().split())
+        # Bỏ stop words ngắn
+        tokens1 = {t for t in tokens1 if len(t) > 2}
+        tokens2 = {t for t in tokens2 if len(t) > 2}
+        if not tokens1 or not tokens2:
+            return False
+        overlap = len(tokens1 & tokens2) / min(len(tokens1), len(tokens2))
+        return overlap >= cls.LOCATION_OVERLAP_THRESHOLD
+
+    @classmethod
+    def build_update_message(cls, event: Dict, new_depth: float,
+                              new_result: Dict) -> Dict:
+        """Sinh message cập nhật sự kiện."""
+        old_depth = float(event.get("depth_cm", 0) or 0)
+        delta     = new_depth - old_depth
+        if delta > 5:
+            change = f"tăng từ {int(old_depth)}cm lên khoảng {int(new_depth)}cm"
+        elif delta < -5:
+            change = f"giảm từ {int(old_depth)}cm xuống còn khoảng {int(new_depth)}cm"
+        else:
+            change = f"ổn định ở khoảng {int(new_depth)}cm"
+
+        return {
+            "action":     "update_event",
+            "event_id":   event["event_id"],
+            "update":     f"Mực nước {change}.",
+            "new_depth":  new_depth,
+            "lifecycle":  infer_alert_lifecycle(
+                old_depth, new_depth,
+                (datetime.now() - datetime.fromisoformat(
+                    event.get("updated_at", datetime.now().isoformat())
+                )).total_seconds() / 60
+            ).value,
+        }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1398,7 +2116,8 @@ class FloodAgent:
         resp  = agent.chat("Nước thấp hơn, khoảng 40cm")
     """
 
-    def __init__(self, cfg: Optional[Dict] = None):
+    def __init__(self, cfg: Optional[Dict] = None,
+                 permission_level: PermissionLevel = PermissionLevel.ANALYST):
         # Config
         if isinstance(cfg, AgentConfig):
             self.config = cfg
@@ -1412,6 +2131,12 @@ class FloodAgent:
         self.events  = EventBus()
         self.tools   = PipelineTools(self.config, self.memory)
         self._lock   = threading.Lock()
+
+        # v3 components
+        self.permission  = permission_level
+        self.audit_log   = AuditLog()
+        self.clusterer   = EventClusterer()
+        self._active_events: List[Dict] = []   # in-memory event store (thay bằng DB nếu cần)
 
         # LLM Enhancer — dùng model đã fine-tune nếu có, fallback về FeedbackParser
         self._llm = None
@@ -1470,19 +2195,50 @@ class FloodAgent:
 
     # ── Public API ────────────────────────────────────────────────
 
-    def process_images(self, image_paths: List[Path]) -> AgentResponse:
+    def process_images(self, image_paths: List[Path],
+                       location: str = "", description: str = "",
+                       report_id: str = "", has_gps: bool = False,
+                       has_privacy_risk: bool = False) -> AgentResponse:
         """
-        Nhận danh sách ảnh → phân tích → confidence-aware decision.
+        Nhận danh sách ảnh → phân tích → confidence-aware decision → AgentDecision.
         Entry point chính khi user upload ảnh.
+
+        Tham số mới (v3):
+            location:         Vị trí text từ user
+            description:      Mô tả của user
+            report_id:        ID báo cáo (sinh tự động nếu trống)
+            has_gps:          Ảnh có GPS EXIF không
+            has_privacy_risk: Có biển số / khuôn mặt không cần blur
         """
         with self._lock:
             self.memory.n_sessions += 1
 
+        # Sinh report_id nếu chưa có
+        if not report_id:
+            report_id = f"rep_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+        # Kiểm tra thông tin thiếu trước khi xử lý
+        report_meta = {
+            "location": location, "gps": has_gps,
+            "description": description,
+        }
+        missing = MissingInfoChecker.check(report_meta)
+        required_missing = [m for m in missing if m.get("required")]
+        if required_missing:
+            questions = "\n\n".join(
+                MissingInfoChecker.format_question(m) for m in required_missing
+            )
+            msg = f"⚠️ Cần thêm thông tin trước khi phân tích:\n\n{questions}"
+            self.memory.add_message("agent", msg)
+            # Vẫn phân tích nhưng báo thiếu thông tin
+            log.info(f"[Agent] Missing required info: {[m['field'] for m in required_missing]}")
+
         self.memory.add_message(
             "user", f"[Upload] {len(image_paths)} ảnh: "
             + ", ".join(p.name for p in image_paths[:5])
+            + (f" | vị trí: {location}" if location else "")
         )
-        log.info(f"[Agent] process_images: {len(image_paths)} ảnh")
+        log.info(f"[Agent] process_images: {len(image_paths)} ảnh, report_id={report_id}")
 
         tr = self.tools.call("analyze", images=image_paths)
 
@@ -1498,8 +2254,14 @@ class FloodAgent:
         duration = tr.data.get("duration_s", 0)
         extra_msg = ""
 
+        # Cảnh báo thông tin thiếu (optional fields)
+        optional_missing = [m for m in missing if not m.get("required")]
+        if optional_missing and not required_missing:
+            q = MissingInfoChecker.format_question(optional_missing[0])
+            extra_msg += f"\n\n💬 _{q}_"
+
         if results:
-            # Gán image_id cho từng kết quả và lưu vào history
+            # Gán image_id và lưu vào history
             for r in results:
                 img_id = self.memory.add_image_to_history(r, image_paths)
                 r["image_id"] = img_id
@@ -1508,54 +2270,117 @@ class FloodAgent:
             self.memory.last_action_type = "analyze"
             self.memory.set_last_result(first, image_paths)
 
-            # ── Confidence-aware decision ─────────────────────────
+            # ── Tạo AgentDecision (v3) ────────────────────────────
+            try:
+                decision = self.make_decision(
+                    result           = first,
+                    location         = location,
+                    n_reports_nearby = len(self._active_events) + 1,
+                    has_privacy_risk = has_privacy_risk,
+                    has_gps          = has_gps,
+                    report_id        = report_id,
+                )
+                extra_msg += "\n\n" + decision.to_admin_report()
+
+                # Cập nhật ReportState
+                state = self.get_report_state(report_id, str(image_paths[0]),
+                                              location=location, description=description)
+                state.analysis_result = first
+                state.alert_decision  = decision.to_dict()
+                if decision.decision == "needs_review":
+                    state.advance("pending_review")
+                elif decision.decision == "update_existing_event":
+                    state.advance("pending_review")
+                else:
+                    state.advance("analyzed")
+
+                # Cập nhật _active_events nếu là event mới
+                if decision.event_id:
+                    # Cập nhật event hiện có
+                    for ev in self._active_events:
+                        if ev.get("event_id") == decision.event_id:
+                            ev.update({"depth_cm": first.get("water_height_cm", 0),
+                                       "updated_at": datetime.now().isoformat()})
+                else:
+                    # Thêm event mới
+                    self._active_events.append({
+                        "event_id":  report_id,
+                        "location":  location,
+                        "depth_cm":  first.get("water_height_cm", 0),
+                        "updated_at": datetime.now().isoformat(),
+                    })
+
+            except Exception as e:
+                log.warning(f"[Agent] make_decision lỗi ({e}), dùng fallback")
+                fb = fallback_alert_decision(first)
+                extra_msg += (
+                    f"\n\n⚠️ _Dùng fallback rule-based_: "
+                    f"decision={fb['decision']} level={fb['alert_level']}"
+                )
+
+            # ── Confidence-aware behavior (giữ từ v2) ─────────────
             if conf > self.config.conf_auto_confirm:
-                # Auto confirm: đưa vào training ngay
                 self.tools.call("queue_review", result=first, reason="auto_high_conf")
-                extra_msg = f"\n✨ _Độ tin cậy cao ({round(conf*100)}%) — tự động xác nhận._"
                 log.info(f"[Agent] Auto-confirm (conf={conf:.2f})")
 
             elif conf < self.config.conf_auto_rerun:
-                # Auto rerun: tự chạy lại không cần hỏi
-                log.info(f"[Agent] Auto-rerun do conf={conf:.2f} < {self.config.conf_auto_rerun}")
+                log.info(f"[Agent] Auto-rerun do conf={conf:.2f}")
                 rerun_tr = self.tools.call("rerun", images=image_paths)
                 if rerun_tr.success and rerun_tr.data.get("results"):
                     new_results = rerun_tr.data["results"]
                     delta = self._compare_results(first, new_results[0])
                     results = new_results
                     self.memory.set_last_result(new_results[0])
-                    extra_msg = (
-                        f"\n🔄 _Tự động chạy lại do độ tin cậy rất thấp ({round(conf*100)}%). "
+                    extra_msg += (
+                        f"\n🔄 _Tự động chạy lại (conf={round(conf*100)}%). "
                         f"Kết quả mới: {'+' if delta['depth_delta'] >= 0 else ''}"
-                        f"{delta['depth_delta']}cm, conf thay đổi {'+' if delta['conf_delta'] >= 0 else ''}"
-                        f"{round(delta['conf_delta']*100)}%._"
+                        f"{delta['depth_delta']}cm._"
                     )
-                    self.events.emit("action_failed" if not delta["improved"] else "low_confidence",
-                                     {"result": new_results[0]})
 
             elif conf < self.config.conf_ask_user:
-                # Hỏi user
-                extra_msg = (
-                    f"\n🔍 _Kết quả này chưa chắc chắn ({round(conf*100)}%). "
-                    "Bạn có thể xác nhận hoặc điều chỉnh?_"
-                )
                 self.events.emit("low_confidence", {"result": first})
-                log.info(f"[Agent] Ask user (conf={conf:.2f})")
 
-        # Kiểm tra phong cách trả lời đã học
-        ctx_key = _make_context_key(results, "analyze")
-        pattern = self.memory.find_matching_pattern(ctx_key)
-        if pattern and not extra_msg:
-            try:
-                base_msg = _fill_response_template(pattern["template"], results, duration)
-                base_msg += "\n_💾 [Đang dùng phong cách trả lời đã lưu]_"
-                log.info(f"[Agent] process_images: using learned pattern {ctx_key}")
-            except Exception:
-                base_msg = _context_aware_message(results, self.memory, "analyze", duration)
+        # Build base message — dùng ResponseRewriter (v3) thay vì format cũ
+        if results:
+            first_result = results[0]
+            missing_field_names = [m["field"] for m in missing if not m.get("required")] \
+                                  if missing else []
+
+            # Thử dùng phong cách trả lời đã học trước
+            ctx_key = _make_context_key(results, "analyze")
+            pattern = self.memory.find_matching_pattern(ctx_key)
+            if pattern:
+                try:
+                    base_msg = _fill_response_template(pattern["template"], results, duration)
+                    base_msg += "\n_💾 [Đang dùng phong cách trả lời đã lưu]_"
+                except Exception:
+                    base_msg = self.build_natural_response(
+                        result          = first_result,
+                        decision        = None,
+                        mode            = "public_user",
+                        location        = location,
+                        missing_fields  = missing_field_names or None,
+                    )
+            else:
+                base_msg = self.build_natural_response(
+                    result          = first_result,
+                    decision        = None,
+                    mode            = "public_user",
+                    location        = location,
+                    missing_fields  = missing_field_names or None,
+                )
         else:
-            base_msg = _context_aware_message(results, self.memory, "analyze", duration)
+            base_msg = "ℹ️ Không có kết quả phân tích."
 
         msg = base_msg + extra_msg
+
+        # Cảnh báo thiếu thông tin bắt buộc ở đầu
+        if required_missing:
+            questions = "\n".join(
+                MissingInfoChecker.format_question(m) for m in required_missing
+            )
+            msg = f"⚠️ **Thiếu thông tin quan trọng:**\n{questions}\n\n---\n\n" + msg
+
         self.memory.add_message("agent", msg)
 
         return AgentResponse(
@@ -1689,6 +2514,212 @@ class FloodAgent:
     def get_memory(self) -> Dict:
         """Snapshot bộ nhớ hiện tại."""
         return self.memory.to_summary()
+
+    # ── v3 Public API ─────────────────────────────────────────────
+
+    def make_decision(
+        self,
+        result: Dict,
+        location: str = "",
+        n_reports_nearby: int = 1,
+        has_privacy_risk: bool = False,
+        has_gps: bool = False,
+        report_id: str = "",
+    ) -> AgentDecision:
+        """
+        Tạo AgentDecision có cấu trúc từ kết quả phân tích.
+        Đây là JSON-first output — render thành text qua to_admin_report().
+
+        Không bao giờ tự publish high alert mà không có admin duyệt.
+        """
+        conf    = float(result.get("confidence",      0) or 0)
+        depth   = float(result.get("water_height_cm", 0) or 0)
+        level   = result.get("flood_level", "UNKNOWN")
+        reasons:          List[str] = []
+        required_actions: List[str] = []
+        publish_target:   List[str] = ["map"]
+
+        # === Phân tích lý do ===
+        if depth > 0:
+            reasons.append(f"AI nhận diện mực nước ước tính {int(depth)}cm ({level}).")
+        if conf >= 0.85:
+            reasons.append("Độ tin cậy cao — có vật tham chiếu rõ ràng trong ảnh.")
+        elif conf >= 0.65:
+            reasons.append("Độ tin cậy trung bình — cần xác minh thêm từ nguồn khác.")
+        else:
+            reasons.append(f"Độ tin cậy thấp ({round(conf*100)}%) — chưa đủ bằng chứng.")
+
+        if not location and not has_gps:
+            reasons.append("Vị trí chỉ được nhập bằng text, chưa có GPS.")
+            required_actions.append("Xác minh vị trí chính xác (GPS hoặc địa chỉ đầy đủ).")
+
+        if has_privacy_risk:
+            reasons.append("Ảnh có thể chứa thông tin nhận dạng cá nhân (biển số xe, khuôn mặt).")
+            required_actions.append("Dùng bản ảnh đã blur trước khi đăng công khai.")
+
+        if n_reports_nearby > 1:
+            reasons.append(f"Có {n_reports_nearby} báo cáo gần khu vực này.")
+
+        # Kiểm tra event hiện có
+        existing_event_id = self.clusterer.should_update_existing(
+            location, depth, self._active_events
+        )
+
+        # === Quyết định chính ===
+        try:
+            if depth >= 120 or (depth >= 60 and not has_gps):
+                # Mức cao hoặc chưa có GPS + mức trung → bắt buộc duyệt
+                AgentPermissions.require(self.permission, "publish_high_alert")
+                # Nếu đến đây → ADMIN mode
+                decision    = "publish"
+                needs_review = False
+                alert_level = "high" if depth >= 120 else "medium"
+                publish_target = ["map", "news", "alert"]
+            elif conf < 0.65:
+                decision    = "needs_review"
+                needs_review = True
+                alert_level = "none"
+            elif existing_event_id:
+                decision    = "update_existing_event"
+                needs_review = True
+                alert_level = "low" if depth >= 30 else "none"
+            elif required_actions:
+                decision    = "needs_review"
+                needs_review = True
+                alert_level = "medium" if depth >= 60 else "low"
+                publish_target.append("news")
+            else:
+                decision    = "publish"
+                needs_review = False
+                alert_level = "low" if depth < 60 else "medium"
+                publish_target.append("news")
+
+        except PermissionError:
+            # Không đủ quyền → bắt buộc đưa vào review
+            decision     = "needs_review"
+            needs_review = True
+            alert_level  = "high"
+            reasons.append("Agent không đủ quyền tự đăng cảnh báo mức cao — cần admin duyệt.")
+            required_actions.append("Admin duyệt trước khi đăng cảnh báo.")
+
+        # Fallback nếu logic lỗi
+        should_publish = (decision == "publish") and not required_actions
+
+        # Editorial policy
+        title   = EditorialPolicy.generate_title(result, location, verified=not needs_review)
+        summary = EditorialPolicy.generate_summary(result, n_reports_nearby)
+
+        decision_obj = AgentDecision(
+            decision          = decision,
+            alert_level       = alert_level,
+            should_publish    = should_publish,
+            needs_review      = needs_review,
+            publish_target    = publish_target,
+            title             = title,
+            summary           = summary,
+            reasons           = reasons,
+            required_actions  = required_actions,
+            public_message    = ConfidenceTranslator.status_label(conf),
+            admin_note        = f"confidence={round(conf*100)}%, depth={depth}cm, level={level}",
+            confidence_display = ConfidenceTranslator.to_admin(conf),
+            recommendations   = FloodAdvisory.generate(depth),
+            report_id         = report_id,
+            event_id          = existing_event_id or "",
+        )
+
+        # Ghi audit log
+        self.audit_log.log_decision(
+            agent_name = "FloodAgent.make_decision",
+            action     = "make_decision",
+            decision   = decision_obj,
+            input_snap = {
+                "depth":    depth, "conf": conf, "level": level,
+                "location": location, "has_gps": has_gps,
+            },
+            report_id  = report_id,
+        )
+
+        log.info(
+            f"[Decision] {decision} | alert={alert_level} | "
+            f"depth={depth}cm conf={round(conf*100)}% "
+            f"{'→ update event' if existing_event_id else ''}"
+        )
+        return decision_obj
+
+    def get_recommendations(self, depth_cm: float) -> Dict[str, str]:
+        """Trả về khuyến cáo theo đối tượng."""
+        return FloodAdvisory.generate(depth_cm)
+
+    def get_report_state(self, report_id: str,
+                          image_path: str, source: str = "citizen_upload",
+                          location: str = "", description: str = "") -> ReportState:
+        """Tạo ReportState mới cho một báo cáo đến."""
+        return ReportState(
+            report_id       = report_id,
+            source          = source,
+            image_path      = image_path,
+            raw_description = description,
+            raw_location    = location,
+        )
+
+    def check_missing_info(self, report: Dict) -> List[Dict]:
+        """Trả về danh sách thông tin còn thiếu và câu hỏi hỏi lại."""
+        return MissingInfoChecker.check(report)
+
+    def get_audit_trail(self, n: int = 20) -> List[Dict]:
+        """Lấy n bản ghi audit gần nhất."""
+        return self.audit_log.recent(n)
+
+    def build_natural_response(
+        self,
+        result:         Dict,
+        decision:       Any  = None,
+        mode:           str  = "public_user",
+        location:       str  = "",
+        missing_fields: Optional[List[str]] = None,
+    ) -> str:
+        """
+        Public helper: Decision JSON → natural language response.
+        Tích hợp ResponseRewriter + ResponseValidator với 1 lần retry.
+
+        Flow:
+            rewrite(decision, result, mode)
+            → validate(natural_response, mode)
+            → nếu fail: rewrite lại với simplify=True
+            → trả về natural_response cuối
+
+        Dùng ở bất kỳ đâu cần text thân thiện:
+            msg = agent.build_natural_response(result, decision, mode="public_user")
+        """
+        try:
+            from agent.response_rewriter  import ResponseRewriter, ResponseMode
+            from agent.response_validator import ResponseValidator
+        except ImportError:
+            # Fallback: dùng format cũ nếu file chưa có
+            return _format_analysis_response([result])
+
+        rewritten = ResponseRewriter.rewrite(
+            decision        = decision or {},
+            result          = result,
+            mode            = mode,
+            location        = location,
+            missing_fields  = missing_fields,
+        )
+
+        # Validate — retry 1 lần với simplify=True nếu fail
+        valid = ResponseValidator.validate(rewritten.natural_response, mode=mode)
+        if not valid and valid.severity == "fail":
+            log.debug(f"[Rewriter] Validate fail ({valid.issues}), retry với simplify=True")
+            rewritten = ResponseRewriter.rewrite(
+                decision        = decision or {},
+                result          = result,
+                mode            = mode,
+                location        = location,
+                missing_fields  = missing_fields,
+                simplify        = True,
+            )
+
+        return rewritten.natural_response
 
     def reset_session(self):
         """Xóa bộ nhớ session (giữ correction_log và calibration)."""
@@ -1930,7 +2961,7 @@ class FloodAgent:
     @staticmethod
     def _help_text() -> str:
         return (
-            "📖 **Hướng dẫn sử dụng FloodAgent v2**\n\n"
+            "📖 **Hướng dẫn sử dụng FloodAgent v3**\n\n"
             "**Upload ảnh**: gửi ảnh lũ để phân tích tự động\n\n"
             "**Phản hồi sau khi có kết quả:**\n"
             '• _"Đúng rồi"_ — xác nhận, lưu vào training\n'
@@ -1941,22 +2972,28 @@ class FloodAgent:
             '• _"Mô phỏng"_ — thử nhiều ngưỡng, chọn tốt nhất tự động\n'
             '• _"Hiệu chỉnh"_ — áp dụng bias từ lịch sử correction\n'
             '• _"Trạng thái"_ — xem system info + calibration + perf\n\n'
-            "**Tính năng AI v2:**\n"
-            "• PolicyEngine tự tính điểm và chọn action tốt nhất\n"
-            "• Tự động hiệu chỉnh độ sâu dựa trên lịch sử sửa lỗi\n"
-            "• Tự động chạy lại nếu confidence < 30%\n"
-            "• Simulation mode: thử 5 ngưỡng, pick best\n"
-            "• Bộ nhớ dài hạn: không mất khi tắt server\n"
+            "**Tính năng v3 mới:**\n"
+            "• AgentDecision JSON: quyết định minh bạch + lý do đầy đủ\n"
+            "• EditorialPolicy: tự động kiểm tra ngôn ngữ trước khi đăng\n"
+            "• ReportState: theo dõi trạng thái từng báo cáo\n"
+            "• FloodAdvisory: khuyến cáo theo xe máy / ô tô / người đi bộ\n"
+            "• EventClusterer: gộp báo cáo gần nhau thành 1 sự kiện\n"
+            "• AuditLog: ghi log mọi quyết định vào file\n"
+            "• PermissionLevel: phân quyền analyst/editor/admin\n"
+            "• Fallback rule-based: hoạt động ngay cả khi AI lỗi\n"
+            "• Hỏi lại khi thiếu vị trí hoặc thời gian\n"
         )
 
     # ── Convenience: load config từ file ─────────────────────────
 
     @classmethod
-    def from_config_file(cls, config_path: str = "config.yaml") -> "FloodAgent":
+    def from_config_file(cls, config_path: str = "config.yaml",
+                         permission_level: PermissionLevel = PermissionLevel.ANALYST
+                         ) -> "FloodAgent":
         try:
             import yaml
             with open(config_path, encoding="utf-8") as f:
                 cfg = yaml.safe_load(f) or {}
         except Exception:
             cfg = {}
-        return cls(cfg)
+        return cls(cfg, permission_level=permission_level)

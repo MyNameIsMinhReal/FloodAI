@@ -120,11 +120,15 @@ class DriveUploader:
           - URL co tham so: "https://drive.google.com/drive/u/0/folders/1BxiMVs0..."
         """
         import re
-        # Thu parse URL
+        # Folder URL
         m = re.search(r"/folders/([a-zA-Z0-9_-]+)", url_or_id)
         if m:
             return m.group(1)
-        # Neu la ID thuan (khong co slash, khong phai URL)
+        # File URL — /file/d/FILE_ID/
+        m = re.search(r"/file/d/([a-zA-Z0-9_-]+)", url_or_id)
+        if m:
+            return m.group(1)
+        # ID thuan
         if "/" not in url_or_id and "đ" not in url_or_id:
             return url_or_id.strip()
         raise ValueError(

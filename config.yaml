@@ -258,6 +258,21 @@ models:
   # Feature extraction
   dino: facebook/dinov2-small
 
+  # Flood classifier (ResNet-18 fine-tuned)
+  # Đặt path .pth file tại đây, hoặc để trống để tắt
+  flood_resnet: "models/flood_resnet/model_flood_v20.pth"
+
+  # Label map của flood_resnet (thứ tự index khi train)
+  # Nếu train theo thứ tự khác, sửa ở đây, không cần đụng code
+  flood_resnet_labels: ["dry", "flood", "heavy_flood"]
+
+  # Trọng số ensemble — tổng phải = 1.0 (channel_bonus tính thêm ngoài)
+  # color: WaterDetector, dino: DINOv2, resnet: ResNet-18
+  ensemble_weights:
+    color:  0.45
+    dino:   0.25
+    resnet: 0.20
+
 # ── Filter Toggles (MỚI) ─────────────────────────────────────────────────────
 enable_filters:
   blur:       true    # Lọc ảnh mờ (Laplacian)

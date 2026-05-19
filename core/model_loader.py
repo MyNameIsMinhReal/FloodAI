@@ -159,6 +159,18 @@ class ModelLoader:
         dino_key = model_cfg.get("dino", "facebook/dinov2-small")
         self.register("dino", _loader_dino, {"model_name": dino_key})
 
+        # Flood ResNet-18 (custom fine-tuned, optional)
+        resnet_path = model_cfg.get("flood_resnet", "")
+        if resnet_path:
+            resnet_labels = model_cfg.get(
+                "flood_resnet_labels", ["dry", "flood", "heavy_flood"]
+            )
+            self.register("flood_resnet", _loader_resnet18, {
+                "model_path":  resnet_path,
+                "num_classes": len(resnet_labels),
+                "labels":      resnet_labels,
+            })
+
     # ── Loading ────────────────────────────────────────────────────────────────
 
     def preload(self, names: list) -> None:
@@ -284,6 +296,83 @@ def _loader_dino(config: dict) -> Any:
     model.eval()
     log.debug(f"  DINOv2 loaded: {model_name} (device={device})")
     return {"model": model, "processor": processor, "device": device}
+
+
+def _loader_resnet18(config: dict) -> Any:
+    """
+    Load ResNet-18 fine-tuned cho flood classification.
+
+    Trả về dict:
+        {
+            "model":      nn.Module (eval mode),
+            "transform":  torchvision transform,
+            "labels":     ["dry", "flood", "heavy_flood"],
+            "device":     torch.device,
+        }
+
+    Raises:
+        FileNotFoundError: nếu model_path không tồn tại
+        RuntimeError: nếu num_classes không khớp với fc layer trong checkpoint
+    """
+    import torch
+    import torchvision.models as tv_models
+    import torchvision.transforms as T
+    from pathlib import Path
+
+    model_path = config.get("model_path", "")
+    num_classes = config.get("num_classes", 3)
+    labels      = config.get("labels", ["dry", "flood", "heavy_flood"])
+
+    path = Path(model_path)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"[flood_resnet] Model không tìm thấy: {model_path}\n"
+            f"  → Copy file .pth vào đường dẫn trên hoặc sửa config.yaml"
+        )
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Dựng kiến trúc ResNet-18 với fc head khớp checkpoint
+    # Checkpoint dùng fc.1.weight → fc là Sequential([layer0_no_params, Linear])
+    # Dùng Dropout(0.0) ở index 0 để khớp index mà không ảnh hưởng inference
+    model = tv_models.resnet18(weights=None)
+    model.fc = torch.nn.Sequential(
+        torch.nn.Dropout(p=0.0),        # index 0 — không có weight, khớp checkpoint
+        torch.nn.Linear(512, num_classes)  # index 1 — fc.1.weight / fc.1.bias
+    )
+
+    state_dict = torch.load(model_path, map_location=device, weights_only=True)
+
+    # Checkpoint có thể là raw state_dict hoặc wrapped {"model_state": ...}
+    if "model_state" in state_dict:
+        state_dict = state_dict["model_state"]
+    elif "state_dict" in state_dict:
+        state_dict = state_dict["state_dict"]
+
+    model.load_state_dict(state_dict)
+    model.to(device)
+    model.eval()
+
+    # ImageNet-standard preprocessing (ResNet-18 training convention)
+    transform = T.Compose([
+        T.ToPILImage(),
+        T.Resize(256),
+        T.CenterCrop(224),
+        T.ToTensor(),
+        T.Normalize(mean=[0.485, 0.456, 0.406],
+                    std =[0.229, 0.224, 0.225]),
+    ])
+
+    log.info(
+        f"  [flood_resnet] Loaded ResNet-18 ({num_classes} classes: {labels}) "
+        f"from {path.name} on {device}"
+    )
+    return {
+        "model":     model,
+        "transform": transform,
+        "labels":    labels,
+        "device":    device,
+    }
 
 
 def _free_gpu():

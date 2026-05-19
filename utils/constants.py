@@ -9,6 +9,11 @@ DEFAULT_YOLO_MODEL = "yolov8n.pt"
 DEFAULT_POSE_MODEL = "yolov8n-pose.pt"
 DEFAULT_DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Small-hf"
 DEFAULT_DINO_MODEL = "facebook/dinov2-small"
+DEFAULT_FLOOD_RESNET_MODEL = "models/flood_resnet/model_flood_v20.pth"
+
+# Label map cho flood ResNet-18 (index → nghĩa)
+# Class 0 = dry/no_flood, Class 1 = flood, Class 2 = heavy_flood
+FLOOD_RESNET_LABELS = ["dry", "flood", "heavy_flood"]
 
 DEFAULT_YOLO_MODELS = [DEFAULT_YOLO_MODEL, "yolov8s.pt", "yolov8m.pt"]
 DEFAULT_DEPTH_MODELS = [

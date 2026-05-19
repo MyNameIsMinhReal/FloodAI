@@ -48,14 +48,23 @@ class FloodClassifier:
         flood_threshold: float = 0.45,
         min_water_area:  float = 0.04,
         device:          str   = "auto",
+        resnet_path:     str   = "",            # path đến .pth, "" = tắt
+        resnet_labels:   list  = None,          # ["dry","flood","heavy_flood"]
+        ensemble_weights: dict = None,          # {"color":0.45,"dino":0.25,"resnet":0.20}
     ):
-        self.dino_model      = dino_model
-        self.flood_threshold = flood_threshold
-        self.min_water_area  = min_water_area
-        self.device          = device
+        self.dino_model       = dino_model
+        self.flood_threshold  = flood_threshold
+        self.min_water_area   = min_water_area
+        self.device           = device
+        self.resnet_path      = resnet_path
+        self.resnet_labels    = resnet_labels or ["dry", "flood", "heavy_flood"]
+        self.ensemble_weights = ensemble_weights or {
+            "color": 0.45, "dino": 0.25, "resnet": 0.20
+        }
         self._extractor: Any = None
         self._model: Any     = None
         self._water_detector = None  # lazy load
+        self._resnet: Any    = None  # lazy load
 
     def _get_water_detector(self):
         if self._water_detector is None:
@@ -88,6 +97,66 @@ class FloodClassifier:
             out = self._model(**inputs)
             cls = out.last_hidden_state[:, 0, :].cpu().numpy()
         return cls[0]
+
+    def _get_resnet(self):
+        """Lazy-load ResNet-18. Trả về None nếu không config hoặc load thất bại."""
+        if self._resnet is not None:
+            return self._resnet if isinstance(self._resnet, dict) and self._resnet else None
+        if not self.resnet_path:
+            self._resnet = {}  # sentinel: không config
+            return None
+        try:
+            from core.model_loader import _loader_resnet18
+            self._resnet = _loader_resnet18({
+                "model_path":  self.resnet_path,
+                "num_classes": len(self.resnet_labels),
+                "labels":      self.resnet_labels,
+            })
+        except FileNotFoundError as e:
+            log.warning(f"  [flood_resnet] Không tìm thấy model, bỏ qua: {e}")
+            self._resnet = {}
+        except Exception as e:
+            log.warning(f"  [flood_resnet] Load thất bại ({e}), bỏ qua")
+            self._resnet = {}
+        return self._resnet if self._resnet else None
+
+    def _resnet_flood_score(self, img_rgb: np.ndarray) -> float:
+        """
+        Chạy ResNet-18 trên ảnh RGB, trả về flood probability [0.0 – 1.0].
+
+        Score = softmax[flood]*0.6 + softmax[heavy_flood]*1.0  (clipped 0–1)
+
+        - Nếu model không load được → 0.5 (neutral, không kéo ensemble)
+        - Label map dựa theo self.resnet_labels (có thể đổi qua config.yaml)
+        """
+        bundle = self._get_resnet()
+        if not bundle:
+            return 0.5
+
+        import torch
+        model     = bundle["model"]
+        transform = bundle["transform"]
+        device    = bundle["device"]
+        labels    = bundle["labels"]
+
+        try:
+            tensor = transform(img_rgb).unsqueeze(0).to(device)
+            with torch.no_grad():
+                logits = model(tensor)
+                probs  = torch.softmax(logits, dim=1).squeeze(0).cpu().numpy()
+
+            prob_map = {lbl: float(probs[i]) for i, lbl in enumerate(labels)}
+            p_flood  = prob_map.get("flood",       0.0)
+            p_heavy  = prob_map.get("heavy_flood", 0.0)
+
+            # heavy_flood = tín hiệu mạnh hơn → hệ số 1.0
+            # flood vừa   → conservative 0.6
+            raw = p_flood * 0.6 + p_heavy * 1.0
+            return float(np.clip(raw, 0.0, 1.0))
+
+        except Exception as e:
+            log.warning(f"  [flood_resnet] Inference lỗi ({e}), dùng neutral 0.5")
+            return 0.5
 
     def _dino_flood_score(self, features: np.ndarray) -> float:
         """
@@ -151,7 +220,11 @@ class FloodClassifier:
             log.warning(f"  DINOv2 failed ({e}), using color only")
             dino_score = 0.5
 
-        # === 3. Kết hợp score — v3 với dynamic weighting ===
+        # === 2b. ResNet-18 flood classifier (nếu được config) ===
+        resnet_score = self._resnet_flood_score(img_rgb)
+        has_resnet   = bool(self._get_resnet())  # True = model đã load thành công
+
+        # === 3. Kết hợp score — v4 với dynamic weighting + ResNet ensemble ===
 
         color_score = min(1.0, water_pct / max(self.min_water_area * 3, 1e-6))
 
@@ -161,16 +234,19 @@ class FloodClassifier:
         if road_dry:
             if cp.turbidity > 0.70:
                 # Nước bùn + nhìn thấy đường = ngập đô thị — penalty nhẹ
-                color_score *= 0.55
-                dino_score  *= 0.60
+                color_score  *= 0.55
+                dino_score   *= 0.60
+                resnet_score *= 0.70  # ResNet đã train trên ảnh thực → penalty ít hơn DINOv2
             elif cp.turbidity > 0.40:
                 # Nước đục vừa + đường — penalty trung bình
-                color_score *= 0.35
-                dino_score  *= 0.50
+                color_score  *= 0.35
+                dino_score   *= 0.50
+                resnet_score *= 0.55
             else:
                 # Nước trong + đường khô — rất có thể không phải lũ — penalty nặng
-                color_score *= 0.15
-                dino_score  *= 0.40
+                color_score  *= 0.15
+                dino_score   *= 0.40
+                resnet_score *= 0.40
 
         # [CẢI TIẾN] Turbidity multiplier — nước bùn = dấu hiệu mạnh nhất của lũ thật
         # Thay vì chỉ cộng 8%, dùng multiplier lên đến 35%
@@ -197,12 +273,35 @@ class FloodClassifier:
         if wdr.water_level_pct > 0.85 and not wdr.has_reflection and water_pct < 0.3:
             spatial_penalty = 0.15  # water line rất cao + không có reflection → suspicious
 
-        # Trọng số: color (55%) + dino (30%) + channel bonus (15%)
-        # Turbidity mult áp dụng lên toàn bộ color score
-        combined = (
-            (0.55 * color_score * turbidity_mult + 0.30 * dino_score + channel_bonus)
-            - spatial_penalty
-        )
+        # === Ensemble weights — đọc từ config, fallback về default ===
+        # Khi ResNet load được: color(0.45) + dino(0.25) + resnet(0.20) + channel_bonus
+        # Khi ResNet KHÔNG có: color(0.55) + dino(0.30) + channel_bonus  (giữ nguyên v3)
+        ew = self.ensemble_weights
+        if has_resnet:
+            w_color  = ew.get("color",  0.45)
+            w_dino   = ew.get("dino",   0.25)
+            w_resnet = ew.get("resnet", 0.20)
+            combined = (
+                w_color  * color_score * turbidity_mult
+                + w_dino   * dino_score
+                + w_resnet * resnet_score
+                + channel_bonus
+            ) - spatial_penalty
+            log.debug(
+                f"  [ensemble-v4] color={color_score:.2f}×{turbidity_mult:.2f} "
+                f"dino={dino_score:.2f} resnet={resnet_score:.2f} → {combined:.2f}"
+            )
+        else:
+            # Fallback v3: ResNet không có, giữ nguyên trọng số cũ
+            combined = (
+                0.55 * color_score * turbidity_mult
+                + 0.30 * dino_score
+                + channel_bonus
+            ) - spatial_penalty
+            log.debug(
+                f"  [ensemble-v3] color={color_score:.2f}×{turbidity_mult:.2f} "
+                f"dino={dino_score:.2f} → {combined:.2f}"
+            )
 
         # [MỚI] No-water scene penalty: cây/nhà/cổng → giảm điểm mạnh
         if nw_penalty > 0.0:
@@ -256,7 +355,9 @@ class FloodClassifier:
 
         log.info(
             f"  {Path(image_path).name}: {'LŨ' if has_flood else 'KHÔNG LŨ'} "
-            f"(prob={combined:.2f}, màu={cp.dominant_name_vi}, đục={cp.turbidity:.2f})"
+            f"(prob={combined:.2f}, màu={cp.dominant_name_vi}, đục={cp.turbidity:.2f}"
+            + (f", resnet={resnet_score:.2f}" if has_resnet else "")
+            + ")"
         )
 
         return FloodClassification(
