@@ -75,11 +75,17 @@ class ConfidenceScorer:
 
     def compute(self, result: Any, image_path: Optional[str] = None) -> float:
         """
-        Tính confidence score với 4-component formula.
+        Tính confidence score với multi-component formula (v4).
 
-        Args:
-            result:     Kết quả từ depth/reference estimator
-            image_path: (Optional) Đường dẫn ảnh để tính image_quality
+        Components:
+            water_conf       (0.30) — water detection quality
+            depth_cons       (0.20) — depth consistency
+            ref_score        (0.20) — reference objects (người/xe/cửa)
+            img_quality      (0.15) — image quality
+            scene_cons       (0.15) — scene consistency (SceneValidator)
+            raincoat_score   (0.08) — raincoat signal bonus
+
+        Nếu không có vật tham chiếu: trả về kết quả nhưng thêm warning.
 
         Returns:
             float confidence [0.0, 1.0]
@@ -99,24 +105,41 @@ class ConfidenceScorer:
         # Component 5: Raincoat signal (context confirmer)
         raincoat_score = self._compute_raincoat_score(result)
 
-        # Weighted combination
-        confidence = (
-            self.w_water    * water_conf   +
-            self.w_depth    * depth_cons   +
-            self.w_ref      * ref_score    +
-            self.w_quality  * img_quality  +
-            self.w_raincoat * raincoat_score
-        )
-        confidence = float(np.clip(confidence, 0.0, 1.0))
+        # Component 6: Scene consistency (từ SceneValidator nếu có)
+        scene_cons = self._compute_scene_consistency(result)
 
-        self._attach(result, confidence, water_conf, depth_cons,
-                     ref_score, img_quality, raincoat_score)
+        # Component 7: Scene graph relation boost
+        relation_boost = self._compute_relation_boost(result)
+
+        # Weighted combination (tổng = 1.0 + raincoat bonus nhỏ)
+        confidence = (
+            0.30 * water_conf   +
+            0.20 * depth_cons   +
+            0.20 * ref_score    +
+            0.15 * img_quality  +
+            0.15 * scene_cons   +
+            0.08 * raincoat_score
+        )
+        confidence = float(np.clip(confidence + relation_boost, 0.0, 1.0))
+
+        # No-reference warning: có ngập nhưng không đủ reference để đo cm
+        no_ref_warning = (ref_score < 0.15)
+
+        self._attach_v4(result, confidence, {
+            "water_conf":      water_conf,
+            "depth_cons":      depth_cons,
+            "ref_score":       ref_score,
+            "img_quality":     img_quality,
+            "scene_cons":      scene_cons,
+            "raincoat_signal": raincoat_score,
+            "relation_boost":  relation_boost,
+        }, no_ref_warning=no_ref_warning)
 
         log.debug(
-            f"  Confidence v3: {confidence:.2f} "
-            f"(water={water_conf:.2f}, depth={depth_cons:.2f}, "
-            f"ref={ref_score:.2f}, quality={img_quality:.2f}, "
-            f"raincoat={raincoat_score:.2f})"
+            "  Confidence v4: %.2f (water=%.2f depth=%.2f ref=%.2f "
+            "quality=%.2f scene=%.2f boost=%.2f)",
+            confidence, water_conf, depth_cons, ref_score,
+            img_quality, scene_cons, relation_boost,
         )
         return confidence
 
@@ -375,26 +398,68 @@ class ConfidenceScorer:
             return obj.get(attr)
         return getattr(obj, attr, None)
 
-    def _attach(
+    def _compute_scene_consistency(self, result: Any) -> float:
+        """Lấy scene_score từ SceneValidator nếu đã chạy."""
+        # Từ ValidationResult được attach vào result
+        val = self._get(result, "scene_validation")
+        if val and isinstance(val, dict):
+            return float(val.get("scene_score", 0.5))
+        # Từ SceneGraph
+        sg = self._get(result, "scene_graph")
+        if sg and hasattr(sg, "compute_confidence"):
+            try:
+                return float(sg.compute_confidence())
+            except Exception:
+                pass
+        return 0.5  # neutral nếu không có
+
+    def _compute_relation_boost(self, result: Any) -> float:
+        """Lấy relation confidence boost từ SceneGraph."""
+        sg = self._get(result, "scene_graph")
+        if sg and hasattr(sg, "relation_confidence_boost"):
+            try:
+                return float(sg.relation_confidence_boost())
+            except Exception:
+                pass
+        return 0.0
+
+    def _attach_v4(
         self,
         result: Any,
         confidence: float,
-        water_conf: float,
-        depth_cons: float,
-        ref_score: float,
-        img_quality: float,
-        raincoat_score: float = 0.5,
+        components: dict,
+        no_ref_warning: bool = False,
     ) -> None:
+        """
+        Gắn confidence_info v4 vào result với breakdown đầy đủ.
+
+        Nếu no_ref_warning = True, thêm cảnh báo:
+        "Có khả năng ngập, nhưng không có vật tham chiếu → không thể ước lượng độ sâu chính xác"
+        """
+        warnings = []
+        if no_ref_warning:
+            warnings.append(
+                "Không có vật tham chiếu (người/xe/cửa) — "
+                "chiều sâu chỉ là ước tính thô, không đủ tin cậy để đo cm"
+            )
+        if components.get("water_conf", 1.0) < 0.35:
+            warnings.append("Water detection yếu — có thể không có lũ thật")
+        if components.get("scene_cons", 1.0) < 0.40:
+            warnings.append("Scene không nhất quán (đường ướt / phản chiếu?)")
+
         info = {
-            "score": confidence,
-            "label": self.label(confidence),
+            "score":        confidence,
+            "label":        self.label(confidence),
             "needs_review": self.needs_review(confidence),
+            "warnings":     warnings,
             "components": {
-                "water_detection_conf":  round(water_conf,      3),
-                "depth_consistency":     round(depth_cons,      3),
-                "reference_match_score": round(ref_score,       3),
-                "image_quality":         round(img_quality,     3),
-                "raincoat_signal":       round(raincoat_score,  3),
+                "water_conf":      round(components.get("water_conf",      0.5), 3),
+                "depth_cons":      round(components.get("depth_cons",      0.5), 3),
+                "reference_score": round(components.get("ref_score",       0.5), 3),
+                "image_quality":   round(components.get("img_quality",     0.5), 3),
+                "scene_cons":      round(components.get("scene_cons",      0.5), 3),
+                "raincoat_signal": round(components.get("raincoat_signal", 0.5), 3),
+                "relation_boost":  round(components.get("relation_boost",  0.0), 3),
             },
         }
         if isinstance(result, dict):
@@ -405,6 +470,23 @@ class ConfidenceScorer:
                 result.confidence = confidence
             except AttributeError:
                 pass
+
+    def _attach(
+        self,
+        result: Any,
+        confidence: float,
+        water_conf: float,
+        depth_cons: float,
+        ref_score: float,
+        img_quality: float,
+        raincoat_score: float = 0.5,
+    ) -> None:
+        """Legacy _attach — kept for backward compat."""
+        self._attach_v4(result, confidence, {
+            "water_conf": water_conf, "depth_cons": depth_cons,
+            "ref_score": ref_score, "img_quality": img_quality,
+            "raincoat_signal": raincoat_score,
+        })
 
 
 # Backward-compat: expose old 3-component API as alias

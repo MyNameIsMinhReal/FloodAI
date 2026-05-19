@@ -1,0 +1,24 @@
+# configs/cpu.yaml
+# CPU-only: model nhỏ nhất, batch nhỏ, không dùng DINO (nặng)
+# Dùng: python main.py --config configs/cpu.yaml --input ./images
+
+depth:
+  model: "depth-anything/Depth-Anything-V2-Small-hf"
+  yolo_model: "yolov8n.pt"
+  yolo_conf: 0.28
+  use_dino: false
+
+pipeline:
+  parallel:
+    workers: 1
+  batch_size: 2
+  skip_drive: true
+  use_output_cache: true
+
+output:
+  base_dir: "output/cpu"
+
+logging:
+  level: "INFO"
+
+safe_mode: true

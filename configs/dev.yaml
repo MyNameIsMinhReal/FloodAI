@@ -1,0 +1,26 @@
+# configs/dev.yaml
+# Môi trường phát triển: model nhỏ, không upload Drive, không self-learning
+# Dùng: python main.py --config configs/dev.yaml --input ./test_images
+
+depth:
+  model: "depth-anything/Depth-Anything-V2-Small-hf"
+  yolo_model: "yolov8n.pt"
+  yolo_conf: 0.30
+  use_dino: false
+
+pipeline:
+  parallel:
+    workers: 2
+  skip_drive: true
+  skip_learning: true
+  skip_hard_mining: true
+  skip_versioning: true
+  use_output_cache: true
+
+output:
+  base_dir: "output/dev"
+
+logging:
+  level: "DEBUG"
+
+safe_mode: true

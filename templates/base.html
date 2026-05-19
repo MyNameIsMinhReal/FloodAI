@@ -1,493 +1,283 @@
 <!DOCTYPE html>
-<html lang="vi" data-theme="dark">
+<html lang="vi" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FloodAI · {% block title %}{% endblock %}</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>{% block title %}FloodNews{% endblock %} — Bản tin lũ lụt</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Serif+JP:wght@300;400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-
 :root{
-  --bg:#e8e8ed;--bg2:#d8d8df;
-  --sidebar-bg:rgba(232,232,237,0.72);
-  --card:rgba(255,255,255,0.85);--card-hover:rgba(255,255,255,0.98);
-  --border:rgba(0,0,0,0.08);--border-card:rgba(0,0,0,0.06);
-  --primary:#2d7ff9;--primary-s:rgba(45,127,249,0.12);
-  --accent:#f09a3e;--accent-s:rgba(240,154,62,0.12);
-  --danger:#ff3b30;--warn:#ff9500;--ok:#34c759;
-  --tx:rgba(0,0,0,0.88);--tx2:rgba(0,0,0,0.5);--tx3:rgba(0,0,0,0.28);
-  --shadow-sm:0 1px 3px rgba(0,0,0,0.08),0 1px 2px rgba(0,0,0,0.06);
-  --shadow-md:0 4px 16px rgba(0,0,0,0.10),0 2px 6px rgba(0,0,0,0.06);
-  --shadow-lg:0 12px 40px rgba(0,0,0,0.14),0 4px 12px rgba(0,0,0,0.08);
-  --shadow-widget:0 8px 32px rgba(0,0,0,0.12),0 2px 8px rgba(0,0,0,0.08);
-  --font:'Inter',system-ui,sans-serif;--font-serif:'Noto Serif JP',serif;
-  --radius:14px;--radius-lg:18px;--sb-w:240px;--sb-c:62px;
-  --ease:.22s cubic-bezier(.4,0,.2,1);
-  --ease-spring:.35s cubic-bezier(.34,1.56,.64,1);
+  --paper:#f6f5f0;--paper2:#eeeae0;
+  --navy:#0c2340;--navy2:#132f4c;
+  --blue:#1565c0;--blue-s:rgba(21,101,192,.1);
+  --card:#fff;--card2:#fafaf7;
+  --border:rgba(0,0,0,.1);--border2:rgba(0,0,0,.06);
+  --tx:#1a1a1a;--tx2:#4a4a4a;--tx3:#888;--tx-inv:#fff;
+  --ok:#16a34a;--ok-s:#dcfce7;
+  --warn-low:#ca8a04;--warn-low-s:#fef9c3;
+  --warn-med:#ea580c;--warn-med-s:#fed7aa;
+  --warn-high:#dc2626;--warn-high-s:#fee2e2;
+  --warn-crit:#7f1d1d;--warn-crit-s:#fecaca;
+  --gray:#6b7280;--gray-s:#f3f4f6;
+  --shadow:0 1px 3px rgba(0,0,0,.08);
+  --shadow-md:0 4px 16px rgba(0,0,0,.08);
+  --font:'Source Sans 3',system-ui,sans-serif;
+  --font-serif:'Merriweather',Georgia,serif;
+  --radius:4px;--radius-md:8px;--radius-lg:12px;
+  --max-w:1160px;
 }
 [data-theme="dark"]{
-  --bg:#1c1c1e;--bg2:#2c2c2e;
-  --sidebar-bg:rgba(28,28,30,0.82);
-  --card:rgba(44,44,46,0.90);--card-hover:rgba(58,58,60,0.98);
-  --border:rgba(255,255,255,0.08);--border-card:rgba(255,255,255,0.06);
-  --primary:#4da3ff;--primary-s:rgba(77,163,255,0.15);
-  --accent:#f09a3e;--accent-s:rgba(240,154,62,0.14);
-  --danger:#ff453a;--warn:#ffa020;--ok:#30d158;
-  --tx:rgba(255,255,255,0.92);--tx2:rgba(255,255,255,0.5);--tx3:rgba(255,255,255,0.24);
-  --shadow-sm:0 1px 3px rgba(0,0,0,0.3),0 1px 2px rgba(0,0,0,0.2);
-  --shadow-md:0 4px 16px rgba(0,0,0,0.4),0 2px 6px rgba(0,0,0,0.25);
-  --shadow-lg:0 12px 40px rgba(0,0,0,0.5),0 4px 12px rgba(0,0,0,0.3);
-  --shadow-widget:0 8px 32px rgba(0,0,0,0.45),0 2px 8px rgba(0,0,0,0.3);
+  --paper:#0d1117;--paper2:#161b22;--card:#161b22;--card2:#1c2128;
+  --border:rgba(255,255,255,.1);--border2:rgba(255,255,255,.06);
+  --tx:rgba(255,255,255,.92);--tx2:rgba(255,255,255,.6);--tx3:rgba(255,255,255,.35);
 }
+html{scroll-behavior:smooth}
+body{font-family:var(--font);background:var(--paper);color:var(--tx);
+  font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
 
-body{
-  font-family:var(--font);background:var(--bg);color:var(--tx);
-  display:flex;height:100vh;overflow:hidden;font-size:14px;line-height:1.5;
-  -webkit-font-smoothing:antialiased;
-}
+.breaking-bar{background:var(--warn-high);color:#fff;display:flex;
+  align-items:center;font-size:13px;font-weight:500;overflow:hidden;height:34px}
+.breaking-bar.hidden{display:none}
+.breaking-label{background:rgba(0,0,0,.25);padding:0 14px;font-size:11px;
+  font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  white-space:nowrap;height:100%;display:flex;align-items:center;flex-shrink:0}
+.breaking-ticker-wrap{flex:1;overflow:hidden;padding:0 16px}
+.breaking-ticker{white-space:nowrap;animation:ticker 28s linear infinite}
+@keyframes ticker{0%{transform:translateX(60%)}100%{transform:translateX(-100%)}}
 
-/* ─── macOS Sidebar ─────────────────────────────────────────────────── */
-.sb{
-  width:var(--sb-w);height:100vh;min-width:var(--sb-w);
-  background:var(--sidebar-bg);
-  backdrop-filter:blur(24px) saturate(180%);
-  -webkit-backdrop-filter:blur(24px) saturate(180%);
-  border-right:1px solid var(--border);
-  display:flex;flex-direction:column;
-  flex-shrink:0;overflow:visible;
-  transition:width var(--ease);
-  position:relative;z-index:20;
-}
+.site-header{background:var(--navy);color:var(--tx-inv)}
+.header-top{max-width:var(--max-w);margin:0 auto;
+  display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:62px}
+.site-logo{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit}
+.logo-mark{width:36px;height:36px;background:#fff;border-radius:6px;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.logo-mark svg{width:22px;height:22px}
+.logo-text{display:flex;flex-direction:column}
+.logo-name{font-family:var(--font-serif);font-size:19px;font-weight:700;
+  line-height:1.1;letter-spacing:-.3px;color:#fff}
+.logo-sub{font-size:10px;font-weight:400;color:rgba(255,255,255,.5);
+  letter-spacing:.04em;text-transform:uppercase}
+.header-actions{display:flex;align-items:center;gap:8px}
+.hdr-btn{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);
+  color:#fff;width:34px;height:34px;border-radius:var(--radius-md);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s}
+.hdr-btn:hover{background:rgba(255,255,255,.2)}
+.hdr-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;
+  stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 
-/* Logo / App Header */
-.sb-logo{
-  display:flex;align-items:center;gap:10px;
-  padding:16px 14px 14px;
-  border-bottom:1px solid var(--border);
-  flex-shrink:0;min-height:56px;overflow:hidden;
-}
-.sb-app-icon{
-  width:32px;height:32px;border-radius:8px;
-  background:linear-gradient(135deg,#4da3ff 0%,#2d7ff9 100%);
-  display:flex;align-items:center;justify-content:center;
-  flex-shrink:0;
-  box-shadow:0 2px 8px rgba(45,127,249,0.4);
-}
-.sb-app-icon svg{width:18px;height:18px}
-.sb-name{
-  font-family:var(--font-serif);font-size:15px;font-weight:600;
-  white-space:nowrap;
-  transition:opacity var(--ease),max-width var(--ease);
-  max-width:160px;overflow:hidden;
-}
-.sb.collapsed{width:var(--sb-c);min-width:var(--sb-c)}
-.sb.collapsed .sb-name{opacity:0;max-width:0}
+.main-nav{background:var(--navy2);border-top:1px solid rgba(255,255,255,.08)}
+.nav-inner{max-width:var(--max-w);margin:0 auto;padding:0 20px;
+  display:flex;align-items:center;gap:2px;overflow-x:auto;scrollbar-width:none}
+.nav-inner::-webkit-scrollbar{display:none}
+.nav-link{color:rgba(255,255,255,.7);text-decoration:none;font-size:13px;
+  font-weight:500;padding:10px 13px;display:inline-block;white-space:nowrap;
+  border-bottom:2px solid transparent;transition:color .15s,border-color .15s}
+.nav-link:hover{color:#fff}
+.nav-link.active{color:#fff;border-bottom-color:#4da3ff}
+.nav-link.nav-cta{background:var(--blue);color:#fff;border-radius:var(--radius-md);
+  margin-left:6px;padding:6px 14px;font-weight:600;border-bottom:none}
+.nav-link.nav-cta:hover{background:#1976d2}
+.nav-sep{height:16px;width:1px;background:rgba(255,255,255,.12);flex-shrink:0;margin:0 3px}
 
-/* Nav scroll container */
-.sb-nav{
-  flex:1;overflow-y:auto;overflow-x:hidden;
-  padding:12px 10px;
-  display:flex;flex-direction:column;gap:4px;
-}
-.sb-nav::-webkit-scrollbar{width:0}
+.dateline{background:var(--paper2);border-bottom:2px solid var(--navy);
+  font-size:11.5px;color:var(--tx3);text-align:center;padding:5px 20px;letter-spacing:.01em}
+[data-theme="dark"] .dateline{border-bottom-color:#4da3ff}
 
-/* Section label */
-.sb-section{
-  font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
-  color:var(--tx3);padding:10px 8px 4px;
-  white-space:nowrap;overflow:hidden;
-  transition:opacity var(--ease);
-}
-.sb.collapsed .sb-section{opacity:0}
+.container{max-width:var(--max-w);margin:0 auto;padding:0 20px}
+.page-main{padding-top:28px;padding-bottom:64px}
 
-/* ─── Widget Card nav item ─────────────────────────────────────────── */
-.nav-widget{
-  display:flex;align-items:center;gap:11px;
-  padding:10px 12px;
-  border-radius:12px;
-  background:transparent;
-  border:1px solid transparent;
-  color:var(--tx2);
-  text-decoration:none;
-  cursor:pointer;
-  white-space:nowrap;overflow:hidden;
-  user-select:none;
-  position:relative;
-  transition:
-    background var(--ease),
-    border-color var(--ease),
-    color var(--ease),
-    transform var(--ease-spring),
-    box-shadow var(--ease);
-  will-change:transform;
-}
-.nav-widget:hover{
-  background:var(--card-hover);
-  border-color:var(--border-card);
-  color:var(--tx);
-  transform:translateY(-1px) scale(1.01);
-  box-shadow:var(--shadow-widget);
-}
-.nav-widget:active{
-  transform:translateY(0) scale(0.99);
-  box-shadow:var(--shadow-sm);
-  transition-duration:.08s;
-}
-.nav-widget.active{
-  background:var(--primary-s);
-  border-color:rgba(77,163,255,0.2);
-  color:var(--primary);
-  box-shadow:var(--shadow-sm);
-}
-.nav-widget.active:hover{
-  background:var(--primary-s);
-  transform:translateY(-1px) scale(1.01);
-  box-shadow:var(--shadow-widget);
-}
+.section-title{font-family:var(--font-serif);font-size:12px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.1em;color:var(--navy);
+  padding-bottom:10px;border-bottom:2px solid var(--navy);margin-bottom:18px;display:block}
+[data-theme="dark"] .section-title{color:var(--tx);border-bottom-color:#4da3ff}
 
-/* Icon bubble */
-.w-icon{
-  width:34px;height:34px;border-radius:9px;
-  display:flex;align-items:center;justify-content:center;
-  flex-shrink:0;
-  background:var(--bg2);
-  transition:background var(--ease),transform var(--ease-spring);
-}
-.nav-widget:hover .w-icon{transform:scale(1.05)}
-.nav-widget.active .w-icon{background:var(--primary);box-shadow:0 2px 8px rgba(45,127,249,0.4)}
-.w-icon svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.nav-widget.active .w-icon svg{stroke:#fff}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;
+  border-radius:20px;font-size:11px;font-weight:600;letter-spacing:.02em;white-space:nowrap}
+.badge-ok{background:var(--ok-s);color:var(--ok)}
+.badge-low{background:var(--warn-low-s);color:var(--warn-low)}
+.badge-medium{background:var(--warn-med-s);color:var(--warn-med)}
+.badge-high{background:var(--warn-high-s);color:var(--warn-high)}
+.badge-critical{background:var(--warn-crit-s);color:var(--warn-crit)}
+.badge-unknown{background:var(--gray-s);color:var(--gray)}
+.badge-verified{background:var(--ok-s);color:var(--ok)}
+.badge-pending{background:var(--warn-low-s);color:var(--warn-low)}
+.badge-ai{background:var(--blue-s);color:var(--blue)}
 
-/* Label + sublabel */
-.w-info{display:flex;flex-direction:column;gap:0;min-width:0}
-.w-label{font-size:13px;font-weight:500;line-height:1.3;
-  transition:opacity var(--ease),max-width var(--ease);max-width:140px;overflow:hidden}
-.w-sub{font-size:10px;color:var(--tx3);line-height:1.3;
-  white-space:nowrap;overflow:hidden;
-  transition:opacity var(--ease),max-width var(--ease);max-width:140px}
-.sb.collapsed .w-label,.sb.collapsed .w-sub{opacity:0;max-width:0;overflow:hidden}
-.sb.collapsed .w-info{max-width:0;overflow:hidden;padding:0}
-.sb.collapsed .nav-widget{padding:10px 14px;justify-content:center;gap:0}
-.sb.collapsed .w-badge{display:none}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;
+  border-radius:var(--radius-md);font-family:var(--font);font-size:14px;
+  font-weight:600;cursor:pointer;text-decoration:none;transition:all .15s;
+  border:1.5px solid transparent;line-height:1}
+.btn-primary{background:var(--blue);color:#fff}
+.btn-primary:hover{background:#1976d2}
+.btn-outline{background:transparent;color:var(--tx);border-color:var(--border)}
+.btn-outline:hover{background:var(--card2)}
+.btn-danger{background:var(--warn-high);color:#fff}
+.btn svg{width:15px;height:15px;stroke:currentColor;fill:none;
+  stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 
-/* Badge pill */
-.w-badge{
-  margin-left:auto;min-width:20px;height:20px;padding:0 6px;
-  background:var(--primary);color:#fff;
-  font-size:10px;font-weight:700;border-radius:10px;
-  display:flex;align-items:center;justify-content:center;
-  flex-shrink:0;
-  transition:opacity var(--ease);
-}
-/* Separator */
-.sb-sep{height:1px;background:var(--border);margin:6px 8px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md)}
+.card-body{padding:18px 20px}
 
-/* Footer */
-.sb-foot{
-  padding:10px 10px 12px;
-  border-top:1px solid var(--border);
-  flex-shrink:0;display:flex;flex-direction:column;gap:3px;overflow:hidden;
-}
-.sb-foot-btn{
-  display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:10px;
-  border:1px solid transparent;cursor:pointer;
-  font-family:var(--font);font-size:12px;font-weight:500;
-  background:transparent;color:var(--tx2);text-decoration:none;
-  white-space:nowrap;overflow:hidden;
-  transition:background var(--ease),color var(--ease),transform var(--ease-spring),border-color var(--ease);
-}
-.sb-foot-btn:hover{
-  background:var(--card-hover);border-color:var(--border-card);color:var(--tx);
-  transform:translateY(-1px);box-shadow:var(--shadow-sm);
-}
-.sb-foot-btn:active{transform:translateY(0);transition-duration:.08s}
-.sb-foot-btn.primary{
-  background:var(--primary);color:#fff;
-  box-shadow:0 2px 8px rgba(45,127,249,0.35);border-color:transparent;
-}
-.sb-foot-btn.primary:hover{opacity:.9;background:var(--primary)}
-.f-icon{width:28px;height:28px;border-radius:7px;background:var(--bg2);
-  display:flex;align-items:center;justify-content:center;flex-shrink:0;
-  transition:background var(--ease)}
-.sb-foot-btn.primary .f-icon{background:rgba(255,255,255,0.2)}
-.f-icon svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.sb-foot-btn.primary .f-icon svg{stroke:#fff}
-.sb-foot-lbl{font-size:12px;font-weight:500;
-  transition:opacity var(--ease),max-width var(--ease);max-width:140px;overflow:hidden}
-.sb.collapsed .sb-foot-lbl{opacity:0;max-width:0}
-.sb.collapsed .f-icon + *{opacity:0;max-width:0}
-.sb.collapsed .sb-foot-btn{padding:9px 14px;justify-content:center;gap:0}
+.article-card{background:var(--card);border:1px solid var(--border);
+  border-left:3px solid transparent;border-radius:var(--radius-md);
+  text-decoration:none;color:inherit;display:block;
+  transition:border-color .15s,box-shadow .15s,transform .12s}
+.article-card:hover{border-left-color:var(--blue);box-shadow:var(--shadow-md);transform:translateY(-1px)}
+.ac-body{padding:15px 18px}
+.ac-meta{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.ac-time{font-size:11px;color:var(--tx3)}
+.ac-title{font-family:var(--font-serif);font-size:15px;line-height:1.45;
+  font-weight:400;color:var(--tx);margin-bottom:7px}
+.ac-summary{font-size:13px;color:var(--tx2);line-height:1.6;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ac-footer{display:flex;align-items:center;justify-content:space-between;
+  padding:9px 18px;border-top:1px solid var(--border2);font-size:12px;color:var(--tx3)}
+.ac-read{color:var(--blue);font-weight:500}
+.ac-read:hover{text-decoration:underline}
+.sev-low{border-left-color:var(--warn-low)!important}
+.sev-medium{border-left-color:var(--warn-med)!important}
+.sev-high{border-left-color:var(--warn-high)!important}
+.sev-critical{border-left-color:var(--warn-crit)!important}
+.sev-ok{border-left-color:var(--ok)!important}
 
-/* Collapse toggle (macOS style handle) */
-.sb-toggle{
-  position:absolute;right:-10px;top:50%;transform:translateY(-50%);
-  width:20px;height:36px;background:var(--card);
-  border:1px solid var(--border);border-radius:10px;
-  display:flex;align-items:center;justify-content:center;
-  cursor:pointer;z-index:30;
-  box-shadow:var(--shadow-md);
-  transition:opacity var(--ease),transform var(--ease);
-  opacity:0;
-}
-.sb:hover .sb-toggle{opacity:1}
-.sb-toggle svg{width:10px;height:10px;stroke:var(--tx2);fill:none;stroke-width:2.2;stroke-linecap:round;
-  transition:transform var(--ease)}
-.sb.collapsed .sb-toggle svg{transform:rotate(180deg)}
+.alert-item{display:flex;align-items:flex-start;gap:11px;padding:11px 15px;
+  border-radius:var(--radius-md);border:1px solid var(--border);
+  background:var(--card);margin-bottom:8px;text-decoration:none;color:inherit;
+  transition:box-shadow .15s}
+.alert-item:hover{box-shadow:var(--shadow-md)}
+.adot{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:4px}
+.adot-high{background:var(--warn-high);animation:pdot 1.4s ease-in-out infinite}
+.adot-medium{background:var(--warn-med)}
+.adot-low{background:var(--warn-low)}
+.adot-ok{background:var(--ok)}
+@keyframes pdot{0%,100%{opacity:1}50%{opacity:.4}}
+.alert-title{font-size:13px;font-weight:600;line-height:1.4;color:var(--tx)}
+.alert-sub{font-size:11.5px;color:var(--tx3);margin-top:2px}
 
-/* ─── Main area ────────────────────────────────────────────────────── */
-.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.site-footer{background:var(--navy);color:rgba(255,255,255,.55);
+  font-size:12px;padding:26px 20px;margin-top:48px}
+.footer-inner{max-width:var(--max-w);margin:0 auto;
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.footer-links{display:flex;gap:18px;flex-wrap:wrap}
+.footer-links a{color:rgba(255,255,255,.45);text-decoration:none;transition:color .15s}
+.footer-links a:hover{color:#fff}
 
-/* Traffic light area (macOS feel) */
-.topbar{
-  height:52px;padding:0 18px;
-  background:var(--sidebar-bg);
-  backdrop-filter:blur(24px) saturate(180%);
-  -webkit-backdrop-filter:blur(24px) saturate(180%);
-  border-bottom:1px solid var(--border);
-  display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
-}
-.topbar-l{display:flex;align-items:center;gap:10px}
-.topbar-title{font-family:var(--font-serif);font-size:15px;font-weight:600}
-.topbar-badge{
-  font-size:10px;font-weight:600;
-  background:var(--accent-s);color:var(--accent);
-  border:1px solid rgba(240,154,62,0.3);border-radius:6px;
-  padding:2px 8px;letter-spacing:.04em;
-}
-.topbar-r{display:flex;align-items:center;gap:5px}
-
-.icon-btn{
-  width:30px;height:30px;border-radius:8px;border:1px solid var(--border);
-  background:transparent;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;
-  color:var(--tx2);
-  transition:background var(--ease),transform var(--ease-spring);
-}
-.icon-btn:hover{background:var(--card);color:var(--tx);transform:scale(1.05);box-shadow:var(--shadow-sm)}
-.icon-btn:active{transform:scale(0.97)}
-.icon-btn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-
-.page-body{flex:1;overflow-y:auto}
-.page-body::-webkit-scrollbar{width:5px}
-.page-body::-webkit-scrollbar-thumb{background:var(--border);border-radius:5px}
-
-/* ─── Toast ────────────────────────────────────────────────────────── */
-#toast-wrap{
-  position:fixed;bottom:20px;right:20px;
-  display:flex;flex-direction:column;gap:8px;
-  z-index:9999;pointer-events:none;
-}
-.toast{
-  padding:10px 16px;border-radius:12px;font-size:13px;font-weight:500;color:#fff;
-  box-shadow:var(--shadow-lg);
-  animation:slideUp .25s cubic-bezier(.34,1.56,.64,1);
-  max-width:300px;pointer-events:auto;
-  backdrop-filter:blur(10px);
-}
-@keyframes slideUp{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:none}}
-.toast.ok{background:var(--ok)}.toast.err{background:var(--danger)}.toast.warn{background:var(--warn)}
-
-/* ─── Shared components ────────────────────────────────────────────── */
-.card{
-  background:var(--card);border:1px solid var(--border);
-  border-radius:var(--radius);
-  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
-  box-shadow:var(--shadow-sm);
-}
-.btn{
-  padding:9px 18px;border-radius:10px;border:none;cursor:pointer;
-  font-family:var(--font);font-size:13px;font-weight:500;
-  text-decoration:none;display:inline-flex;align-items:center;gap:6px;
-  transition:opacity .2s,transform var(--ease-spring),box-shadow .2s;
-}
-.btn:hover{opacity:.9;transform:translateY(-1px);box-shadow:var(--shadow-md)}
-.btn:active{transform:translateY(0) scale(.98);transition-duration:.08s}
-.btn-primary{background:var(--primary);color:#fff;box-shadow:0 2px 8px rgba(45,127,249,0.35)}
-.btn-ghost{background:var(--card);color:var(--tx);border:1px solid var(--border)}
-.btn-danger{background:var(--danger);color:#fff;box-shadow:0 2px 8px rgba(255,59,48,0.35)}
-.badge{
-  display:inline-block;font-size:10px;font-weight:700;
-  padding:2px 7px;border-radius:5px;letter-spacing:.04em;
+@media(max-width:680px){
+  .header-top{height:52px}.logo-name{font-size:16px}.logo-sub{display:none}
+  .page-main{padding-top:16px}
 }
 </style>
 {% block head %}{% endblock %}
 </head>
 <body>
 
-<!-- ── macOS Sidebar ─────────────────────────────────────────────────── -->
-<aside class="sb" id="sb">
-
-  <!-- App icon + name -->
-  <div class="sb-logo">
-    <div class="sb-app-icon">
-      <svg viewBox="0 0 22 22" fill="none">
-        <path d="M2 13C5 10.5 8 15.5 11 13C14 10.5 17 15.5 20 13" stroke="white" stroke-width="2" stroke-linecap="round"/>
-        <path d="M2 17C5 14.5 8 19.5 11 17C14 14.5 17 19.5 20 17" stroke="rgba(255,255,255,.55)" stroke-width="1.4" stroke-linecap="round"/>
-      </svg>
-    </div>
-    <span class="sb-name">FloodAI</span>
+<div class="breaking-bar hidden" id="breaking-bar">
+  <span class="breaking-label">Cảnh báo</span>
+  <div class="breaking-ticker-wrap">
+    <div class="breaking-ticker" id="breaking-ticker"></div>
   </div>
-
-  <!-- Collapse handle -->
-  <button class="sb-toggle" onclick="toggleSb()" title="Thu gọn">
-    <svg viewBox="0 0 10 10"><polyline points="6.5 2 3.5 5 6.5 8"/></svg>
-  </button>
-
-  <nav class="sb-nav">
-    <span class="sb-section">Điều hướng</span>
-
-    <!-- Home widget -->
-    <a href="/" class="nav-widget {% if active=='home' %}active{% endif %}">
-      <span class="w-icon">
-        <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-      </span>
-      <span class="w-info">
-        <span class="w-label">Trang chủ</span>
-        <span class="w-sub">Tổng quan hệ thống</span>
-      </span>
-    </a>
-
-    <!-- News widget -->
-    <a href="/news" class="nav-widget {% if active=='news' %}active{% endif %}">
-      <span class="w-icon">
-        <svg viewBox="0 0 24 24"><path d="M4 22h16a2 2 0 002-2V4a2 2 0 00-2-2H8a2 2 0 00-2 2v16a2 2 0 01-2 2zm0 0a2 2 0 01-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8M15 18h-5M10 6h8v4h-8z"/></svg>
-      </span>
-      <span class="w-info">
-        <span class="w-label">Tin tức</span>
-        <span class="w-sub">Cập nhật lũ lụt RSS</span>
-      </span>
-      {% block news_badge %}{% endblock %}
-    </a>
-
-    <!-- Map widget -->
-    <a href="/map" class="nav-widget {% if active=='map' %}active{% endif %}">
-      <span class="w-icon">
-        <svg viewBox="0 0 24 24"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
-      </span>
-      <span class="w-info">
-        <span class="w-label">Bản đồ lũ</span>
-        <span class="w-sub">Theo dõi thời gian thực</span>
-      </span>
-    </a>
-
-    <!-- Chat widget -->
-    <a href="/chat" class="nav-widget {% if active=='chat' %}active{% endif %}">
-      <span class="w-icon">
-        <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-      </span>
-      <span class="w-info">
-        <span class="w-label">Trò chuyện AI</span>
-        <span class="w-sub">Hỏi đáp với FloodAI</span>
-      </span>
-    </a>
-
-    {% if logged_in %}
-    <div class="sb-sep"></div>
-    <span class="sb-section">Quản trị</span>
-
-    <!-- Dashboard widget -->
-    <a href="/dashboard" class="nav-widget {% if active=='dashboard' %}active{% endif %}">
-      <span class="w-icon">
-        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
-      </span>
-      <span class="w-info">
-        <span class="w-label">Dashboard</span>
-        <span class="w-sub">Thống kê &amp; cài đặt</span>
-      </span>
-    </a>
-
-    <!-- Admin widget -->
-    <a href="/admin" class="nav-widget {% if active=='admin' %}active{% endif %}">
-      <span class="w-icon">
-        <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-      </span>
-      <span class="w-info">
-        <span class="w-label">Admin Panel</span>
-        <span class="w-sub">Pipeline · Review · Gallery</span>
-      </span>
-    </a>
-    {% endif %}
-  </nav>
-
-  <!-- Footer actions -->
-  <div class="sb-foot">
-    <button class="sb-foot-btn" onclick="toggleTheme()" id="theme-btn">
-      <span class="f-icon" id="theme-icon">
-        <svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
-      </span>
-      <span class="sb-foot-lbl">Đổi giao diện</span>
-    </button>
-
-    {% if logged_in %}
-    <a href="/logout" class="sb-foot-btn">
-      <span class="f-icon"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span>
-      <span class="sb-foot-lbl">Đăng xuất</span>
-    </a>
-    {% else %}
-    <a href="/login" class="sb-foot-btn primary">
-      <span class="f-icon"><svg viewBox="0 0 24 24" stroke="white"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg></span>
-      <span class="sb-foot-lbl">Đăng nhập</span>
-    </a>
-    {% endif %}
-  </div>
-</aside>
-
-<!-- ── Main ──────────────────────────────────────────────────────────── -->
-<div class="main">
-  <div class="topbar">
-    <div class="topbar-l">
-      <button class="icon-btn" onclick="toggleSb()" title="Thu gọn sidebar">
-        <svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-      </button>
-      <span class="topbar-title">{% block topbar_title %}FloodAI{% endblock %}</span>
-      {% block topbar_badge %}{% endblock %}
-    </div>
-    <div class="topbar-r">{% block topbar_right %}{% endblock %}</div>
-  </div>
-  <div class="page-body">{% block content %}{% endblock %}</div>
 </div>
 
-<div id="toast-wrap"></div>
+<header class="site-header">
+  <div class="header-top">
+    <a href="/" class="site-logo">
+      <div class="logo-mark">
+        <svg viewBox="0 0 22 22" fill="none">
+          <path d="M3 14c1.5-2 3-3 5-3s3.5 2 5 2 3.5-2 5-3" stroke="#0c2340" stroke-width="2.2" stroke-linecap="round"/>
+          <path d="M3 18c1.5-2 3-3 5-3s3.5 2 5 2 3.5-2 5-3" stroke="#1565c0" stroke-width="2.2" stroke-linecap="round"/>
+          <path d="M11 4v6M8.5 6.5l2.5-2.5 2.5 2.5" stroke="#0c2340" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="logo-text">
+        <span class="logo-name">FloodNews</span>
+        <span class="logo-sub">Bản tin lũ lụt</span>
+      </div>
+    </a>
+    <div class="header-actions">
+      <button class="hdr-btn" id="theme-toggle" title="Đổi giao diện" onclick="toggleTheme()">
+        <svg viewBox="0 0 24 24" id="theme-icon"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+    </div>
+  </div>
+  <nav class="main-nav">
+    <div class="nav-inner">
+      <a href="/" class="nav-link {% if active=='home' %}active{% endif %}">Trang chủ</a>
+      <span class="nav-sep"></span>
+      <a href="/news" class="nav-link {% if active=='news' %}active{% endif %}">Tin mới</a>
+      <a href="/map" class="nav-link {% if active=='map' %}active{% endif %}">Bản đồ ngập</a>
+      <a href="/alerts" class="nav-link {% if active=='alerts' %}active{% endif %}">Cảnh báo</a>
+      <a href="/roads" class="nav-link {% if active=='roads' %}active{% endif %}">Tuyến đường</a>
+      <span class="nav-sep"></span>
+      <a href="/chat" class="nav-link {% if active=='chat' %}active{% endif %}">Hỏi AI</a>
+      <a href="/submit" class="nav-link nav-cta {% if active=='submit' %}active{% endif %}">
+        <svg viewBox="0 0 24 24" style="width:13px;height:13px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Gửi ảnh
+      </a>
+    </div>
+  </nav>
+</header>
+
+<div class="dateline">
+  <span id="date-line">Đang tải...</span>
+  &nbsp;·&nbsp;
+  Thái Nguyên · Hà Nội · Bắc Giang · Hòa Bình
+</div>
+
+<main class="page-main">
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div>
+      <strong style="color:rgba(255,255,255,.8)">FloodNews</strong>
+      <span style="color:rgba(255,255,255,.35);font-size:11px">&nbsp;— Hệ thống phân tích và cảnh báo ngập lụt bằng AI</span>
+    </div>
+    <div class="footer-links">
+      <a href="/submit">Gửi ảnh</a>
+      <a href="/alerts">Cảnh báo</a>
+      <a href="/chat">Hỏi AI</a>
+      <a href="/login">Quản trị</a>
+    </div>
+  </div>
+</footer>
 
 <script>
-const _sb = document.getElementById('sb');
+const _months=['tháng 1','tháng 2','tháng 3','tháng 4','tháng 5','tháng 6','tháng 7','tháng 8','tháng 9','tháng 10','tháng 11','tháng 12'];
+const _days=['Chủ nhật','Thứ Hai','Thứ Ba','Thứ Tư','Thứ Năm','Thứ Sáu','Thứ Bảy'];
+const _d=new Date();
+document.getElementById('date-line').textContent=_days[_d.getDay()]+', '+_d.getDate()+' '+_months[_d.getMonth()]+' năm '+_d.getFullYear();
 
-function toggleSb() {
-  _sb.classList.toggle('collapsed');
-  localStorage.setItem('sb_collapsed', _sb.classList.contains('collapsed') ? '1' : '0');
+const _SUN_ICON='<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
+const _MOON_ICON='<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+function toggleTheme(){
+  const html=document.documentElement;
+  const t=html.getAttribute('data-theme')==='dark'?'light':'dark';
+  html.setAttribute('data-theme',t);
+  localStorage.setItem('fn-theme',t);
+  document.getElementById('theme-icon').innerHTML=t==='dark'?_MOON_ICON:_SUN_ICON;
 }
-
-function toggleTheme() {
-  const h = document.documentElement;
-  const t = h.dataset.theme === 'dark' ? 'light' : 'dark';
-  h.dataset.theme = t;
-  localStorage.setItem('theme', t);
-  updateThemeIcon(t);
-}
-
-function updateThemeIcon(t) {
-  const el = document.getElementById('theme-icon');
-  if (!el) return;
-  el.innerHTML = t === 'dark'
-    ? '<svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>'
-    : '<svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
-}
-
-function toast(msg, type='ok', dur=3000) {
-  const el = Object.assign(document.createElement('div'), {className:`toast ${type}`, textContent:msg});
-  document.getElementById('toast-wrap').appendChild(el);
-  setTimeout(() => el.remove(), dur);
-}
-
-// Restore persisted state
 (function(){
-  const t = localStorage.getItem('theme') || 'dark';
-  document.documentElement.dataset.theme = t;
-  updateThemeIcon(t);
-  if (localStorage.getItem('sb_collapsed') === '1') _sb.classList.add('collapsed');
+  const s=localStorage.getItem('fn-theme')||'light';
+  document.documentElement.setAttribute('data-theme',s);
+  if(s==='light')document.getElementById('theme-icon').innerHTML=_SUN_ICON;
 })();
+
+function sevClass(sev){return {ok:'ok',low:'low',medium:'medium',high:'high',critical:'critical'}[sev]||'unknown';}
+function timeAgo(iso){
+  if(!iso)return '';
+  const diff=(Date.now()-new Date(iso).getTime())/1000;
+  if(diff<60)return 'vừa xong';
+  if(diff<3600)return Math.floor(diff/60)+' phút trước';
+  if(diff<86400)return Math.floor(diff/3600)+' giờ trước';
+  return Math.floor(diff/86400)+' ngày trước';
+}
+function fmtTime(iso){
+  if(!iso)return '';
+  try{return new Date(iso).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'});}catch{return '';}
+}
 </script>
 {% block scripts %}{% endblock %}
 </body>

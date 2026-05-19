@@ -1,0 +1,89 @@
+version: "3.9"
+
+# ── Flood Pipeline — Docker Compose ──────────────────────────────────────────
+# Dùng:
+#   docker-compose up -d                    # chạy web app
+#   docker-compose --profile gpu up -d      # chạy với GPU
+#   docker-compose run --rm pipeline python main.py --help
+
+services:
+
+  # ── Web App (Flask) ─────────────────────────────────────────────────────────
+  flood-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: flood-pipeline:latest
+    container_name: flood-app
+    command: python app.py
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      FLASK_ENV: production
+      PORT: "5000"
+      HOST: "0.0.0.0"
+    volumes:
+      - ./output:/app/output
+      - ./data:/app/data
+      - ./learning/models:/app/learning/models
+      - ./configs:/app/configs:ro
+    expose:
+      - "5000"
+    depends_on:
+      - nginx
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ── Nginx reverse proxy ──────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: flood-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on: []
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 60s
+      timeout: 5s
+      retries: 2
+
+  # ── GPU pipeline worker (optional, --profile gpu) ─────────────────────────
+  flood-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: flood-pipeline:latest
+    container_name: flood-gpu-worker
+    command: python main.py watch --input /app/data/incoming --config configs/gpu.yaml --interval 15
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      FLASK_ENV: production
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./learning/models:/app/learning/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    profiles:
+      - gpu
+
+volumes:
+  output:
+  data:

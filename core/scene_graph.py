@@ -112,6 +112,41 @@ class SceneContext:
     frame_source: str = "photo"       # photo | video_frame | satellite
 
 
+# ── Object Relation ─────────────────────────────────────────────────────────────
+
+@dataclass
+class ObjectRelation:
+    """
+    Quan hệ giữa 2 object trong scene.
+
+    Ví dụ:
+        ObjectRelation("door_1", "water_1", "overlaps_bottom")
+        ObjectRelation("water_1", "person_1", "touches")
+        ObjectRelation("door_1", "building_1", "inside")
+    """
+    subject_id: str     # ID object chủ
+    object_id:  str     # ID object phụ
+    relation:   str     # loại quan hệ (xem RELATION_TYPES)
+    confidence: float = 1.0
+
+    # Relation types được định nghĩa
+    TYPES = {
+        # Spatial
+        "inside",          # door inside building
+        "above",           # building above water
+        "below",           # water below door
+        "touches",         # water touches person
+        "overlaps_bottom", # water overlaps_bottom door
+        "overlaps",        # any overlap
+
+        # Semantic
+        "supports",        # road supports building
+        "reflects",        # surface reflects water (false positive)
+        "submerges",       # water submerges vehicle
+        "waterlines",      # water creates waterline on wall
+    }
+
+
 # ── Scene Graph ────────────────────────────────────────────────────────────────
 
 class SceneGraph:
@@ -125,6 +160,11 @@ class SceneGraph:
         graph = SceneGraph.from_result(depth_result)
         depth_cm, explanation = graph.unified_depth_reasoning()
         confidence = graph.compute_confidence()
+
+    Với relations:
+        graph.add_relation("door_1", "building_1", "inside")
+        graph.add_relation("water_1", "door_1", "overlaps_bottom")
+        boost = graph.relation_confidence_boost()
     """
 
     def __init__(self):
@@ -134,10 +174,123 @@ class SceneGraph:
         self.road:    RoadNode = RoadNode()
         self.context: SceneContext = SceneContext()
 
+        # Relations hệ thống mới
+        self.relations: List[ObjectRelation] = []
+        self._objects: Dict[str, Any] = {}   # id → node
+
         # Kết quả sau reasoning
         self._depth_cm: Optional[float] = None
         self._confidence: Optional[float] = None
         self._explanation: List[str] = []
+
+    # ── Relation API ──────────────────────────────────────────────────────────
+
+    def register_object(self, obj_id: str, node: Any):
+        """Đăng ký object với ID để dùng trong relations."""
+        self._objects[obj_id] = node
+
+    def add_relation(self, subject_id: str, object_id: str, relation: str, confidence: float = 1.0):
+        """Thêm quan hệ giữa 2 objects."""
+        self.relations.append(ObjectRelation(subject_id, object_id, relation, confidence))
+
+    def get_relations(self, relation_type: Optional[str] = None) -> List[ObjectRelation]:
+        """Lấy tất cả relations, có thể lọc theo type."""
+        if relation_type:
+            return [r for r in self.relations if r.relation == relation_type]
+        return self.relations
+
+    def has_relation(self, subject_id: str, relation: str) -> bool:
+        return any(r.subject_id == subject_id and r.relation == relation for r in self.relations)
+
+    def relation_confidence_boost(self) -> float:
+        """
+        Tính bonus confidence từ relations tích cực.
+
+        Logic:
+          - water touches person + water overlaps door bottom → strong flood evidence
+          - water only on wall → phản chiếu → penalty
+          - door inside building + water overlaps door bottom → highest evidence
+        """
+        boost = 0.0
+        rel_types = {r.relation for r in self.relations}
+
+        # Strong flood evidence
+        if "overlaps_bottom" in rel_types and "inside" in rel_types:
+            boost += 0.12   # cửa trong nhà + nước chạm chân cửa = flood mạnh nhất
+        if "touches" in rel_types:
+            boost += 0.06   # nước chạm người
+        if "waterlines" in rel_types:
+            boost += 0.08   # vết mực nước trên tường
+        if "submerges" in rel_types:
+            boost += 0.10   # xe bị ngập
+
+        # False positive penalty
+        if "reflects" in rel_types and "touches" not in rel_types:
+            boost -= 0.15   # chỉ thấy phản chiếu, không chạm người/cửa
+
+        return max(-0.3, min(0.3, boost))
+
+    def build_relations_from_masks(
+        self,
+        water_mask: Optional[Any] = None,
+        building_mask: Optional[Any] = None,
+        door_bboxes: Optional[List[List[int]]] = None,
+        person_bboxes: Optional[List[List[int]]] = None,
+    ):
+        """
+        Tự động xây dựng relations từ masks và bboxes.
+
+        Gọi sau khi đã có kết quả từ BuildingSegmentor, DoorDetector, PersonSegmentor.
+        """
+        import numpy as np
+
+        if water_mask is None:
+            return
+
+        w_arr = (water_mask > 0) if hasattr(water_mask, "__gt__") else water_mask
+        h, w = w_arr.shape[:2] if hasattr(w_arr, "shape") else (1, 1)
+
+        # Door relations
+        if door_bboxes:
+            for i, bbox in enumerate(door_bboxes):
+                door_id = f"door_{i}"
+                x1, y1, x2, y2 = bbox
+                door_bottom = w_arr[max(0, y2-20):y2, x1:x2]
+                if hasattr(door_bottom, "mean") and door_bottom.mean() > 0.3:
+                    self.add_relation("water_1", door_id, "overlaps_bottom", 0.9)
+
+                if building_mask is not None:
+                    b_arr = (building_mask > 0)
+                    door_region = b_arr[y1:y2, x1:x2]
+                    if hasattr(door_region, "mean") and door_region.mean() > 0.45:
+                        self.add_relation(door_id, "building_1", "inside", 0.85)
+
+        # Person relations
+        if person_bboxes:
+            for i, bbox in enumerate(person_bboxes):
+                person_id = f"person_{i}"
+                x1, y1, x2, y2 = bbox
+                foot_region = w_arr[max(0, y2-30):y2, x1:x2]
+                if hasattr(foot_region, "mean") and foot_region.mean() > 0.20:
+                    self.add_relation("water_1", person_id, "touches", 0.85)
+
+    def to_graph_dict(self) -> dict:
+        """Xuất dạng dict cho logging/debugging."""
+        objects = []
+        for i, p in enumerate(self.persons):
+            objects.append({"id": f"person_{i}", "class": "person"})
+        for i, v in enumerate(self.vehicles):
+            objects.append({"id": f"vehicle_{i}", "class": v.vehicle_type})
+        if self.waters:
+            objects.append({"id": "water_1", "class": "water",
+                           "area_pct": self.waters[0].area_pct if self.waters else 0})
+
+        return {
+            "objects":   objects,
+            "relations": [{"subject": r.subject_id, "relation": r.relation,
+                           "object": r.object_id, "conf": r.confidence}
+                          for r in self.relations],
+        }
 
     # ── Builder ────────────────────────────────────────────────────────────────
 

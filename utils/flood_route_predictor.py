@@ -1127,36 +1127,6 @@ class FloodSimulator:
                 best_dist = d
                 best_elev = elev
         return best_elev if best_dist < 0.01 else None
-    """
-    Helper: chuyển đổi từ depth_results + location_results của pipeline hiện tại
-    sang List[FloodPoint] để dùng với FloodRoutePredictor.
-
-    Dùng trong main.py:
-        from utils.flood_route_predictor import depth_results_to_flood_points
-        flood_points = depth_results_to_flood_points(depth_results, location_results)
-    """
-    points = []
-    for dr, lr in zip(depth_results, location_results):
-        if lr is None or lr.latitude is None:
-            continue  # Bỏ qua ảnh không có vị trí GPS
-
-        depth_cm    = getattr(dr, 'depth_cm', 0) or 0
-        flood_level = getattr(dr, 'flood_level', 'dry') or 'dry'
-        confidence  = getattr(dr, 'confidence', 0.5) or 0.5
-
-        points.append(FloodPoint(
-            latitude=lr.latitude,
-            longitude=lr.longitude,
-            depth_cm=depth_cm,
-            flood_level=flood_level,
-            confidence=confidence,
-            image_path=getattr(dr, 'image_path', ''),
-            address=getattr(lr, 'address', ''),
-            timestamp=datetime.now().isoformat(),
-        ))
-
-    log.info(f"[Route] Converted {len(points)}/{len(depth_results)} depth results to FloodPoints")
-    return points
 
 
 # ── CLI demo / quick test ─────────────────────────────────────────────────────

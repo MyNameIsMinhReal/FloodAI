@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Tuyến đường nên tránh{% endblock %}
+
+{% block head %}
+<style>
+.roads-header{margin-bottom:28px}
+.roads-header h1{font-family:var(--font-serif);font-size:26px;font-weight:700;margin-bottom:8px}
+.road-search{display:flex;gap:10px;margin-bottom:28px;flex-wrap:wrap}
+.road-input{flex:1;padding:10px 14px;border:1.5px solid var(--border);
+  border-radius:var(--radius-md);font-family:var(--font);font-size:14px;
+  background:var(--card);color:var(--tx);min-width:160px}
+.road-input:focus{outline:none;border-color:var(--blue)}
+.road-card{background:var(--card);border:1px solid var(--border);
+  border-left:4px solid transparent;border-radius:var(--radius-lg);
+  padding:18px 20px;margin-bottom:12px;transition:box-shadow .15s}
+.road-card:hover{box-shadow:var(--shadow-md)}
+.road-card.sev-high{border-left-color:var(--warn-high)}
+.road-card.sev-medium{border-left-color:var(--warn-med)}
+.road-card.sev-low{border-left-color:var(--warn-low)}
+.road-name{font-family:var(--font-serif);font-size:17px;font-weight:700;margin-bottom:8px}
+.road-detail{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--tx2);margin-bottom:10px}
+.road-rec{font-size:13.5px;color:var(--tx2);padding:10px 13px;
+  background:var(--card2);border-radius:var(--radius);line-height:1.6}
+.guide-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:22px 24px;margin-bottom:28px}
+.guide-card h2{font-family:var(--font-serif);font-size:18px;font-weight:700;margin-bottom:16px}
+.guide-item{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--border2)}
+.guide-item:last-child{border-bottom:none}
+.guide-num{width:28px;height:28px;background:var(--blue);color:#fff;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0}
+.guide-text{font-size:14px;color:var(--tx2);line-height:1.6;padding-top:3px}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+<div class="roads-header">
+  <h1>Tuyến đường nên tránh hôm nay</h1>
+  <p>Danh sách các tuyến đường có ghi nhận ngập — cập nhật từ dữ liệu phân tích ảnh.</p>
+</div>
+
+<div class="road-search">
+  <input type="text" class="road-input" id="from-input" placeholder="Điểm đi...">
+  <input type="text" class="road-input" id="to-input" placeholder="Điểm đến...">
+  <button class="btn btn-primary" onclick="checkRoute()">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    Kiểm tra
+  </button>
+</div>
+
+<div id="route-result" style="display:none;margin-bottom:20px;padding:14px 18px;
+  border-radius:var(--radius-lg);border:1px solid var(--border);background:var(--card)">
+</div>
+
+<span class="section-title">Điểm ngập ghi nhận gần đây</span>
+<div id="roads-list" style="margin-bottom:32px">
+  <div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải dữ liệu...</div>
+</div>
+
+<div class="guide-card">
+  <h2>Hướng dẫn an toàn khi gặp đường ngập</h2>
+  <div class="guide-item"><div class="guide-num">1</div>
+    <div class="guide-text">Nếu nước ngập trên 20cm, không nên đi xe máy qua — tắt máy, đẩy xe.</div></div>
+  <div class="guide-item"><div class="guide-num">2</div>
+    <div class="guide-text">Không đi qua nước chảy xiết dù mực nước thấp — dòng chảy mạnh có thể làm mất thăng bằng.</div></div>
+  <div class="guide-item"><div class="guide-num">3</div>
+    <div class="guide-text">Tránh tiếp xúc với nước ngập lâu — nước có thể ô nhiễm và gây bệnh.</div></div>
+  <div class="guide-item"><div class="guide-num">4</div>
+    <div class="guide-text">Theo dõi bản đồ ngập và chọn tuyến đường thay thế trước khi xuất phát.</div></div>
+</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const LEVEL_INFO={
+  dry:{label:'Không ngập',sev:'ok'},ankle:{label:'Ngập nhẹ (~20cm)',sev:'low'},
+  knee:{label:'Ngập đầu gối (~50cm)',sev:'medium'},waist:{label:'Ngập sâu',sev:'high'},
+  chest:{label:'Rất nguy hiểm',sev:'critical'},submerged:{label:'Ngập hoàn toàn',sev:'critical'},
+  unknown:{label:'Chưa xác định',sev:'unknown'},
+};
+const RECS={
+  dry:'Lưu thông bình thường.',ankle:'Xe máy đi qua được, chú ý trơn trượt.',
+  knee:'Hạn chế đi xe máy. Xe ô tô thấp gầm nên tránh.',
+  waist:'Không nên di chuyển qua khu vực này.',
+  chest:'Tuyệt đối không đi qua — nguy hiểm tính mạng.',
+  submerged:'Tuyệt đối không đi qua.',unknown:'Chờ thêm thông tin.',
+};
+
+async function loadRoads(){
+  try{
+    const r=await fetch('/api/jobs?limit=30');
+    const jobs=await r.json();
+    const done=jobs.filter(j=>j.status==='done'&&j.result?.level&&j.result.level!=='dry');
+    if(!done.length){document.getElementById('roads-list').innerHTML=
+      '<div style="padding:24px;text-align:center;color:var(--tx3)">Không có điểm ngập nào được ghi nhận hiện tại.</div>';
+      return;}
+    document.getElementById('roads-list').innerHTML=done.map(j=>{
+      const info=LEVEL_INFO[j.result?.level||'unknown']||LEVEL_INFO.unknown;
+      const loc=j.result?.location||'Khu vực phân tích';
+      return `<div class="road-card sev-${info.sev}">
+        <div class="road-name">${loc}</div>
+        <div class="road-detail">
+          <span class="badge ${info.sev==='high'||info.sev==='critical'?'badge-high':info.sev==='medium'?'badge-medium':'badge-low'}">${info.label}</span>
+          ${j.result?.depth_range?`<span>Ước tính: ${j.result.depth_range}</span>`:''}
+          <span>${timeAgo(j.created_at)}</span>
+        </div>
+        <div class="road-rec">⚠ ${RECS[j.result?.level||'unknown']||RECS.unknown}</div>
+      </div>`;
+    }).join('');
+  }catch{document.getElementById('roads-list').innerHTML=
+    '<div style="padding:24px;text-align:center;color:var(--tx3)">Không thể tải dữ liệu.</div>';}
+}
+function checkRoute(){
+  const from=document.getElementById('from-input').value.trim();
+  const to=document.getElementById('to-input').value.trim();
+  const el=document.getElementById('route-result');
+  if(!from||!to){el.style.display='none';return;}
+  el.style.display='block';
+  el.innerHTML=`<strong>Tuyến ${from} → ${to}</strong><br>
+    <span style="color:var(--tx2);font-size:14px;line-height:1.65">Hệ thống đang kiểm tra tuyến đường này. 
+    Hiện chưa có dữ liệu ngập cụ thể cho tuyến đường bạn nhập. 
+    Vui lòng xem danh sách điểm ngập bên dưới hoặc xem bản đồ ngập.</span>
+    <div style="margin-top:10px"><a href="/map" class="btn btn-outline" style="font-size:13px">Xem bản đồ →</a></div>`;
+}
+loadRoads();
+</script>
+{% endblock %}

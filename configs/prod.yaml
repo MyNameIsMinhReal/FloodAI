@@ -1,0 +1,33 @@
+# configs/prod.yaml
+# Môi trường production: model đầy đủ, Drive upload bật, self-learning bật
+# Dùng: python main.py --config configs/prod.yaml --input /data/flood_images
+# Bắt buộc set env: SECRET_KEY, ADMIN_PASS, GOOGLE_MAPS_API_KEY
+
+depth:
+  model: "depth-anything/Depth-Anything-V2-Large-hf"
+  yolo_model: "yolov8l.pt"
+  yolo_conf: 0.40
+  use_dino: true
+  dino_model: "facebook/dinov2-large"
+
+pipeline:
+  parallel:
+    workers: 4
+  skip_drive: false
+  skip_learning: false
+  skip_hard_mining: false
+  skip_versioning: false
+  use_output_cache: true
+  predict_routes: true
+
+output:
+  base_dir: "output"
+
+drive:
+  folder_name: "FloodAnalysis"
+  delete_local_default: false
+
+logging:
+  level: "INFO"
+
+safe_mode: false

@@ -37,6 +37,32 @@ log = logging.getLogger("pipeline.orchestrator")
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif"}
 
+MAX_IMAGE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
+
+
+def validate_images(images: List[Path]) -> List[Path]:
+    """
+    Lọc danh sách ảnh đầu vào: bỏ file không tồn tại, sai định dạng, hoặc rỗng.
+    Trả về danh sách ảnh hợp lệ.
+    """
+    valid = []
+    for p in images:
+        if not p.exists():
+            log.warning(f"  [Validate] Bỏ qua (không tồn tại): {p}")
+            continue
+        if p.suffix.lower() not in IMAGE_EXTENSIONS:
+            log.warning(f"  [Validate] Bỏ qua (định dạng không hợp lệ): {p}")
+            continue
+        size = p.stat().st_size
+        if size == 0:
+            log.warning(f"  [Validate] Bỏ qua (file rỗng): {p}")
+            continue
+        if size > MAX_IMAGE_SIZE_BYTES:
+            log.warning(f"  [Validate] Bỏ qua (file quá lớn {size // 1024 // 1024}MB): {p}")
+            continue
+        valid.append(p)
+    return valid
+
 
 # ─── Pipeline State ────────────────────────────────────────────────────────────
 
@@ -57,9 +83,20 @@ class PipelineState:
     drive_folder_id: Optional[str]   = None
     output_dir:      Optional[Path]  = None
 
+    # Optional callback(stage, current, total, message) cho progress realtime
+    progress_callback: Any = field(default=None, repr=False)
+
     def log_stage(self, stage: str, duration: float, count: int):
         self.timings[stage] = duration
         log.info(f"  ✓ [{stage}] {count} items — {duration:.1f}s")
+
+    def report_progress(self, stage: str, current: int, total: int, message: str = ""):
+        """Gọi progress_callback nếu có — dùng bởi các stage để báo tiến độ."""
+        if callable(self.progress_callback):
+            try:
+                self.progress_callback(stage, current, total, message)
+            except Exception:
+                pass
 
     def to_dict(self) -> dict:
         return {
@@ -88,8 +125,9 @@ class FloodPipeline:
         state = pipeline.run_from_dir("/data/floods")
     """
 
-    def __init__(self, cfg: dict):
+    def __init__(self, cfg: dict, progress_callback=None):
         self.cfg = cfg
+        self.progress_callback = progress_callback
         self.confidence_scorer = ConfidenceScorer()
 
         self.analyzer  = AnalyzeStage(cfg)
@@ -113,8 +151,9 @@ class FloodPipeline:
         Returns:
             PipelineState đầy đủ kết quả
         """
+        images = validate_images(list(images))
         if not images:
-            raise ValueError("Không có ảnh đầu vào. Truyền vào ít nhất 1 file ảnh.")
+            raise ValueError("Không có ảnh hợp lệ. Kiểm tra định dạng, kích thước và đường dẫn file.")
 
         run_id   = datetime.now().strftime("%Y%m%d_%H%M%S")
         base_dir = Path(self.cfg.get("output_dir", "output")) / run_id
@@ -124,6 +163,7 @@ class FloodPipeline:
             run_id=run_id,
             input_images=list(images),
             output_dir=base_dir,
+            progress_callback=self.progress_callback,
         )
 
         log.info(f"\n{'='*60}")

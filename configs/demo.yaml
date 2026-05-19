@@ -1,0 +1,25 @@
+# configs/demo.yaml
+# Demo: nhanh, trực quan, an toàn, không lưu gì ra Drive
+# Dùng: python main.py --config configs/demo.yaml --input ./sample_images
+
+depth:
+  model: "depth-anything/Depth-Anything-V2-Base-hf"
+  yolo_model: "yolov8s.pt"
+  yolo_conf: 0.32
+  use_dino: false
+
+pipeline:
+  parallel:
+    workers: 2
+  skip_drive: true
+  skip_learning: true
+  skip_hard_mining: true
+  use_output_cache: true
+
+output:
+  base_dir: "output/demo"
+
+logging:
+  level: "INFO"
+
+safe_mode: true

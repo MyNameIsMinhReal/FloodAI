@@ -1,0 +1,48 @@
+repos:
+  # ── Gitleaks: quét token/key bị lộ ──────────────────────────────────────────
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+        name: "🔑 Gitleaks — quét secret/token"
+
+  # ── Pre-commit built-ins ──────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: ["--maxkb=1000"]
+      - id: check-merge-conflict
+      - id: debug-statements
+        name: "🐛 Debug statements (pdb/breakpoint)"
+      - id: detect-private-key
+        name: "🔐 Private key detection"
+
+  # ── Ruff (linter) ────────────────────────────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
+    hooks:
+      - id: ruff
+        args: ["--fix", "--exit-non-zero-on-fix"]
+        name: "🦀 Ruff lint"
+      - id: ruff-format
+        name: "🦀 Ruff format"
+
+  # ── .env không bao giờ được commit ─────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: no-dotenv
+        name: "🚫 Không commit .env"
+        entry: bash -c 'git diff --cached --name-only | grep -E "^\.env($|\.)"; if [ $? -eq 0 ]; then echo "ERROR: .env files must not be committed"; exit 1; fi'
+        language: system
+        pass_filenames: false
+
+      - id: no-credentials
+        name: "🚫 Không commit credentials/token JSON"
+        entry: bash -c 'git diff --cached --name-only | grep -E "(credentials|token).*\.json$"; if [ $? -eq 0 ]; then echo "ERROR: credentials/token files must not be committed"; exit 1; fi'
+        language: system
+        pass_filenames: false

@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Cảnh báo khẩn cấp{% endblock %}
+
+{% block head %}
+<style>
+.alerts-header{margin-bottom:28px}
+.alerts-header h1{font-family:var(--font-serif);font-size:26px;font-weight:700;margin-bottom:8px}
+.alerts-header p{color:var(--tx2);font-size:15px}
+.alert-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+.af-btn{padding:6px 16px;border-radius:20px;border:1.5px solid var(--border);
+  background:transparent;font-family:var(--font);font-size:13px;font-weight:500;
+  color:var(--tx2);cursor:pointer;transition:all .15s}
+.af-btn:hover{background:var(--card);color:var(--tx)}
+.af-btn.active{color:#fff;border-color:transparent}
+.af-btn.f-all.active{background:var(--navy)}
+.af-btn.f-high.active{background:var(--warn-high)}
+.af-btn.f-medium.active{background:var(--warn-med)}
+.af-btn.f-low.active{background:var(--warn-low);color:var(--navy)}
+.alert-big{background:var(--card);border:1px solid var(--border);
+  border-left:4px solid var(--warn-high);border-radius:var(--radius-lg);
+  padding:20px 22px;margin-bottom:14px;transition:box-shadow .15s}
+.alert-big:hover{box-shadow:var(--shadow-md)}
+.alert-big.sev-medium{border-left-color:var(--warn-med)}
+.alert-big.sev-low{border-left-color:var(--warn-low)}
+.alert-big.sev-ok{border-left-color:var(--ok)}
+.ab-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:11px}
+.ab-badges{display:flex;gap:7px;flex-wrap:wrap}
+.ab-time{font-size:12px;color:var(--tx3);white-space:nowrap}
+.ab-title{font-family:var(--font-serif);font-size:17px;font-weight:700;
+  line-height:1.4;margin-bottom:10px;color:var(--tx)}
+.ab-body{font-size:14px;color:var(--tx2);line-height:1.65;margin-bottom:14px}
+.ab-recommend{background:var(--warn-high-s);border-radius:var(--radius);
+  padding:11px 14px;font-size:13px;font-weight:500;color:var(--warn-high)}
+.ab-recommend.med{background:var(--warn-med-s);color:var(--warn-med)}
+.ab-recommend.low{background:var(--warn-low-s);color:var(--warn-low)}
+.ab-footer{display:flex;align-items:center;justify-content:space-between;
+  margin-top:14px;padding-top:12px;border-top:1px solid var(--border2);font-size:12px;color:var(--tx3)}
+.ab-source{display:flex;align-items:center;gap:6px}
+.empty-state{text-align:center;padding:48px 20px;color:var(--tx3)}
+.empty-state svg{width:40px;height:40px;margin-bottom:14px;stroke:var(--tx3);fill:none;stroke-width:1.5}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+<div class="alerts-header">
+  <h1>Cảnh báo khẩn cấp</h1>
+  <p>Các khu vực được ghi nhận có mức ngập nguy hiểm — cập nhật liên tục.</p>
+</div>
+
+<div class="alert-filters">
+  <button class="af-btn f-all active" onclick="filterAlerts('all',this)">Tất cả</button>
+  <button class="af-btn f-high" onclick="filterAlerts('high',this)">🔴 Nguy hiểm</button>
+  <button class="af-btn f-medium" onclick="filterAlerts('medium',this)">🟠 Cần chú ý</button>
+  <button class="af-btn f-low" onclick="filterAlerts('low',this)">🟡 Ngập nhẹ</button>
+</div>
+
+<div id="alerts-container">
+  <div style="padding:32px;text-align:center;color:var(--tx3)">Đang tải cảnh báo...</div>
+</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const LEVEL_INFO={
+  dry:{label:'Không ngập',sev:'ok',badge:'badge-ok',rec:'Khu vực không có dấu hiệu ngập nước.'},
+  ankle:{label:'Ngập nhẹ (~20cm)',sev:'low',badge:'badge-low',rec:'Xe máy đi qua được, chú ý trơn trượt.'},
+  knee:{label:'Ngập đầu gối (~50cm)',sev:'medium',badge:'badge-medium',rec:'Hạn chế đi xe máy qua khu vực này.'},
+  waist:{label:'Ngập ngang eo',sev:'high',badge:'badge-high',rec:'Không nên đi qua. Nguy hiểm cho xe máy và người đi bộ.'},
+  chest:{label:'Ngập ngực',sev:'critical',badge:'badge-critical',rec:'Nguy hiểm — tuyệt đối không di chuyển qua khu vực này.'},
+  submerged:{label:'Ngập hoàn toàn',sev:'critical',badge:'badge-critical',rec:'Cực kỳ nguy hiểm. Cần sơ tán ngay.'},
+  unknown:{label:'Chưa xác định',sev:'unknown',badge:'badge-unknown',rec:'Chờ thêm thông tin xác minh.'},
+};
+let allAlerts=[];
+
+async function loadAlerts(){
+  try{
+    const r=await fetch('/api/jobs?limit=50');
+    const jobs=await r.json();
+    allAlerts=jobs.filter(j=>j.status==='done').map(j=>({
+      id:j.job_id,level:j.result?.level||'unknown',sev:j.result?.sev||'unknown',
+      depth:j.result?.depth_range||'',time:j.created_at,
+      location:j.result?.location||'Khu vực phân tích',
+      source:j.result?.source||'Hệ thống',
+    }));
+    if(!allAlerts.length){showEmpty();return;}
+    renderAlerts(allAlerts);
+  }catch{showEmpty();}
+}
+
+function renderAlerts(list){
+  const el=document.getElementById('alerts-container');
+  if(!list.length){showEmpty();return;}
+  el.innerHTML=list.map(a=>{
+    const info=LEVEL_INFO[a.level]||LEVEL_INFO.unknown;
+    const recCls=info.sev==='medium'?'med':info.sev==='low'?'low':'';
+    return `<div class="alert-big sev-${info.sev}" data-sev="${info.sev}">
+      <div class="ab-top">
+        <div class="ab-badges">
+          <span class="badge ${info.badge}">${info.label}</span>
+          ${a.depth?`<span class="badge badge-ai">~${a.depth}</span>`:''}
+        </div>
+        <span class="ab-time">${timeAgo(a.time)}</span>
+      </div>
+      <div class="ab-title">${info.label} tại ${a.location}</div>
+      <div class="ab-body">${info.label !== 'Không ngập' ? 'Hệ thống ghi nhận ngập nước tại khu vực này. ' : ''}${info.rec}</div>
+      <div class="ab-recommend ${recCls}">⚠ Khuyến cáo: ${info.rec}</div>
+      <div class="ab-footer">
+        <div class="ab-source">
+          <span class="badge badge-ai">AI hỗ trợ phân tích</span>
+          <span>Nguồn: ${a.source}</span>
+        </div>
+        <a href="/article/${a.id}" style="color:var(--blue);font-weight:500;text-decoration:none">Đọc chi tiết →</a>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function filterAlerts(sev,btn){
+  document.querySelectorAll('.af-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const SEV_ORDER=['critical','high','medium','low','ok','unknown'];
+  const filtered=sev==='all'?allAlerts:allAlerts.filter(a=>a.sev===sev||
+    (sev==='high'&&a.sev==='critical'));
+  renderAlerts(filtered.sort((a,b)=>SEV_ORDER.indexOf(a.sev)-SEV_ORDER.indexOf(b.sev)));
+}
+
+function showEmpty(){
+  document.getElementById('alerts-container').innerHTML=`
+    <div class="empty-state">
+      <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      <p>Không có cảnh báo nào hiện tại.</p>
+      <p style="font-size:13px;margin-top:6px">Hệ thống đang theo dõi và sẽ cập nhật khi có thông tin mới.</p>
+    </div>`;
+}
+loadAlerts();
+</script>
+{% endblock %}

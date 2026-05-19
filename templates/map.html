@@ -1,283 +1,239 @@
 {% extends "base.html" %}
-{% block title %}Bản đồ lũ{% endblock %}
-{% block topbar_title %}Bản đồ lũ{% endblock %}
-{% block topbar_badge %}<span class="topbar-badge">Google Maps</span>{% endblock %}
-
-{% block topbar_right %}
-<button class="icon-btn" onclick="refreshData()" title="Làm mới dữ liệu">
-  <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-</button>
-{% endblock %}
+{% block title %}Bản đồ ngập{% endblock %}
 
 {% block head %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <style>
-/* Map takes full remaining height */
-.map-layout{display:flex;height:100%;overflow:hidden}
-#map{flex:1}
-
-/* Side panel */
-.map-panel{width:300px;flex-shrink:0;border-left:1px solid var(--border);
-  background:var(--sidebar);display:flex;flex-direction:column;overflow:hidden}
-.panel-section{padding:14px 16px;border-bottom:1px solid var(--border);flex-shrink:0}
-.panel-section:last-child{border-bottom:none;flex:1;overflow-y:auto}
-.panel-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
-  color:var(--tx3);margin-bottom:10px}
-
-/* Legend */
-.legend-item{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--tx2);
-  padding:4px 0}
-.legend-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0;border:2px solid rgba(0,0,0,.15)}
-
-/* Weather chart */
-.weather-bar-wrap{margin-top:6px}
-.weather-time{font-size:10px;color:var(--tx3);margin-bottom:3px}
-.weather-bar-row{display:flex;align-items:center;gap:6px;margin-bottom:4px}
-.weather-bar-label{font-size:10px;color:var(--tx3);width:35px;text-align:right;flex-shrink:0}
-.weather-bar-bg{flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden}
-.weather-bar-fill{height:100%;border-radius:3px;background:var(--primary);transition:width .4s}
-.weather-val{font-size:10px;color:var(--tx3);width:28px;flex-shrink:0}
-
-/* Flood point list */
-.point-item{padding:8px 0;border-bottom:1px solid var(--border);font-size:12px;cursor:pointer;
-  transition:background .15s;border-radius:6px;padding:7px 8px;margin:0 -8px}
-.point-item:hover{background:var(--bg2)}
-.point-item:last-child{border-bottom:none}
-.point-level{font-weight:600;font-size:11px}
-.point-depth{color:var(--tx3);font-size:11px}
-.point-ts{color:var(--tx3);font-size:10px;margin-top:1px}
-
-/* No data state */
-.demo-notice{background:color-mix(in srgb,var(--accent) 10%,transparent);
-  border:1px solid color-mix(in srgb,var(--accent) 30%,transparent);
-  border-radius:8px;padding:8px 12px;font-size:11px;color:var(--tx2);margin-bottom:10px}
-
-/* Forecast location input */
-.loc-row{display:flex;gap:6px;align-items:center}
-.loc-input{flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:8px;
-  background:var(--bg);color:var(--tx);font-family:var(--font-sans);font-size:12px;outline:none}
-.loc-input:focus{border-color:var(--primary)}
-.loc-btn{padding:6px 10px;border-radius:8px;border:none;background:var(--primary);
-  color:#fff;font-size:12px;cursor:pointer;white-space:nowrap}
+.map-page-header{margin-bottom:16px}
+.map-page-header h1{font-family:var(--font-serif);font-size:24px;font-weight:700;margin-bottom:5px}
+.map-page-header p{color:var(--tx2);font-size:14px}
+.map-layout{display:grid;grid-template-columns:1fr 280px;gap:18px;align-items:start}
+@media(max-width:800px){.map-layout{grid-template-columns:1fr}}
+#map{width:100%;height:540px;border-radius:var(--radius-lg);border:1px solid var(--border);
+  background:var(--card2);z-index:1}
+.map-panel{background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius-lg);overflow:hidden;margin-bottom:14px}
+.mp-head{padding:11px 14px;border-bottom:1px solid var(--border2);
+  display:flex;align-items:center;justify-content:space-between}
+.mp-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--tx3)}
+.mp-body{padding:10px}
+.legend-item{display:flex;align-items:center;gap:9px;padding:6px;
+  border-radius:var(--radius);font-size:13px;color:var(--tx2)}
+.ldot{width:13px;height:13px;border-radius:50%}
+.flood-point-item{padding:9px 10px;border-radius:var(--radius);cursor:pointer;
+  text-decoration:none;color:inherit;display:block;transition:background .15s}
+.flood-point-item:hover{background:var(--paper2)}
+.fpi-title{font-size:13px;font-weight:600;margin-bottom:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+.fpi-meta{font-size:11.5px;color:var(--tx3);display:flex;gap:6px;align-items:center}
+.map-filters{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}
+.mf-btn{padding:5px 13px;border-radius:20px;border:1px solid var(--border);
+  background:transparent;font-family:var(--font);font-size:12px;font-weight:500;
+  color:var(--tx2);cursor:pointer;transition:all .15s}
+.mf-btn.active{background:var(--navy);color:#fff;border-color:var(--navy)}
+.no-data{text-align:center;padding:24px;color:var(--tx3);font-size:13px}
+.method-badge{font-size:10px;padding:2px 7px;border-radius:10px;
+  background:var(--blue-s);color:var(--blue);font-weight:600;white-space:nowrap}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="map-layout">
-  <!-- Google Map -->
-  <div id="map"></div>
-
-  <!-- Side Panel -->
-  <div class="map-panel">
-
-    <!-- Legend -->
-    <div class="panel-section">
-      <div class="panel-title">Mức độ lũ</div>
-      <div id="legend">
-        <div class="legend-item"><span class="legend-dot" style="background:#22c984"></span>NO_FLOOD — Không ngập</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#34d399"></span>PUDDLE — Vũng nước (&lt;15cm)</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#6dd9a8"></span>ANKLE — Mắt cá (15-40cm)</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#f0a428"></span>KNEE — Đầu gối (40-70cm)</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#f97316"></span>WAIST — Ngang hông (70-120cm)</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#e85065"></span>CHEST — Ngang ngực (120-200cm)</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#991b1b"></span>SUBMERGED — Ngập hoàn toàn</div>
-      </div>
-    </div>
-
-    <!-- Weather forecast -->
-    <div class="panel-section">
-      <div class="panel-title">Dự báo mưa (Open-Meteo)</div>
-      <div class="loc-row" style="margin-bottom:10px">
-        <input class="loc-input" id="lat-in" value="16.05" placeholder="Vĩ độ">
-        <input class="loc-input" id="lon-in" value="108.20" placeholder="Kinh độ">
-        <button class="loc-btn" onclick="loadWeather()">OK</button>
-      </div>
-      <div id="weather-content"><div style="font-size:12px;color:var(--tx3)">Đang tải…</div></div>
-    </div>
-
-    <!-- Flood points -->
-    <div class="panel-section">
-      <div class="panel-title">Điểm ngập lụt</div>
-      <div id="demo-notice" class="demo-notice" style="display:none">
-        Dữ liệu demo — chạy pipeline để có điểm thực tế.
-      </div>
-      <div id="points-list"><div style="font-size:12px;color:var(--tx3)">Đang tải…</div></div>
-    </div>
-
-  </div>
+<div class="container">
+<div class="map-page-header">
+  <h1>Bản đồ ngập trực tiếp</h1>
+  <p>Vòng tròn to/nhỏ thể hiện mức độ chắc chắn của vị trí — vòng nhỏ = chính xác hơn</p>
 </div>
 
-<script>
-const LEVEL_COLOR = {
-  NO_FLOOD:'#22c984', PUDDLE:'#34d399', ANKLE:'#6dd9a8',
-  KNEE:'#f0a428', WAIST:'#f97316', CHEST:'#e85065', SUBMERGED:'#991b1b',
-  UNKNOWN:'#888'
-};
-const LEVEL_VI = {
-  NO_FLOOD:'Không ngập', PUDDLE:'Vũng nước', ANKLE:'Mắt cá',
-  KNEE:'Đầu gối', WAIST:'Ngang hông', CHEST:'Ngang ngực',
-  SUBMERGED:'Ngập hoàn toàn', UNKNOWN:'Không xác định'
-};
+<div class="map-filters">
+  <button class="mf-btn active" onclick="filterMap('all',this)">Tất cả</button>
+  <button class="mf-btn" onclick="filterMap('ankle',this)">Ngập nhẹ</button>
+  <button class="mf-btn" onclick="filterMap('knee',this)">Ngập vừa</button>
+  <button class="mf-btn" onclick="filterMap('waist',this)">Nguy hiểm</button>
+  <button class="mf-btn" onclick="filterMap('unknown',this)">Chưa xác định</button>
+</div>
 
-let _map, _markers = [], _floodPoints = [];
+<div class="map-layout">
+  <div id="map"></div>
 
-function initMap() {
-  _map = new google.maps.Map(document.getElementById('map'), {
-    center: {lat:16.05, lng:108.20},
-    zoom: 7,
-    mapTypeId: 'hybrid',
-    styles: [
-      {featureType:'poi',stylers:[{visibility:'off'}]},
-      {featureType:'transit',stylers:[{visibility:'off'}]}
-    ]
-  });
-  _map.addListener('click', e => {
-    document.getElementById('lat-in').value = e.latLng.lat().toFixed(4);
-    document.getElementById('lon-in').value = e.latLng.lng().toFixed(4);
-    loadWeather();
-  });
-  loadFloodData();
-  loadWeather();
-}
-
-async function loadFloodData() {
-  try {
-    const d = await fetch('/api/map/data').then(r=>r.json());
-    _floodPoints = d.points || [];
-    const hasDemo = _floodPoints.some(p=>p.ts==='Demo');
-    document.getElementById('demo-notice').style.display = hasDemo ? '' : 'none';
-    renderMarkers();
-    renderPointList();
-  } catch(_) {
-    toast('Lỗi tải dữ liệu bản đồ', 'err');
-  }
-}
-
-function renderMarkers() {
-  _markers.forEach(m=>m.setMap(null));
-  _markers = [];
-  _floodPoints.forEach(p => {
-    const color = LEVEL_COLOR[p.level] || LEVEL_COLOR.UNKNOWN;
-    const m = new google.maps.Marker({
-      map: _map,
-      position: {lat:p.lat, lng:p.lng},
-      icon: {
-        path: google.maps.SymbolPath.CIRCLE,
-        scale: 10,
-        fillColor: color,
-        fillOpacity: 0.9,
-        strokeColor: '#fff',
-        strokeWeight: 1.5,
-      },
-      title: `${LEVEL_VI[p.level]||p.level} — ${p.depth}cm`,
-    });
-    const iw = new google.maps.InfoWindow({content:
-      `<div style="font-family:sans-serif;font-size:13px;min-width:140px">
-        <b style="color:${color}">${LEVEL_VI[p.level]||p.level}</b><br>
-        Độ sâu: <b>${p.depth} cm</b><br>
-        <span style="color:#888;font-size:11px">${p.ts}</span>
-      </div>`
-    });
-    m.addListener('click', ()=>iw.open(_map,m));
-    _markers.push(m);
-  });
-}
-
-function renderPointList() {
-  const el = document.getElementById('points-list');
-  if (!_floodPoints.length) {
-    el.innerHTML = '<div style="font-size:12px;color:var(--tx3)">Không có dữ liệu.</div>';
-    return;
-  }
-  el.innerHTML = _floodPoints.map((p,i)=>`
-    <div class="point-item" onclick="focusPoint(${i})">
-      <div class="point-level" style="color:${LEVEL_COLOR[p.level]||'#888'}">
-        ${LEVEL_VI[p.level]||p.level}
+  <div>
+    <div class="map-panel" style="margin-bottom:14px">
+      <div class="mp-head"><span class="mp-title">Chú giải mức ngập</span></div>
+      <div class="mp-body">
+        <div class="legend-item"><div class="ldot" style="background:#16a34a"></div>Không ngập</div>
+        <div class="legend-item"><div class="ldot" style="background:#ca8a04"></div>Nhẹ (~20cm)</div>
+        <div class="legend-item"><div class="ldot" style="background:#ea580c"></div>Đầu gối (~50cm)</div>
+        <div class="legend-item"><div class="ldot" style="background:#dc2626"></div>Ngang eo+ (>80cm)</div>
+        <div class="legend-item"><div class="ldot" style="background:#6b7280"></div>Chưa xác định</div>
       </div>
-      <div class="point-depth">${p.depth} cm · ${p.lat.toFixed(3)}, ${p.lng.toFixed(3)}</div>
-      <div class="point-ts">${p.ts}</div>
     </div>
-  `).join('');
-}
 
-function focusPoint(i) {
-  const p = _floodPoints[i];
-  if (!p || !_map) return;
-  _map.panTo({lat:p.lat, lng:p.lng});
-  _map.setZoom(12);
-  google.maps.event.trigger(_markers[i], 'click');
-}
+    <div class="map-panel" style="margin-bottom:14px">
+      <div class="mp-head"><span class="mp-title">Độ chính xác vị trí</span></div>
+      <div class="mp-body" style="font-size:12.5px;color:var(--tx2);line-height:1.7;padding:12px 14px">
+        <div>Vòng <strong>nhỏ</strong> (≤200m) — GPS / WiFi</div>
+        <div>Vòng <strong>vừa</strong> (~400m) — OCR biển hiệu</div>
+        <div>Vòng <strong>lớn</strong> (~2km) — AI nhận diện</div>
+        <div>Vòng <strong>rất lớn</strong> (~5km) — IP mạng</div>
+      </div>
+    </div>
 
-async function loadWeather() {
-  const lat = document.getElementById('lat-in').value || '16.05';
-  const lon = document.getElementById('lon-in').value || '108.20';
-  document.getElementById('weather-content').innerHTML =
-    '<div style="font-size:12px;color:var(--tx3)">Đang tải…</div>';
-  try {
-    const d = await fetch(`/api/map/weather?lat=${lat}&lon=${lon}`).then(r=>r.json());
-    renderWeather(d);
-  } catch(_) {
-    document.getElementById('weather-content').innerHTML =
-      '<div style="font-size:11px;color:var(--danger)">Lỗi tải dự báo</div>';
+    <div class="map-panel">
+      <div class="mp-head" style="display:flex;align-items:center;justify-content:space-between">
+        <span class="mp-title">Điểm gần đây</span>
+        <button onclick="loadPoints()" style="background:none;border:none;cursor:pointer;
+          color:var(--blue);font-size:12px;font-weight:500">Làm mới</button>
+      </div>
+      <div id="point-list" style="max-height:320px;overflow-y:auto;padding:8px">
+        <div class="no-data">Đang tải...</div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const LEVEL_COLOR={
+  dry:'#16a34a',ankle:'#ca8a04',knee:'#ea580c',
+  waist:'#dc2626',chest:'#7f1d1d',submerged:'#1e3a5f',unknown:'#6b7280'
+};
+const LEVEL_VI={
+  dry:'Không ngập',ankle:'Ngập nhẹ (~20cm)',knee:'Ngập đầu gối (~50cm)',
+  waist:'Ngập ngang eo',chest:'Rất nguy hiểm',submerged:'Ngập hoàn toàn',unknown:'Chưa xác định'
+};
+const METHOD_VI={
+  gps_exif:'GPS ảnh',browser:'WiFi/GPS',ocr_street:'OCR đường',
+  ocr_district:'OCR khu vực',geoclip:'AI nhận diện',ip:'IP mạng',none:'Không rõ'
+};
+
+// Khởi tạo Leaflet map
+const map = L.map('map').setView([21.59, 105.84], 11);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a>',
+  maxZoom: 19,
+}).addTo(map);
+
+let circles=[], allPoints=[];
+
+// Focus vào vị trí nếu có query params
+const urlParams=new URLSearchParams(window.location.search);
+const qLat=parseFloat(urlParams.get('lat'));
+const qLon=parseFloat(urlParams.get('lon'));
+if(qLat&&qLon) map.setView([qLat,qLon],15);
+
+async function loadPoints(){
+  try{
+    const r=await fetch('/api/map/data');
+    const d=await r.json();
+    allPoints=d.points||[];
+    renderCircles(allPoints);
+    renderPointList(allPoints);
+  }catch(e){
+    document.getElementById('point-list').innerHTML=
+      '<div class="no-data">Không thể tải dữ liệu.</div>';
   }
 }
 
-function renderWeather(d) {
-  const times = (d.hourly?.time || []).slice(0,24);
-  const precip = (d.hourly?.precipitation || []).slice(0,24);
-  const prob   = (d.hourly?.precipitation_probability || []).slice(0,24);
+function renderCircles(points){
+  circles.forEach(c=>c.remove());
+  circles=[];
+  points.forEach(p=>{
+    if(!p.lat||!p.lon)return;
+    const color=LEVEL_COLOR[p.level]||LEVEL_COLOR.unknown;
+    const radius=p.radius_m||2000;
 
-  if (!times.length) {
-    document.getElementById('weather-content').innerHTML =
-      '<div style="font-size:11px;color:var(--tx3)">Không có dữ liệu.</div>';
+    // Vòng tròn vùng (fill nhạt)
+    const zone=L.circle([p.lat,p.lon],{
+      radius,
+      color,
+      fillColor:color,
+      fillOpacity: radius<=500?0.15:radius<=1000?0.10:0.07,
+      weight:1.5,
+      opacity:0.7,
+    }).addTo(map);
+
+    // Điểm trung tâm
+    const dot=L.circleMarker([p.lat,p.lon],{
+      radius:7,
+      color:'#fff',
+      fillColor:color,
+      fillOpacity:0.95,
+      weight:2,
+    }).addTo(map);
+
+    const addr=p.address||'Khu vực phân tích';
+    const methodVI=METHOD_VI[p.method]||p.method||'Không rõ';
+    const popup=`
+      <div style="font-family:sans-serif;min-width:190px;padding:2px">
+        <div style="font-weight:700;font-size:14px;margin-bottom:6px">${addr.slice(0,60)}</div>
+        <div style="color:#555;font-size:13px;margin-bottom:3px">
+          Mức ngập: <strong style="color:${color}">${LEVEL_VI[p.level]||p.level||'?'}</strong>
+        </div>
+        ${p.depth_range?`<div style="color:#555;font-size:13px;margin-bottom:3px">Ước tính: ${p.depth_range}</div>`:''}
+        <div style="color:#888;font-size:12px;margin-bottom:3px">${timeAgo(p.time)}</div>
+        <div style="font-size:11px;color:#aaa">Vị trí: ${methodVI} (±${radius}m)</div>
+        <div style="margin-top:8px">
+          <a href="/article/${p.job_id}" style="color:#1565c0;font-size:13px;font-weight:600">
+            Đọc chi tiết →</a>
+        </div>
+      </div>`;
+
+    dot.bindPopup(popup,{maxWidth:250});
+    zone.bindPopup(popup,{maxWidth:250});
+    circles.push(zone,dot);
+  });
+
+  // Fit bounds nếu có data và không có query params
+  if(allPoints.length>0&&!qLat){
+    const validPts=allPoints.filter(p=>p.lat&&p.lon);
+    if(validPts.length>0){
+      const bounds=L.latLngBounds(validPts.map(p=>[p.lat,p.lon]));
+      map.fitBounds(bounds,{padding:[40,40],maxZoom:14});
+    }
+  }
+}
+
+function renderPointList(points){
+  const el=document.getElementById('point-list');
+  if(!points.length){
+    el.innerHTML='<div class="no-data">Chưa có dữ liệu ngập được ghi nhận.</div>';
     return;
   }
-
-  const maxP = Math.max(...precip, 1);
-  const rows = times.slice(0,8).map((t,i)=>{
-    const pct = Math.round((precip[i]||0)/maxP*100);
-    const hr  = t.slice(11,16);
-    return `<div class="weather-bar-row">
-      <span class="weather-bar-label">${hr}</span>
-      <div class="weather-bar-bg"><div class="weather-bar-fill" style="width:${pct}%"></div></div>
-      <span class="weather-val">${(precip[i]||0).toFixed(1)}mm</span>
-    </div>`;
+  el.innerHTML=points.map(p=>{
+    const color=LEVEL_COLOR[p.level]||LEVEL_COLOR.unknown;
+    const methodVI=METHOD_VI[p.method]||'';
+    return `<a class="flood-point-item" onclick="focusPoint(${p.lat},${p.lon})">
+      <div class="fpi-title">${(p.address||'Khu vực phân tích').slice(0,45)}</div>
+      <div class="fpi-meta">
+        <span style="width:8px;height:8px;border-radius:50%;background:${color};display:inline-block;flex-shrink:0"></span>
+        <span>${LEVEL_VI[p.level]||'?'}</span>
+        <span>·</span>
+        <span>${timeAgo(p.time)}</span>
+      </div>
+      ${methodVI?`<div style="margin-top:4px"><span class="method-badge">${methodVI}</span></div>`:''}
+    </a>`;
   }).join('');
-
-  const maxProb = Math.max(...prob.slice(0,8), 0);
-  document.getElementById('weather-content').innerHTML = `
-    <div style="font-size:11px;color:var(--tx3);margin-bottom:6px">
-      Lượng mưa 8h tới · Xác suất mưa cao nhất: <strong style="color:var(--warn)">${maxProb}%</strong>
-    </div>
-    ${rows}`;
 }
 
-function refreshData() {
-  loadFloodData();
-  loadWeather();
-  toast('Đã làm mới dữ liệu', 'ok');
+function focusPoint(lat,lon){
+  map.setView([lat,lon],16);
 }
-</script>
 
-{% if maps_key %}
-<script async defer
-  src="https://maps.googleapis.com/maps/api/js?key={{ maps_key }}&callback=initMap&language=vi&region=VN">
+function filterMap(level,btn){
+  document.querySelectorAll('.mf-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const DANGER=['waist','chest','submerged'];
+  const filtered= level==='all' ? allPoints :
+    level==='waist' ? allPoints.filter(p=>DANGER.includes(p.level)) :
+    allPoints.filter(p=>p.level===level);
+  renderCircles(filtered);
+  renderPointList(filtered);
+}
+
+loadPoints();
+// Auto-refresh mỗi 60 giây
+setInterval(loadPoints, 60000);
 </script>
-{% else %}
-<script>
-window.onload = function() {
-  document.getElementById('map').innerHTML =
-    `<div style="display:flex;align-items:center;justify-content:center;height:100%;
-      flex-direction:column;gap:12px;color:var(--tx3);font-size:14px;text-align:center;padding:40px">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-        <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/>
-      </svg>
-      <strong>Cần GOOGLE_MAPS_API_KEY</strong>
-      <span style="font-size:12px">Thêm key vào file <code>.env</code> và khởi động lại server.</span>
-      <span style="font-size:11px;color:var(--tx3)">Dữ liệu lũ bên phải vẫn hoạt động.</span>
-    </div>`;
-  loadFloodData();
-  loadWeather();
-};
-</script>
-{% endif %}
 {% endblock %}

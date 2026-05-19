@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}{{ article.title if article else "Bài viết" }}{% endblock %}
+
+{% block head %}
+<style>
+.article-layout{display:grid;grid-template-columns:1fr 280px;gap:32px;max-width:920px;margin:0 auto}
+@media(max-width:780px){.article-layout{grid-template-columns:1fr}}
+.article-hero-img{width:100%;max-height:340px;object-fit:cover;border-radius:var(--radius-lg);
+  background:linear-gradient(135deg,var(--navy) 0%,#1565c0 100%);
+  display:flex;align-items:center;justify-content:center;min-height:200px;margin-bottom:22px;overflow:hidden}
+.article-hero-img.placeholder{color:rgba(255,255,255,.4);flex-direction:column;gap:10px}
+.article-hero-img.placeholder svg{width:48px;height:48px;stroke:currentColor;fill:none;stroke-width:1.5}
+.article-header{margin-bottom:24px}
+.article-header h1{font-family:var(--font-serif);font-size:26px;font-weight:700;
+  line-height:1.35;margin-bottom:14px}
+.article-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;color:var(--tx3);margin-bottom:16px}
+.article-meta-sep{color:var(--border);user-select:none}
+.article-body{font-size:15.5px;line-height:1.78;color:var(--tx2)}
+.article-body p{margin-bottom:16px}
+.article-body strong{color:var(--tx);font-weight:600}
+.summary-list{background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-lg);
+  padding:18px 20px;margin-bottom:24px}
+.summary-list h3{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--tx3);margin-bottom:12px}
+.summary-list li{font-size:14px;color:var(--tx2);padding:5px 0;padding-left:16px;
+  position:relative;line-height:1.55}
+.summary-list li::before{content:'•';position:absolute;left:0;color:var(--blue)}
+.warn-box{border-left:3px solid var(--warn-high);background:var(--warn-high-s);
+  border-radius:0 var(--radius-md) var(--radius-md) 0;padding:14px 18px;margin:20px 0;
+  font-size:14px;color:var(--warn-crit)}
+.warn-box.medium{border-left-color:var(--warn-med);background:var(--warn-med-s);color:#7c2d12}
+.warn-box strong{display:block;font-size:12px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.06em;margin-bottom:4px}
+.data-box{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);
+  overflow:hidden;margin-bottom:16px}
+.data-box-head{background:var(--navy);color:#fff;padding:12px 16px;font-size:12px;
+  font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.data-row{display:flex;justify-content:space-between;align-items:center;
+  padding:10px 16px;border-bottom:1px solid var(--border2);font-size:14px}
+.data-row:last-child{border-bottom:none}
+.data-key{color:var(--tx3)}
+.data-val{font-weight:600;color:var(--tx);text-align:right}
+.back-link{display:inline-flex;align-items:center;gap:6px;color:var(--blue);
+  font-size:13px;font-weight:500;text-decoration:none;margin-bottom:20px}
+.back-link:hover{text-decoration:underline}
+.back-link svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+.not-found{text-align:center;padding:64px 20px;color:var(--tx3)}
+.not-found svg{width:48px;height:48px;stroke:currentColor;fill:none;stroke-width:1.5;margin-bottom:16px}
+.not-found h2{font-family:var(--font-serif);font-size:22px;margin-bottom:10px;color:var(--tx)}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+{% if article %}
+<a class="back-link" href="/news">
+  <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+  Trở về tin tức
+</a>
+
+<div class="article-layout">
+  <div>
+    <!-- Image -->
+    {% if article.image_url %}
+    <img class="article-hero-img" src="{{ article.image_url }}" alt="{{ article.title }}" onerror="this.style.display='none'">
+    {% else %}
+    <div class="article-hero-img placeholder">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+      <span style="font-size:13px">Ảnh hiện trường</span>
+    </div>
+    {% endif %}
+
+    <!-- Header -->
+    <div class="article-header">
+      <div class="article-meta">
+        <span class="badge {{ 'badge-'+article.severity if article.severity else 'badge-unknown' }}">
+          {{ article.level_label or 'Chưa xác định' }}
+        </span>
+        {% if article.verified %}<span class="badge badge-verified">✓ Đã xác minh</span>{% else %}
+        <span class="badge badge-pending">Chờ xác minh</span>{% endif %}
+        <span class="article-meta-sep">·</span>
+        <span>{{ article.time or '' }}</span>
+        <span class="article-meta-sep">·</span>
+        <span>{{ article.location or 'Khu vực ghi nhận' }}</span>
+      </div>
+      <h1>{{ article.title }}</h1>
+    </div>
+
+    <!-- Summary -->
+    {% if article.summary %}
+    <div class="summary-list">
+      <h3>Tóm tắt</h3>
+      <ul style="list-style:none;padding:0">
+        {% for point in article.summary %}<li>{{ point }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <!-- Warning box -->
+    {% if article.severity in ('high','critical') %}
+    <div class="warn-box">
+      <strong>⚠ Khuyến cáo</strong>
+      {{ article.recommendations }}
+    </div>
+    {% elif article.severity == 'medium' %}
+    <div class="warn-box medium">
+      <strong>⚠ Lưu ý</strong>
+      {{ article.recommendations }}
+    </div>
+    {% endif %}
+
+    <!-- Body -->
+    <div class="article-body">
+      {% for para in article.body.split('\n\n') if para.strip() %}
+      <p>{{ para }}</p>
+      {% endfor %}
+    </div>
+
+    <!-- Warning notes from AI -->
+    {% if article.warnings %}
+    <div style="margin-top:20px;padding:14px 16px;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-md)">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--tx3);margin-bottom:10px">Ghi chú phân tích</div>
+      {% for w in article.warnings %}
+      <div style="font-size:13px;color:var(--tx2);padding:4px 0">{{ w }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Sidebar -->
+  <div>
+    <!-- Data box -->
+    <div class="data-box">
+      <div class="data-box-head">Dữ liệu phân tích</div>
+      <div class="data-row"><span class="data-key">Mức ngập</span>
+        <span class="data-val">{{ article.level_label or '—' }}</span></div>
+      <div class="data-row"><span class="data-key">Ước tính</span>
+        <span class="data-val">{{ article.depth_range or '—' }}</span></div>
+      <div class="data-row"><span class="data-key">Độ tin cậy</span>
+        <span class="data-val">{{ article.confidence_label or '—' }}</span></div>
+      <div class="data-row"><span class="data-key">Nguồn ảnh</span>
+        <span class="data-val">{{ article.source or '—' }}</span></div>
+      <div class="data-row"><span class="data-key">Thời gian</span>
+        <span class="data-val">{{ article.time or '—' }}</span></div>
+      <div class="data-row"><span class="data-key">Trạng thái</span>
+        <span class="data-val">
+          {% if article.verified %}<span class="badge badge-verified">Đã xác minh</span>
+          {% else %}<span class="badge badge-pending">Chờ xác minh</span>{% endif %}
+        </span></div>
+    </div>
+
+    <div style="padding:14px 16px;background:var(--blue-s);border:1px solid rgba(21,101,192,.15);border-radius:var(--radius-lg);font-size:13px;color:var(--tx2);line-height:1.6">
+      <strong style="display:block;color:var(--blue);margin-bottom:6px">AI hỗ trợ phân tích</strong>
+      Thông tin được tạo từ dữ liệu hình ảnh hiện trường và phân tích bằng AI.
+      {% if article.verified %} Đã được kiểm duyệt.{% else %} Đang chờ xác minh.{% endif %}
+    </div>
+
+    <div style="margin-top:14px">
+      <a href="/submit" class="btn btn-outline" style="width:100%;justify-content:center;margin-bottom:8px">
+        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Gửi ảnh khu vực này
+      </a>
+      <a href="/alerts" class="btn btn-outline" style="width:100%;justify-content:center">Xem tất cả cảnh báo</a>
+    </div>
+  </div>
+</div>
+
+{% else %}
+<div class="not-found">
+  <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+  <h2>Không tìm thấy bài viết</h2>
+  <p>Bài viết này không tồn tại hoặc đã được xóa.</p>
+  <a href="/news" class="btn btn-primary" style="margin-top:16px;display:inline-flex">Xem tin mới</a>
+</div>
+{% endif %}
+</div>
+{% endblock %}

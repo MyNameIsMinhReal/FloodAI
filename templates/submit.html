@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% block title %}Gửi ảnh hiện trường{% endblock %}
+
+{% block head %}
+<style>
+.submit-wrap{max-width:640px;margin:0 auto}
+.submit-header{text-align:center;margin-bottom:28px}
+.submit-header h1{font-family:var(--font-serif);font-size:26px;font-weight:700;margin-bottom:8px}
+.submit-header p{font-size:15px;color:var(--tx2);line-height:1.65}
+.form-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:26px 28px}
+.form-group{margin-bottom:18px}
+.form-label{display:block;font-size:12.5px;font-weight:600;color:var(--tx2);
+  text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px}
+.form-input,.form-textarea{width:100%;padding:10px 13px;border:1.5px solid var(--border);
+  border-radius:var(--radius-md);font-family:var(--font);font-size:14px;
+  background:var(--card2);color:var(--tx);transition:border-color .15s}
+.form-input:focus,.form-textarea:focus{outline:none;border-color:var(--blue);background:var(--card)}
+.form-textarea{resize:vertical;min-height:80px;line-height:1.55}
+
+.upload-zone{border:2px dashed var(--border);border-radius:var(--radius-lg);
+  padding:32px 20px;text-align:center;cursor:pointer;transition:all .2s;background:var(--card2)}
+.upload-zone:hover,.upload-zone.drag-over{border-color:var(--blue);background:var(--blue-s)}
+.upload-zone svg{width:38px;height:38px;stroke:var(--tx3);fill:none;stroke-width:1.5;
+  stroke-linecap:round;margin-bottom:10px}
+.upload-zone h3{font-size:15px;font-weight:600;margin-bottom:5px}
+.upload-zone p{font-size:12.5px;color:var(--tx3)}
+#file-input{display:none}
+.preview-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px;margin-top:12px}
+.preview-item{position:relative;border-radius:var(--radius-md);overflow:hidden;
+  aspect-ratio:1;border:1px solid var(--border)}
+.preview-item img{width:100%;height:100%;object-fit:cover}
+.preview-remove{position:absolute;top:4px;right:4px;width:20px;height:20px;
+  background:rgba(0,0,0,.65);border-radius:50%;border:none;color:#fff;
+  cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center}
+
+/* Geo status bar */
+.geo-bar{display:flex;align-items:center;gap:10px;padding:10px 13px;
+  border-radius:var(--radius-md);border:1px solid var(--border);
+  background:var(--card2);font-size:13px;color:var(--tx2);margin-top:8px}
+.geo-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.geo-dot-ok{background:var(--ok)}
+.geo-dot-warn{background:var(--warn-low)}
+.geo-dot-none{background:var(--gray)}
+.geo-dot-loading{background:var(--blue);animation:pdot 1.2s ease-in-out infinite}
+.geo-text{flex:1;line-height:1.45}
+.geo-method{font-size:11px;color:var(--tx3);margin-left:auto;white-space:nowrap}
+
+.submit-success{background:var(--ok-s);border:1px solid rgba(22,163,74,.2);
+  border-radius:var(--radius-lg);padding:28px 24px;text-align:center;display:none}
+.submit-success h2{font-family:var(--font-serif);font-size:20px;color:var(--ok);margin-bottom:10px}
+
+.hint-box{background:var(--blue-s);border:1px solid rgba(21,101,192,.15);
+  border-radius:var(--radius-md);padding:11px 14px;font-size:13px;
+  color:var(--tx2);line-height:1.6;margin-bottom:18px}
+.hint-box strong{color:var(--blue)}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+<div class="submit-wrap">
+  <div class="submit-header">
+    <h1>Gửi ảnh hiện trường</h1>
+    <p>Ảnh sẽ được AI phân tích mức ngập và hiển thị trên bản đồ cộng đồng.<br>
+    Vị trí được xác định tự động — không cần bật GPS.</p>
+  </div>
+
+  <div class="hint-box">
+    <strong>Mẹo chụp ảnh tốt hơn:</strong>
+    Chụp thấy rõ mực nước. Có người, xe máy, cửa nhà trong khung ảnh giúp AI đo chính xác hơn.
+    Nếu ảnh có biển hiệu tên đường càng tốt.
+  </div>
+
+  <div class="form-card" id="submit-form-wrap">
+    <form id="submit-form">
+      <!-- Upload ảnh -->
+      <div class="form-group">
+        <label class="form-label">Ảnh hiện trường *</label>
+        <div class="upload-zone" id="upload-zone"
+             onclick="document.getElementById('file-input').click()">
+          <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <h3>Chọn ảnh hoặc kéo thả vào đây</h3>
+          <p>JPG, PNG, WEBP — tối đa 30MB/ảnh</p>
+        </div>
+        <input type="file" id="file-input" accept="image/*" multiple>
+        <div class="preview-grid" id="preview-grid"></div>
+      </div>
+
+      <!-- Vị trí tự động -->
+      <div class="form-group">
+        <label class="form-label">Vị trí</label>
+        <div style="display:flex;gap:8px">
+          <button type="button" class="btn btn-outline" id="geo-btn"
+                  onclick="requestLocation()" style="flex-shrink:0;padding:9px 14px;font-size:13px">
+            <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round">
+              <circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+            </svg>
+            Lấy vị trí
+          </button>
+          <input type="text" class="form-input" id="field-location"
+                 placeholder="Hoặc gõ tên đường, khu vực...">
+        </div>
+        <div class="geo-bar" id="geo-bar" style="display:none">
+          <div class="geo-dot geo-dot-loading" id="geo-dot"></div>
+          <div class="geo-text" id="geo-text">Đang xác định vị trí...</div>
+          <span class="geo-method" id="geo-method-label"></span>
+        </div>
+        <!-- Hidden fields cho browser coords -->
+        <input type="hidden" id="browser-lat" name="browser_lat">
+        <input type="hidden" id="browser-lon" name="browser_lon">
+        <input type="hidden" id="browser-acc" name="browser_accuracy">
+      </div>
+
+      <!-- Mô tả -->
+      <div class="form-group">
+        <label class="form-label">Mô tả thêm <span style="font-weight:400;text-transform:none;letter-spacing:0">(tuỳ chọn)</span></label>
+        <textarea class="form-textarea" id="field-desc"
+                  placeholder="VD: Nước ngập khoảng ngang đầu gối, xe máy không đi qua được..."></textarea>
+      </div>
+
+      <button type="submit" class="btn btn-primary"
+              style="width:100%;justify-content:center" id="submit-btn">
+        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Gửi thông tin
+      </button>
+    </form>
+  </div>
+
+  <div class="submit-success" id="submit-success">
+    <div style="font-size:36px;margin-bottom:12px">✅</div>
+    <h2>Gửi thành công!</h2>
+    <p id="success-msg">Ảnh đang được phân tích. Kết quả sẽ hiển thị trên bản đồ sau vài phút.</p>
+    <div id="success-map-preview" style="margin-top:16px;display:none">
+      <a id="success-map-link" href="/map" class="btn btn-primary"
+         style="display:inline-flex;justify-content:center">Xem trên bản đồ →</a>
+    </div>
+    <div style="margin-top:14px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+      <a href="/submit" class="btn btn-outline" onclick="resetForm();return false">Gửi thêm ảnh</a>
+      <a href="/news" class="btn btn-outline">Xem tin mới</a>
+    </div>
+  </div>
+</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const zone=document.getElementById('upload-zone');
+const fileInput=document.getElementById('file-input');
+const previewGrid=document.getElementById('preview-grid');
+let selectedFiles=[];
+
+zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('drag-over')});
+zone.addEventListener('dragleave',()=>zone.classList.remove('drag-over'));
+zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('drag-over');addFiles(e.dataTransfer.files)});
+fileInput.addEventListener('change',()=>addFiles(fileInput.files));
+
+function addFiles(files){
+  for(const f of files){
+    if(!f.type.startsWith('image/'))continue;
+    if(f.size>30*1024*1024)continue;
+    if(selectedFiles.length>=10)break;
+    selectedFiles.push(f);
+  }
+  renderPreviews();
+}
+function renderPreviews(){
+  previewGrid.innerHTML='';
+  selectedFiles.forEach((f,i)=>{
+    const div=document.createElement('div');div.className='preview-item';
+    const img=document.createElement('img');
+    const url=URL.createObjectURL(f);img.src=url;img.onload=()=>URL.revokeObjectURL(url);
+    const btn=document.createElement('button');btn.className='preview-remove';btn.innerHTML='×';
+    btn.onclick=e=>{e.stopPropagation();selectedFiles.splice(i,1);renderPreviews()};
+    div.append(img,btn);previewGrid.append(div);
+  });
+}
+
+// Browser geolocation
+let geoResult=null;
+const METHOD_LABEL={
+  'gps':     'GPS',
+  'wifi':    'WiFi',
+  'network': 'Mạng di động',
+};
+
+function requestLocation(){
+  const bar=document.getElementById('geo-bar');
+  const dot=document.getElementById('geo-dot');
+  const txt=document.getElementById('geo-text');
+  const lbl=document.getElementById('geo-method-label');
+  bar.style.display='flex';
+  dot.className='geo-dot geo-dot-loading';
+  txt.textContent='Đang xác định vị trí...';
+  lbl.textContent='';
+
+  if(!navigator.geolocation){
+    dot.className='geo-dot geo-dot-none';
+    txt.textContent='Trình duyệt không hỗ trợ geolocation';
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    pos=>{
+      const lat=pos.coords.latitude;
+      const lon=pos.coords.longitude;
+      const acc=pos.coords.accuracy;
+      document.getElementById('browser-lat').value=lat;
+      document.getElementById('browser-lon').value=lon;
+      document.getElementById('browser-acc').value=acc;
+      geoResult={lat,lon,acc};
+
+      dot.className='geo-dot geo-dot-ok';
+      // Accuracy thấp = WiFi, cao hơn = cell tower
+      const src=acc<50?'GPS':(acc<300?'WiFi':'Mạng di động');
+      txt.textContent=`Vị trí xác định — độ chính xác ±${Math.round(acc)}m`;
+      lbl.textContent=src;
+
+      // Reverse geocode để hiện tên đường
+      reverseGeocode(lat, lon);
+    },
+    err=>{
+      dot.className='geo-dot geo-dot-warn';
+      txt.textContent='Không lấy được vị trí — '+(err.code===1?
+        'Bạn đã từ chối quyền truy cập vị trí.':
+        'Thử lại hoặc gõ tên khu vực bên dưới.');
+    },
+    {enableHighAccuracy:false, timeout:10000, maximumAge:60000}
+  );
+}
+
+async function reverseGeocode(lat, lon){
+  try{
+    const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=vi`,
+      {headers:{'User-Agent':'FloodPipeline/1.0'}});
+    const d=await r.json();
+    if(d.display_name){
+      const addr=d.address||{};
+      const short=[addr.road||addr.pedestrian,addr.suburb||addr.city_district,addr.city||addr.state]
+        .filter(Boolean).join(', ');
+      document.getElementById('geo-text').textContent=short||d.display_name.slice(0,80);
+      if(!document.getElementById('field-location').value)
+        document.getElementById('field-location').value=short;
+    }
+  }catch{}
+}
+
+// Submit
+document.getElementById('submit-form').addEventListener('submit',async e=>{
+  e.preventDefault();
+  if(!selectedFiles.length){alert('Vui lòng chọn ít nhất 1 ảnh.');return;}
+  const btn=document.getElementById('submit-btn');
+  btn.disabled=true;btn.textContent='Đang gửi...';
+
+  const fd=new FormData();
+  selectedFiles.forEach(f=>fd.append('images',f));
+  const bLat=document.getElementById('browser-lat').value;
+  const bLon=document.getElementById('browser-lon').value;
+  const bAcc=document.getElementById('browser-acc').value;
+  if(bLat)fd.append('browser_lat',bLat);
+  if(bLon)fd.append('browser_lon',bLon);
+  if(bAcc)fd.append('browser_accuracy',bAcc);
+  fd.append('safe','true');
+
+  try{
+    const r=await fetch('/api/analyze',{method:'POST',body:fd});
+    const data=await r.json();
+    if(r.ok){
+      document.getElementById('submit-form-wrap').style.display='none';
+      const succ=document.getElementById('submit-success');
+      succ.style.display='block';
+      if(data.geo&&data.geo.lat){
+        document.getElementById('success-map-preview').style.display='block';
+        document.getElementById('success-map-link').href=
+          `/map?lat=${data.geo.lat}&lon=${data.geo.lon}`;
+        const method=data.geo.method;
+        const radius=data.geo.radius_m;
+        document.getElementById('success-msg').textContent=
+          `Ảnh đang được phân tích. Kết quả sẽ hiển thị trên bản đồ sau vài phút `+
+          `(vị trí ước tính trong bán kính ${radius}m bằng ${method==='browser'?'WiFi/GPS':
+          method==='gps_exif'?'GPS ảnh':method==='ocr_street'?'OCR tên đường':
+          method==='geoclip'?'AI nhận diện':'IP mạng'}).`;
+      }
+    }else{
+      alert(data.error||'Có lỗi xảy ra. Vui lòng thử lại.');
+      btn.disabled=false;btn.textContent='Gửi thông tin';
+    }
+  }catch{
+    alert('Không thể kết nối. Vui lòng thử lại.');
+    btn.disabled=false;btn.textContent='Gửi thông tin';
+  }
+});
+
+function resetForm(){
+  selectedFiles=[];renderPreviews();
+  document.getElementById('submit-form-wrap').style.display='block';
+  document.getElementById('submit-success').style.display='none';
+  document.getElementById('submit-form').reset();
+  document.getElementById('geo-bar').style.display='none';
+  geoResult=null;
+}
+</script>
+{% endblock %}

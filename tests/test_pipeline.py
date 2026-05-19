@@ -109,54 +109,6 @@ class TestConfidenceScorer:
 
 
 # ══════════════════════════════════════════════════════════════════════
-# test_filter_stage.py
-# ══════════════════════════════════════════════════════════════════════
-
-class TestFilterStage:
-    """Test FilterStage toggles."""
-
-    def setup_method(self):
-        from pipeline.stages.filter_stage import FilterStage
-        self.cfg_all_off = {
-            "enable_filters": {
-                "blur": False,
-                "duplicate": False,
-                "banner": False,
-                "deblur": False,
-                "content": False,
-            },
-            "enhance_images": False,
-            "check_watermark": False,
-            "skip_filter": False,
-            "skip_content_filter": True,
-        }
-        self.stage = FilterStage(self.cfg_all_off)
-
-    def test_toggle_off_returns_same_images(self):
-        """Tắt hết filter → trả về đúng input."""
-        # Dùng mock paths — không cần file thật
-        fake_images = [Path(f"/fake/image_{i}.jpg") for i in range(5)]
-
-        # Với tất cả filter tắt, phải trả về cùng số ảnh
-        # (test logic routing, không test filter thật)
-        assert self.stage._on("blur") is False
-        assert self.stage._on("duplicate") is False
-        assert self.stage._on("content") is False
-
-    def test_toggle_on_by_default(self):
-        from pipeline.stages.filter_stage import FilterStage
-        stage = FilterStage({"enable_filters": {}})
-        assert stage._on("blur") is True
-        assert stage._on("duplicate") is True
-        assert stage._on("content") is True
-
-    def test_skip_filter_flag(self):
-        from pipeline.stages.filter_stage import FilterStage
-        stage = FilterStage({"skip_filter": True, "enable_filters": {}})
-        assert stage.cfg.get("skip_filter") is True
-
-
-# ══════════════════════════════════════════════════════════════════════
 # test_depth_stage.py
 # ══════════════════════════════════════════════════════════════════════
 
@@ -254,9 +206,9 @@ class TestPipelineState:
 
     def test_to_dict_has_required_keys(self):
         from pipeline.orchestrator import PipelineState
-        state = PipelineState(run_id="test_123", query="flood")
+        state = PipelineState(run_id="test_123")
         d = state.to_dict()
-        for key in ["run_id", "query", "sources", "raw", "filtered", "depth_data"]:
+        for key in ["run_id", "input_dir", "input_images", "depth_data", "timings", "errors"]:
             assert key in d, f"Missing key: {key}"
 
     def test_log_stage_records_timing(self):

@@ -72,16 +72,14 @@ class StoreStage:
             return counts
 
         summary = {
-            "run_id":         state.run_id,
-            "query":          state.query,
-            "sources":        state.sources,
-            "total_crawled":  len(state.raw_images),
-            "total_filtered": len(state.filtered_images),
-            "total_analyzed": len(state.depth_results),
-            "drive_folder":   state.drive_folder_id or "N/A",
-            "flood_summary":  _count_levels(state.depth_results),
-            "timings":        state.timings,
-            "errors":         state.errors,
+            "run_id":          state.run_id,
+            "input_dir":       str(state.input_dir or ""),
+            "total_input":     len(state.input_images),
+            "total_analyzed":  len(state.depth_results),
+            "drive_folder":    state.drive_folder_id or "N/A",
+            "flood_summary":   _count_levels(state.depth_results),
+            "timings":         state.timings,
+            "errors":          state.errors,
         }
         try:
             out = state.output_dir / PIPELINE_SUMMARY_JSON

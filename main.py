@@ -13,16 +13,10 @@ log = logging.getLogger("main")
 
 
 def load_config(config_path: str = "config.yaml") -> dict:
-    try:
-        import yaml
-        with open(config_path, encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
-    except FileNotFoundError:
-        log.warning(f"  Config '{config_path}' không tìm thấy — dùng defaults")
-        return {}
-    except ImportError:
-        log.warning("  PyYAML chưa cài — dùng empty config")
-        return {}
+    from utils.config_loader import load_config as load_yaml_config, apply_config_to_cfg
+    raw = load_yaml_config(config_path)
+    cfg = apply_config_to_cfg(raw, {})
+    return cfg
 
 
 def run_pipeline(args, cfg: dict):
@@ -153,34 +147,110 @@ def _maybe_save_model_version(registry, state, cfg: dict) -> None:
             log.info(f"  [Versioning] Saved {v.version_id} (n_cases={n_cases})")
 
 
+def run_watch(args, cfg: dict):
+    """
+    Watch mode: theo dõi folder, tự tạo job khi có ảnh mới.
+    python main.py watch --input data/incoming --interval 5
+    """
+    import time as _time
+    from pipeline.orchestrator import IMAGE_EXTENSIONS
+
+    watch_dir = Path(args.input)
+    interval  = getattr(args, "interval", 10)
+
+    if not watch_dir.exists():
+        log.error("Folder không tồn tại: %s", watch_dir)
+        return 1
+
+    log.info("  [Watch] Đang theo dõi %s (interval=%ds)", watch_dir, interval)
+    seen: set = set()
+
+    while True:
+        current = {
+            p for p in watch_dir.rglob("*")
+            if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
+        }
+        new_files = sorted(current - seen)
+        if new_files:
+            log.info("  [Watch] %d ảnh mới phát hiện", len(new_files))
+            try:
+                run_pipeline_images(new_files, cfg)
+            except Exception as exc:
+                log.error("  [Watch] Pipeline lỗi: %s", exc)
+            seen.update(new_files)
+        _time.sleep(interval)
+
+
+def run_pipeline_images(images, cfg: dict) -> int:
+    """Chạy pipeline với danh sách ảnh (helper cho watch mode)."""
+    from pipeline.orchestrator import FloodPipeline
+    pipeline = FloodPipeline(cfg)
+    state = pipeline.run(images)
+    log.info("  [Watch] Xử lý xong %d ảnh → %s", len(state.depth_results), state.output_dir)
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description="Flood Pipeline v2")
-    parser.add_argument("--input",  "-i", help="Folder ảnh hoặc file ảnh")
-    parser.add_argument("--config", "-c", default="config.yaml")
-    parser.add_argument("--output", "-o", help="Override output dir")
-    parser.add_argument("--async",  dest="async_mode", action="store_true",
-                        help="Dùng AsyncFloodPipeline")
-    parser.add_argument("--status", action="store_true",
-                        help="Xem trạng thái system")
-    parser.add_argument("--debug",  action="store_true")
+
+    sub = parser.add_subparsers(dest="command")
+
+    # ── run (mặc định) ────────────────────────────────────────────────────────
+    run_p = sub.add_parser("run", help="Phân tích ảnh (mặc định)")
+    run_p.add_argument("--input",  "-i", required=True, help="Folder hoặc file ảnh")
+    run_p.add_argument("--config", "-c", default="config.yaml")
+    run_p.add_argument("--output", "-o", help="Override output dir")
+    run_p.add_argument("--safe",   action="store_true", help="Safe mode")
+    run_p.add_argument("--async",  dest="async_mode", action="store_true")
+    run_p.add_argument("--debug",  action="store_true")
+
+    # ── watch ─────────────────────────────────────────────────────────────────
+    watch_p = sub.add_parser("watch", help="Theo dõi folder, tự xử lý ảnh mới")
+    watch_p.add_argument("--input",    "-i", required=True, help="Folder cần theo dõi")
+    watch_p.add_argument("--config",   "-c", default="config.yaml")
+    watch_p.add_argument("--interval", "-n", type=int, default=10, help="Giây giữa các lần kiểm tra")
+    watch_p.add_argument("--safe",     action="store_true")
+    watch_p.add_argument("--debug",    action="store_true")
+
+    # ── status ────────────────────────────────────────────────────────────────
+    stat_p = sub.add_parser("status", help="Xem trạng thái system")
+    stat_p.add_argument("--config", "-c", default="config.yaml")
+
+    # Tương thích ngược: không có subcommand → chạy như run
+    parser.add_argument("--input",  "-i", help=argparse.SUPPRESS)
+    parser.add_argument("--config", "-c", default="config.yaml", help=argparse.SUPPRESS)
+    parser.add_argument("--output", "-o", help=argparse.SUPPRESS)
+    parser.add_argument("--async",  dest="async_mode", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--status", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--safe",   action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--debug",  action="store_true", help=argparse.SUPPRESS)
+
     args = parser.parse_args()
 
     if args.debug:
         setup_logging(level=logging.DEBUG)
 
-    cfg = load_config(args.config)
-    if args.output:
+    cfg_file = getattr(args, "config", "config.yaml")
+    cfg = load_config(cfg_file)
+    if hasattr(args, "output") and args.output:
         cfg["output_dir"] = args.output
 
-    if args.status:
+    if args.safe or cfg.get("safe_mode"):
+        cfg.update({"skip_drive": True, "skip_learning": True,
+                    "skip_hard_mining": True, "skip_versioning": True})
+        log.info("  [Safe Mode] Drive/Learning/Mining bị tắt.")
+
+    # Dispatch subcommands
+    if args.command == "watch":
+        return run_watch(args, cfg)
+    if args.command == "status" or getattr(args, "status", False):
         show_status(cfg)
         return 0
+    if args.command == "run" or (args.command is None and args.input):
+        return run_pipeline(args, cfg)
 
-    if not args.input:
-        parser.print_help()
-        return 1
-
-    return run_pipeline(args, cfg)
+    parser.print_help()
+    return 1
 
 
 if __name__ == "__main__":

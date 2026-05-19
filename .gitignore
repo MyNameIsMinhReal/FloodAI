@@ -1,66 +1,50 @@
-# Python
+# ── Bí mật / Credentials ─────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+token.json
+token_new.json
+credentials.json
+*.pem
+*.key
+
+# ── Database & log ────────────────────────────────────────────────────────────
+*.db
+*.sqlite3
+*.log
+
+# ── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-.Python
 *.egg-info/
 dist/
 build/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-# Logs
-*.log
-pipeline.log
-
-# Runtime databases
-learning/errors.db
-learning/review_queue.db
-learning/training_images.db
-
-# Temp / output images (tạo lúc chạy)
+# ── Runtime output ────────────────────────────────────────────────────────────
+output/
+_chat_tmp/
+_upload_tmp/
 learning/_live_results/
 learning/_live_tmp/
-learning/training_images/
-output/
-
-# Credentials (KHÔNG commit key lên git!)
-credentials.json
-token.json
-token_new.json
-get_google_refresh_token.py
-client_secret_*.json
-.env
-.env.example
-.setup_done.json
-ai_model_cache.json
-
-# Model files (tải tự động, quá lớn)
-*.pt
+learning/models/
 models/
 
-# Large binaries
-cloudflared.exe
-*.exe
+# ── Dataset (không vào repo) ──────────────────────────────────────────────────
+datasets/
 
-# Media files (quá lớn cho git)
-*.mp3
-*.mp4
-*.wav
-
-# Temp / chat files
-_chat_tmp/
-
-# Static temp images (generated at runtime)
-static/tmp*
-
-# Claude Code settings (personal)
-.claude/
-
-# OS
+# ── OS / IDE ──────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
-
-# IDE
 .vscode/
 .idea/
 *.swp
+
+# ── Binaries ──────────────────────────────────────────────────────────────────
+cloudflared.exe
+*.exe

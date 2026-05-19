@@ -1,0 +1,28 @@
+# configs/gpu.yaml
+# GPU: model lớn nhất, batch lớn, DINO bật, torch.inference_mode
+# Dùng: python main.py --config configs/gpu.yaml --input ./images
+
+depth:
+  model: "depth-anything/Depth-Anything-V2-Large-hf"
+  yolo_model: "yolov8x.pt"
+  yolo_conf: 0.40
+  use_dino: true
+  dino_model: "facebook/dinov2-large"
+
+pipeline:
+  parallel:
+    workers: 8
+  batch_size: 16
+  device: "cuda"
+  torch_inference_mode: true
+  skip_drive: false
+  use_output_cache: true
+  predict_routes: true
+
+output:
+  base_dir: "output/gpu"
+
+logging:
+  level: "INFO"
+
+safe_mode: false

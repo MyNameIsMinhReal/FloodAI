@@ -123,33 +123,96 @@ class WaterSegmentor:
         self,
         img_rgb: np.ndarray,
         color_mask: np.ndarray,   # từ WaterDetector
-        fusion_weight: float = 0.4,   # weight của seg vs color
+        fusion_weight: float = 0.4,   # giữ lại tham số cho backward-compat, không dùng nữa
     ) -> np.ndarray:
         """
-        Fuse segmentation mask với color-based mask.
+        Fuse segmentation mask với color-based mask — v2 (rule-based, không weighted avg).
 
-        seg_mask được ưu tiên hơn (accurate), color_mask là prior.
+        Logic mới:
+          water = seg | (color & depth_edge)   # color chỉ hợp lệ nếu có edge depth xác nhận
+          water = water & ~shadow              # loại bóng đổ
+          water = water & ~person_region       # loại vùng người
+
+        Khác với v1 (fused = s*0.6 + c*0.4): color mask không còn được phép
+        "kéo sai" segmentation về vùng đường ướt/phản chiếu.
         """
         seg_result = self.segment(img_rgb)
         seg_mask   = seg_result.water_mask
 
-        # Chuẩn hóa masks về 0-1
-        s = (seg_mask > 0).astype(np.float32)
-        c = (color_mask > 0).astype(np.float32)
+        return fuse_water_masks(
+            seg_mask=seg_mask,
+            color_mask=color_mask,
+            img_rgb=img_rgb,
+        )
 
-        # Kết hợp: pixel là nước nếu cả 2 đồng ý HOẶC seg rất chắc
-        # weight: seg có độ tin cậy cao hơn color
-        fused = s * (1 - fusion_weight) + c * fusion_weight
-        threshold = 0.35  # cần ít nhất 35% agreement
 
-        result = (fused >= threshold).astype(np.uint8) * 255
+def fuse_water_masks(
+    seg_mask: np.ndarray,
+    color_mask: np.ndarray,
+    img_rgb: np.ndarray,
+    depth_edge_mask: Optional[np.ndarray] = None,
+    shadow_mask: Optional[np.ndarray] = None,
+    person_mask: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """
+    Rule-based water mask fusion — công thức tham chiếu từ docs/architecture.md.
 
-        # Morphological cleanup
-        k = np.ones((7, 7), np.uint8)
-        result = cv2.morphologyEx(result, cv2.MORPH_CLOSE, k)
-        result = cv2.morphologyEx(result, cv2.MORPH_OPEN, k)
+    Nguyên tắc:
+      - Segmentation model là nguồn chính (high precision)
+      - Color mask chỉ mở rộng nước nếu có depth boundary xác nhận
+      - Shadow và person region luôn bị loại bỏ
 
-        return result
+    Args:
+        seg_mask:        mask nước từ segmentation model (0/255)
+        color_mask:      mask nước từ WaterDetector HSV/LAB (0/255)
+        img_rgb:         ảnh gốc RGB (để tạo depth edge nếu chưa có)
+        depth_edge_mask: depth boundary mask (0/255) — optional
+        shadow_mask:     shadow region mask (0/255) — optional
+        person_mask:     person region mask (0/255) — optional
+
+    Returns:
+        fused water mask (0/255)
+    """
+    h, w = img_rgb.shape[:2]
+
+    seg   = seg_mask   > 0
+    color = color_mask > 0
+
+    # Tạo depth edge mask từ gradient ảnh nếu chưa có
+    if depth_edge_mask is None:
+        gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+        sobelx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+        sobely = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+        magnitude = np.sqrt(sobelx**2 + sobely**2)
+        edge_th = np.percentile(magnitude, 75)
+        edge_map = (magnitude > edge_th).astype(np.uint8) * 255
+        k = np.ones((5, 5), np.uint8)
+        depth_edge_mask = cv2.dilate(edge_map, k, iterations=1)
+
+    edge  = depth_edge_mask > 0
+
+    # Rule 1: nước nếu seg xác nhận HOẶC (color + depth boundary cùng xác nhận)
+    water = seg | (color & edge)
+
+    # Rule 2: loại bỏ false positive — bóng đổ
+    if shadow_mask is not None:
+        shadow = shadow_mask > 0
+        # Chỉ loại vùng bóng đổ NẶNG (>60% overlap trong kernel)
+        shadow_dilated = cv2.dilate(shadow.astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
+        water = water & ~shadow_dilated
+
+    # Rule 3: loại bỏ vùng người (YOLO bbox phản chiếu dưới nước)
+    if person_mask is not None:
+        person = person_mask > 0
+        water = water & ~person
+
+    # Morphological cleanup
+    result = water.astype(np.uint8) * 255
+    k = np.ones((7, 7), np.uint8)
+    result = cv2.morphologyEx(result, cv2.MORPH_CLOSE, k)
+    result = cv2.morphologyEx(result, cv2.MORPH_OPEN,  k)
+
+    return result
 
     # ══════════════════════════════════════════════════════════════════
     # MODEL RUNNERS

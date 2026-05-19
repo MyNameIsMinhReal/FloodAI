@@ -59,3 +59,9 @@ flask>=3.0
 python-dotenv>=1.0
 feedparser>=6.0          # RSS feed parsing cho trang tin tức
 peft>=0.10               # LoRA adapter loading (flood-agent-merged)
+
+# Geo-localization
+geoclip          # AI visual geo-localization (GPU), ~2GB model download lần đầu
+exifread         # đọc GPS EXIF từ ảnh
+# easyocr        # đã có từ trước
+# paddleocr      # đã có từ trước (tốt hơn cho tiếng Việt)

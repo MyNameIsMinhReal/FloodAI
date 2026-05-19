@@ -1,1606 +1,373 @@
 {% extends "base.html" %}
-{% block title %}Admin Dashboard{% endblock %}
-{% block topbar_title %}Admin Dashboard{% endblock %}
-{% block topbar_badge %}<span class="topbar-badge">Admin</span>{% endblock %}
-
-{% block topbar_right %}
-<button class="icon-btn" onclick="refreshAll()" title="Làm mới">
-  <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-</button>
-{% endblock %}
+{% block title %}Quản trị{% endblock %}
 
 {% block head %}
 <style>
-/* ── Admin Tab Layout ─────────────────────────────────────────────── */
-.adm{max-width:1200px;margin:0 auto;padding:0}
-.tab-bar{
-  display:flex;gap:2px;padding:14px 24px 0;
-  border-bottom:1px solid var(--border);
-  background:var(--sidebar-bg);
-  backdrop-filter:blur(20px);
-  position:sticky;top:0;z-index:10;
-}
-.tab-btn{
-  padding:9px 16px;border-radius:10px 10px 0 0;border:none;
-  background:transparent;cursor:pointer;
-  font-family:var(--font);font-size:13px;font-weight:500;
-  color:var(--tx2);display:flex;align-items:center;gap:7px;
-  transition:color var(--ease),background var(--ease);
-  white-space:nowrap;
-}
-.tab-btn:hover{color:var(--tx);background:var(--card)}
-.tab-btn.active{
-  color:var(--primary);background:var(--card);
-  border-bottom:2px solid var(--primary);
-  margin-bottom:-1px;
-}
-.tab-btn .tb-icon{font-size:15px}
-.tab-pane{display:none;padding:24px}
-.tab-pane.active{display:block;animation:fadeSlide .2s ease}
-@keyframes fadeSlide{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.admin-layout{display:grid;grid-template-columns:200px 1fr;gap:0;min-height:calc(100vh - 140px);
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden}
+@media(max-width:720px){.admin-layout{grid-template-columns:1fr}}
 
-/* ── Stats grid ──────────────────────────────────────────────────── */
-.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:22px}
-.stat-card{
-  background:var(--card);border:1px solid var(--border);
-  border-radius:var(--radius);padding:16px 18px;
-  backdrop-filter:blur(12px);box-shadow:var(--shadow-sm);
-}
-.stat-num{font-family:var(--font-serif);font-size:28px;font-weight:600;color:var(--tx);line-height:1}
-.stat-lbl{font-size:11px;font-weight:600;text-transform:uppercase;
-  letter-spacing:.06em;color:var(--tx3);margin-top:5px}
+.admin-sidebar{background:var(--navy);padding:18px 0;border-right:1px solid rgba(255,255,255,.08)}
+.admin-sidebar-title{font-size:10px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.1em;color:rgba(255,255,255,.35);padding:0 16px;margin-bottom:8px}
+.admin-nav-link{display:flex;align-items:center;gap:9px;padding:9px 16px;
+  color:rgba(255,255,255,.65);text-decoration:none;font-size:13px;font-weight:500;
+  transition:background .15s,color .15s;border-left:3px solid transparent}
+.admin-nav-link:hover{background:rgba(255,255,255,.08);color:#fff}
+.admin-nav-link.active{background:rgba(255,255,255,.1);color:#fff;border-left-color:#4da3ff}
+.admin-nav-link svg{width:15px;height:15px;stroke:currentColor;fill:none;
+  stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.admin-sep{height:1px;background:rgba(255,255,255,.07);margin:10px 0}
 
-/* ── Section title ───────────────────────────────────────────────── */
-.sec-title{
-  font-family:var(--font-serif);font-size:15px;font-weight:400;
-  color:var(--tx);margin-bottom:14px;
-  display:flex;align-items:center;gap:10px;
-}
-.sec-title::after{content:'';flex:1;height:1px;background:var(--border)}
+.admin-main{padding:24px 28px;overflow-y:auto;background:var(--paper)}
+.admin-page-title{font-family:var(--font-serif);font-size:22px;font-weight:700;
+  margin-bottom:20px;color:var(--tx)}
 
-/* ── Dashboard 2-col ─────────────────────────────────────────────── */
-.dash-2col{display:grid;grid-template-columns:1fr 280px;gap:20px}
-@media(max-width:800px){.dash-2col{grid-template-columns:1fr}}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:28px}
+.stat-box{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);
+  padding:16px 18px}
+.stat-num{font-family:var(--font-serif);font-size:28px;font-weight:700;color:var(--tx)}
+.stat-num.ok{color:var(--ok)}
+.stat-num.warn{color:var(--warn-med)}
+.stat-num.danger{color:var(--warn-high)}
+.stat-lbl{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--tx3);margin-top:3px}
 
-/* ── Activity list ──────────────────────────────────────────────── */
-.act-list{display:flex;flex-direction:column;gap:8px}
-.act-item{
-  display:flex;align-items:center;gap:12px;
-  padding:10px 14px;background:var(--card);
-  border:1px solid var(--border);border-radius:12px;font-size:13px;
-  box-shadow:var(--shadow-sm);
-}
-.act-icon{font-size:16px;flex-shrink:0;width:26px;text-align:center}
-.act-info{flex:1;min-width:0}
-.act-name{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.act-sub{font-size:11px;color:var(--tx3)}
+.admin-section{margin-bottom:28px}
+.admin-section-title{font-size:11px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.08em;color:var(--tx3);margin-bottom:12px;padding-bottom:8px;
+  border-bottom:1px solid var(--border)}
 
-/* ── Review queue ────────────────────────────────────────────────── */
-.rv-queue{display:flex;flex-direction:column;gap:14px}
-.rv-card{
-  background:var(--card);border:1px solid var(--border);
-  border-radius:var(--radius);overflow:hidden;
-  display:grid;grid-template-columns:160px 1fr;
-  box-shadow:var(--shadow-sm);
-}
-.rv-img{object-fit:cover;width:100%;height:100%;display:block;cursor:pointer;
-  aspect-ratio:4/3;transition:opacity .2s}
-.rv-img:hover{opacity:.85}
-.rv-body{padding:14px 16px;display:flex;flex-direction:column;gap:10px}
-.rv-head{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px}
-.rv-pred{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-.chip{padding:2px 8px;border-radius:7px;font-size:10.5px;font-weight:600;background:var(--accent-s);color:var(--accent)}
-.chip-ok{background:rgba(52,199,89,.12);color:var(--ok)}
-.chip-warn{background:rgba(255,149,0,.12);color:var(--warn)}
-.chip-err{background:rgba(255,59,48,.12);color:var(--danger)}
-.rv-form{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.rv-form-full{grid-column:1/-1}
-.rv-actions{display:flex;gap:8px}
-.form-group{display:flex;flex-direction:column;gap:4px}
-.form-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--tx2)}
-.form-input,.form-select{
-  padding:8px 11px;border:1px solid var(--border);border-radius:9px;
-  background:var(--bg);color:var(--tx);font-family:var(--font);font-size:13px;
-  outline:none;transition:border-color var(--ease);width:100%;box-sizing:border-box;
-}
-.form-input:focus,.form-select:focus{border-color:var(--primary)}
-.form-select option{background:var(--bg2)}
+.job-table{width:100%;border-collapse:collapse;font-size:13px}
+.job-table th{text-align:left;padding:9px 12px;font-size:11px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);
+  border-bottom:1px solid var(--border);white-space:nowrap}
+.job-table td{padding:10px 12px;border-bottom:1px solid var(--border2);color:var(--tx2);
+  vertical-align:middle}
+.job-table tr:last-child td{border-bottom:none}
+.job-table tr:hover td{background:var(--paper2)}
+.job-id{font-family:monospace;font-size:11px;color:var(--tx3)}
 
-/* ── Level distribution ──────────────────────────────────────────── */
-.lvl-bar-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px}
-.lvl-bar-lbl{width:110px;flex-shrink:0;color:var(--tx2)}
-.lvl-bar-track{flex:1;height:8px;background:var(--bg2);border-radius:5px;overflow:hidden}
-.lvl-bar-fill{height:100%;border-radius:5px;transition:width .6s ease}
-.lvl-bar-n{width:30px;text-align:right;color:var(--tx3);font-size:11px}
+.review-card{background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius-md);padding:16px 18px;margin-bottom:12px}
+.rc-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.rc-title{font-size:14px;font-weight:600;color:var(--tx)}
+.rc-meta{font-size:12px;color:var(--tx3);margin-top:3px}
+.rc-actions{display:flex;gap:7px;flex-wrap:wrap}
+.rc-actions button{padding:6px 13px;border-radius:var(--radius);border:1px solid var(--border);
+  font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s}
+.btn-approve{background:var(--ok);color:#fff;border-color:var(--ok)}
+.btn-approve:hover{background:#15803d}
+.btn-review{background:var(--warn-low-s);color:var(--warn-low);border-color:var(--warn-low)}
+.btn-reject{background:var(--gray-s);color:var(--gray);border-color:var(--border)}
+.btn-alert-create{background:var(--warn-high);color:#fff;border-color:var(--warn-high)}
 
-/* ── Pipeline ────────────────────────────────────────────────────── */
-.steps-bar{display:flex;border-radius:8px;overflow:hidden;border:1px solid var(--border);margin:16px 0 8px}
-.step-seg{flex:1;height:7px;background:var(--bg2);transition:background .4s}
-.step-seg.done{background:var(--primary)}.step-seg.active{background:var(--accent)}
-.step-seg+.step-seg{border-left:1px solid var(--card)}
-.step-labels{display:flex;font-size:10px;color:var(--tx3);margin-bottom:14px}
-.step-lbl{flex:1;text-align:center;padding:2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.step-lbl.active{color:var(--accent);font-weight:600}.step-lbl.done{color:var(--primary)}
+.progress-bar{height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:5px}
+.progress-fill{height:100%;background:var(--blue);border-radius:3px;transition:width .5s}
 
-/* Source toggle */
-.src-toggle{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;width:fit-content;margin-bottom:10px}
-.src-btn{padding:6px 16px;font-size:12px;border:none;cursor:pointer;font-weight:600;
-  background:var(--bg2);color:var(--tx2);transition:background .15s,color .15s;font-family:var(--font)}
-.src-btn.active{background:var(--primary);color:#fff}
-
-/* Log box */
-.log-box{
-  background:var(--bg2);border:1px solid var(--border);border-radius:10px;
-  height:220px;overflow-y:auto;font-family:'Courier New',monospace;
-  font-size:12px;padding:10px 14px;color:var(--tx2);line-height:1.6;
-}
-.log-line{display:flex;gap:10px}
-.log-ts{color:var(--tx3);flex-shrink:0}
-.log-ERROR{color:var(--danger)}.log-WARNING{color:var(--warn)}
-
-/* ── History ─────────────────────────────────────────────────────── */
-.hist-toolbar{
-  display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;
-}
-.hist-search{
-  flex:1;min-width:180px;padding:8px 12px;
-  border:1px solid var(--border);border-radius:9px;
-  background:var(--bg);color:var(--tx);font-family:var(--font);font-size:13px;outline:none;
-}
-.hist-search:focus{border-color:var(--primary)}
-.filter-chip{
-  padding:5px 12px;border-radius:20px;border:1px solid var(--border);
-  background:var(--card);color:var(--tx2);cursor:pointer;font-size:12px;font-weight:500;
-  transition:all var(--ease);user-select:none;
-}
-.filter-chip.active,.filter-chip:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
-.hist-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
-.hist-card{
-  background:var(--card);border:1px solid var(--border);
-  border-radius:var(--radius);overflow:hidden;cursor:pointer;
-  transition:transform var(--ease),box-shadow var(--ease);box-shadow:var(--shadow-sm);
-}
-.hist-card:hover{transform:translateY(-3px);box-shadow:var(--shadow-md)}
-.hist-thumb{aspect-ratio:4/3;background:var(--bg2);overflow:hidden;position:relative}
-.hist-thumb img{width:100%;height:100%;object-fit:cover;transition:transform .35s ease}
-.hist-card:hover .hist-thumb img{transform:scale(1.04)}
-.hist-type-badge{
-  position:absolute;top:7px;left:7px;padding:2px 7px;border-radius:6px;
-  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
-}
-.badge-live{background:#1e3a2f;color:#6aba7e}
-.badge-run{background:#1c2840;color:#6a9aba}
-.badge-overlay{position:absolute;top:7px;left:auto;right:7px;background:#0008;color:#fff;font-size:9px;text-transform:lowercase;font-weight:400;letter-spacing:0}
-.hist-meta{padding:10px 12px}
-.hist-name{font-family:'Courier New',monospace;font-size:11px;color:var(--tx3);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:6px}
-.hist-footer{display:flex;justify-content:space-between;align-items:center}
-.hist-size,.hist-time{font-size:11px;color:var(--tx3)}
-.ann-btn{
-  padding:3px 9px;border-radius:7px;border:1px solid rgba(77,163,255,.3);
-  background:transparent;color:var(--primary);font-size:11px;font-weight:600;
-  cursor:pointer;transition:background var(--ease),color var(--ease);font-family:var(--font);
-}
-.ann-btn:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
-
-/* Run cards */
-.run-card{
-  background:var(--card);border:1px solid var(--border);
-  border-radius:var(--radius);padding:16px;box-shadow:var(--shadow-sm);
-  transition:transform var(--ease);
-}
-.run-card:hover{transform:translateY(-2px)}
-.run-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
-.run-id{font-family:var(--font-serif);font-size:14px;font-weight:600}
-.run-meta{font-size:12px;color:var(--tx3);margin-top:3px}
-.run-meta span{margin-right:8px}
-.run-badges{display:flex;flex-wrap:wrap;gap:5px}
-.run-badge{padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;background:var(--accent-s);color:var(--accent)}
-.img-strip{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-top:6px}
-.img-strip img{height:68px;width:auto;border-radius:7px;object-fit:cover;
-  cursor:pointer;transition:transform var(--ease);flex-shrink:0}
-.img-strip img:hover{transform:scale(1.06)}
-.rd-btn{
-  margin-top:10px;padding:5px 14px;font-size:12px;font-weight:500;
-  border-radius:7px;border:1px solid var(--border);background:var(--bg2);
-  color:var(--tx2);cursor:pointer;transition:background .15s,color .15s;font-family:var(--font);
-}
-.rd-btn:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
-.rd-panel{max-height:0;overflow:hidden;transition:max-height .4s cubic-bezier(.4,0,.2,1),opacity .3s;opacity:0}
-.rd-panel.open{max-height:2400px;opacity:1}
-.rd-inner{padding-top:16px;border-top:1px solid var(--border);margin-top:12px}
-
-/* ── Gallery ─────────────────────────────────────────────────────── */
-.gallery-toolbar{
-  display:flex;align-items:center;gap:8px;margin-bottom:18px;flex-wrap:wrap;
-}
-.cat-chip{
-  padding:6px 14px;border-radius:20px;border:1px solid var(--border);
-  background:var(--card);color:var(--tx2);cursor:pointer;font-size:12.5px;font-weight:500;
-  transition:all var(--ease);user-select:none;
-}
-.cat-chip.active{background:var(--primary-s);color:var(--primary);border-color:var(--primary)}
-.cat-chip:hover:not(.active){background:var(--card-hover);border-color:var(--border)}
-.gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
-.gal-card{
-  background:var(--card);border:1px solid var(--border);
-  border-radius:var(--radius);overflow:hidden;
-  box-shadow:var(--shadow-sm);position:relative;
-  transition:transform var(--ease),box-shadow var(--ease);
-}
-.gal-card:hover{transform:translateY(-3px);box-shadow:var(--shadow-md)}
-.gal-card.selected{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary)}
-.gal-thumb{aspect-ratio:4/3;background:var(--bg2);overflow:hidden;position:relative}
-.gal-thumb img{width:100%;height:100%;object-fit:cover;transition:transform .3s ease}
-.gal-card:hover .gal-thumb img{transform:scale(1.05)}
-.gal-check{
-  position:absolute;top:7px;right:7px;width:22px;height:22px;
-  border-radius:6px;border:2px solid rgba(255,255,255,.7);
-  background:rgba(0,0,0,.3);backdrop-filter:blur(4px);
-  display:flex;align-items:center;justify-content:center;
-  cursor:pointer;transition:all .15s;
-}
-.gal-check.checked{background:var(--primary);border-color:var(--primary)}
-.gal-check svg{width:12px;height:12px;stroke:white;fill:none;stroke-width:2.5;
-  stroke-linecap:round;display:none}
-.gal-check.checked svg{display:block}
-.gal-meta{padding:9px 11px}
-.gal-name{font-family:'Courier New',monospace;font-size:11px;color:var(--tx3);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:6px}
-.gal-tags{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px}
-.cat-badge{
-  padding:2px 7px;border-radius:6px;font-size:10px;font-weight:700;
-  text-transform:uppercase;letter-spacing:.04em;
-}
-.cat-ai{background:rgba(77,163,255,.15);color:var(--primary);border:1px solid rgba(77,163,255,.3)}
-.cat-hand{background:rgba(52,199,89,.15);color:var(--ok);border:1px solid rgba(52,199,89,.3)}
-.cat-oil{background:rgba(240,154,62,.15);color:var(--accent);border:1px solid rgba(240,154,62,.3)}
-.cat-photo{background:rgba(255,255,255,.1);color:var(--tx2);border:1px solid var(--border)}
-.cat-select{
-  padding:3px 7px;border-radius:7px;border:1px solid var(--border);
-  background:var(--bg);color:var(--tx);font-size:11px;
-  font-family:var(--font);cursor:pointer;outline:none;
-}
-.cat-select:focus{border-color:var(--primary)}
-.gal-level{font-size:11px;font-weight:600;padding:2px 7px;border-radius:6px}
-
-/* Upload panel */
-.upload-bar{
-  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
-  padding:14px 16px;background:var(--card);border:1px solid var(--border);
-  border-radius:var(--radius);margin-bottom:16px;box-shadow:var(--shadow-sm);
-}
-.upload-bar .sel-count{font-size:13px;font-weight:500;color:var(--tx)}
-.drive-link-box{
-  margin-top:14px;padding:14px 16px;background:var(--primary-s);
-  border:1px solid rgba(77,163,255,.3);border-radius:12px;
-  display:flex;align-items:center;gap:12px;
-}
-.drive-link-box a{color:var(--primary);font-weight:600;word-break:break-all;font-size:13px}
-
-/* ── Modal ───────────────────────────────────────────────────────── */
-.modal-bg{
-  position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;
-  display:none;align-items:center;justify-content:center;
-  backdrop-filter:blur(4px);animation:fadeIn .15s ease;
-}
-.modal-bg.open{display:flex}
-@keyframes fadeIn{from{opacity:0}to{opacity:1}}
-.modal-box{
-  background:var(--card);border:1px solid var(--border);
-  border-radius:18px;max-width:90vw;max-height:90vh;
-  overflow:hidden;box-shadow:var(--shadow-lg);display:flex;flex-direction:column;
-}
-.modal-hdr{
-  padding:12px 16px;border-bottom:1px solid var(--border);
-  display:flex;justify-content:space-between;align-items:center;gap:12px;
-}
-.modal-title{font-size:13px;font-weight:500;color:var(--tx2);font-family:monospace}
-.modal-img{max-width:85vw;max-height:80vh;object-fit:contain;display:block}
-
-/* Annotate modal */
-.ann-modal-bg{
-  position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:1100;
-  display:none;align-items:center;justify-content:center;backdrop-filter:blur(5px);
-}
-.ann-modal-bg.open{display:flex;animation:fadeIn .15s ease}
-.ann-modal-box{
-  background:var(--card);border:1px solid var(--border);
-  border-radius:18px;width:min(560px,95vw);max-height:90vh;
-  overflow-y:auto;box-shadow:var(--shadow-lg);display:flex;flex-direction:column;
-}
-.ann-hdr{padding:14px 18px 10px;border-bottom:1px solid var(--border);
-  display:flex;justify-content:space-between;align-items:center}
-.ann-title{font-family:var(--font-serif);font-size:16px;font-weight:400}
-.ann-body{padding:18px;display:flex;flex-direction:column;gap:14px}
-.ann-preview{width:100%;max-height:220px;object-fit:contain;border-radius:10px;
-  background:var(--bg2);display:block}
-.ann-pred{display:flex;gap:8px;align-items:center;flex-wrap:wrap;
-  padding:10px 14px;background:var(--bg2);border-radius:9px;font-size:12.5px;color:var(--tx2)}
-.ann-form{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.ann-full{grid-column:1/-1}
-.ann-foot{display:flex;gap:8px;justify-content:flex-end;
-  padding:12px 18px;border-top:1px solid var(--border)}
-
-/* Misc */
-.spin{display:inline-block;animation:spin 1s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-.empty-state{text-align:center;padding:50px 20px;color:var(--tx3)}
-.empty-icon{font-size:32px;margin-bottom:10px}
-.empty-title{font-size:14px;font-weight:500;color:var(--tx2);margin-bottom:4px}
-.empty-msg{font-size:12.5px}
-.divider{height:1px;background:var(--border);margin:14px 0}
-.flex-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.learn-pulse{display:inline-block;width:7px;height:7px;border-radius:50%;
-  background:var(--ok);animation:pulse 1.5s ease-in-out infinite;margin-right:5px}
-@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
-
-/* Responsive */
-@media(max-width:760px){
-  .tab-bar{padding:10px 12px 0;gap:0}
-  .tab-btn{padding:8px 10px;font-size:12px}
-  .tab-pane{padding:14px 10px}
-  .rv-card{grid-template-columns:1fr}
-  .rv-form{grid-template-columns:1fr}
-  .dash-2col{grid-template-columns:1fr}
-  .stats-row{grid-template-columns:repeat(3,1fr)}
-  .hist-grid{grid-template-columns:repeat(2,1fr)}
-  .gallery-grid{grid-template-columns:repeat(2,1fr)}
-}
+.tab-bar{display:flex;border-bottom:1px solid var(--border);margin-bottom:20px;gap:0}
+.tab-btn{padding:10px 18px;border:none;background:none;font-family:var(--font);font-size:13px;
+  font-weight:500;color:var(--tx3);cursor:pointer;border-bottom:2px solid transparent;
+  margin-bottom:-1px;transition:color .15s,border-color .15s}
+.tab-btn:hover{color:var(--tx)}
+.tab-btn.active{color:var(--blue);border-bottom-color:var(--blue)}
+.tab-panel{display:none}.tab-panel.active{display:block}
 </style>
 {% endblock %}
 
 {% block content %}
-<!-- ── Tab bar ─────────────────────────────────────────────────────────── -->
-<div class="tab-bar">
-  <button class="tab-btn active" onclick="switchTab('dashboard',this)" data-tab="dashboard">Dashboard</button>
-  <button class="tab-btn" onclick="switchTab('pipeline',this)" data-tab="pipeline">Pipeline</button>
-  <button class="tab-btn" onclick="switchTab('history',this)" data-tab="history">Lịch sử</button>
-  <button class="tab-btn" onclick="switchTab('gallery',this)" data-tab="gallery">Bộ lọc ảnh</button>
-  <button class="tab-btn" onclick="switchTab('logs',this)" data-tab="logs">Logs</button>
-</div>
+<div class="container">
+<div class="admin-layout">
+  <!-- Sidebar -->
+  <nav class="admin-sidebar">
+    <div class="admin-sidebar-title">Quản trị</div>
+    <a class="admin-nav-link active" href="#" onclick="showTab('dashboard',this)">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </a>
+    <a class="admin-nav-link" href="#" onclick="showTab('submissions',this)">
+      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Nguồn ảnh
+    </a>
+    <a class="admin-nav-link" href="#" onclick="showTab('review',this)">
+      <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      Duyệt tin
+    </a>
+    <a class="admin-nav-link" href="#" onclick="showTab('jobs',this)">
+      <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Kết quả AI
+    </a>
+    <div class="admin-sep"></div>
+    <a class="admin-nav-link" href="#" onclick="showTab('articles',this)">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Bài viết
+    </a>
+    <a class="admin-nav-link" href="#" onclick="showTab('mappoints',this)">
+      <svg viewBox="0 0 24 24"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/></svg>
+      Điểm bản đồ
+    </a>
+    <div class="admin-sep"></div>
+    <a class="admin-nav-link" href="/logout">
+      <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      Đăng xuất
+    </a>
+  </nav>
 
-<div class="adm">
+  <!-- Main content -->
+  <div class="admin-main">
 
-<!-- ═══════════════ DASHBOARD TAB ═══════════════════════════════════════ -->
-<div id="tab-dashboard" class="tab-pane active">
+    <!-- DASHBOARD TAB -->
+    <div class="tab-panel active" id="tab-dashboard">
+      <div class="admin-page-title">Dashboard</div>
+      <div class="stats-grid" id="admin-stats">
+        <div class="stat-box"><div class="stat-num" id="s-total">—</div><div class="stat-lbl">Tổng job</div></div>
+        <div class="stat-box"><div class="stat-num ok" id="s-done">—</div><div class="stat-lbl">Đã xử lý</div></div>
+        <div class="stat-box"><div class="stat-num warn" id="s-pending">—</div><div class="stat-lbl">Đang chờ</div></div>
+        <div class="stat-box"><div class="stat-num danger" id="s-failed">—</div><div class="stat-lbl">Thất bại</div></div>
+      </div>
 
-  <div class="stats-row" id="dash-stats">
-    <div class="stat-card">
-      <div class="stat-num" id="st-pending">—</div>
-      <div class="stat-lbl">Chờ review</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-num" id="st-reviewed">—</div>
-      <div class="stat-lbl">Đã review</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-num" id="st-train-total">—</div>
-      <div class="stat-lbl">Ảnh training</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-num" id="st-live">—</div>
-      <div class="stat-lbl">Ảnh live</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-num" id="st-runs">—</div>
-      <div class="stat-lbl">Pipeline runs</div>
-    </div>
-    <div class="stat-card" style="display:flex;align-items:center;justify-content:center">
-      <button class="btn btn-primary" style="font-size:12px;padding:8px 16px" onclick="triggerRetrain()">
-        <span class="learn-pulse"></span>Retrain AI
-      </button>
-    </div>
-  </div>
-
-  <div class="dash-2col">
-    <!-- Left -->
-    <div style="display:flex;flex-direction:column;gap:18px">
-      <div>
-        <div class="sec-title">Hoạt động gần đây</div>
-        <div class="act-list" id="recent-activity">
-          <div class="empty-state" style="padding:20px 0"><div class="spin">↻</div></div>
+      <div class="admin-section">
+        <div class="admin-section-title">Hoạt động gần đây</div>
+        <div id="recent-activity">
+          <div style="padding:20px;text-align:center;color:var(--tx3)">Đang tải...</div>
         </div>
       </div>
-      <div>
-        <div class="sec-title">
-          Hàng chờ review
-          <span id="rv-queue-count" style="font-size:12px;color:var(--tx3);font-family:var(--font);font-weight:400"></span>
-        </div>
-        <div class="rv-queue" id="rv-queue">
-          <div class="empty-state" style="padding:20px 0"><div class="spin">↻</div></div>
-        </div>
-      </div>
-    </div>
-    <!-- Right -->
-    <div style="display:flex;flex-direction:column;gap:18px">
-      <div>
-        <div class="sec-title">Phân bố mức lũ</div>
-        <div class="card" id="level-dist" style="padding:16px">
-          <div class="empty-state" style="padding:16px 0"><div class="spin">↻</div></div>
-        </div>
-      </div>
-      <div>
-        <div class="sec-title">Phân bố training</div>
-        <div class="card" id="rv-train-dist" style="padding:16px">
-          <div class="empty-state" style="padding:12px 0"><div class="spin">↻</div></div>
-        </div>
-      </div>
-      <div>
-        <div class="sec-title" style="margin-bottom:10px">Level thiếu dữ liệu</div>
-        <div class="card" id="rv-underrep" style="padding:14px;font-size:12.5px;color:var(--tx2)">—</div>
-      </div>
-    </div>
-  </div>
-</div>
 
-<!-- ═══════════════ PIPELINE TAB ════════════════════════════════════════ -->
-<div id="tab-pipeline" class="tab-pane">
-
-  <div class="card" style="padding:20px;margin-bottom:18px">
-    <div class="sec-title" style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:16px">
-      Chạy Pipeline<span style="display:none">::after</span>
-    </div>
-
-    <!-- Source picker -->
-    <div style="margin-bottom:14px">
-      <div class="form-label" style="margin-bottom:6px">Nguồn ảnh đầu vào</div>
-      <div class="src-toggle">
-        <button class="src-btn active" id="src-local-btn" onclick="switchSource('local')">📁 Local Folder</button>
-        <button class="src-btn" id="src-drive-btn" onclick="switchSource('drive')">☁️ Google Drive</button>
-      </div>
-      <input class="form-input" id="pl-input-path"
-             placeholder="Đường dẫn folder ảnh (VD: C:/flood_images)"
-             style="width:100%;max-width:600px">
-      <div id="pl-input-hint" style="font-size:11px;color:var(--tx3);margin-top:4px">
-        Nhập đường dẫn tuyệt đối đến folder chứa ảnh trên máy
-      </div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;max-width:600px">
-      <div class="form-group">
-        <label class="form-label" for="pl-yolo">YOLO Model</label>
-        <select class="form-select" id="pl-yolo">
-          <option value="yolov8n.pt">yolov8n (nhanh)</option>
-          <option value="yolov8s.pt">yolov8s (cân bằng)</option>
-          <option value="yolov8m.pt">yolov8m (chính xác)</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="pl-output">Output Dir</label>
-        <input class="form-input" id="pl-output" value="output">
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="pl-depth">Depth Model</label>
-        <select class="form-select" id="pl-depth">
-          <option value="depth-anything/Depth-Anything-V2-Small-hf">V2-Small — CPU</option>
-          <option value="depth-anything/Depth-Anything-V2-Base-hf">V2-Base — Cân bằng</option>
-          <option value="depth-anything/Depth-Anything-V2-Large-hf">V2-Large — GPU</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="pl-drive">Drive Folder (output)</label>
-        <input class="form-input" id="pl-drive" value="FloodAnalysis">
-      </div>
-    </div>
-
-    <div class="divider"></div>
-    <div id="pipeline-steps" style="display:none">
-      <div class="steps-bar" id="steps-bar"></div>
-      <div class="step-labels" id="step-labels"></div>
-    </div>
-
-    <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:var(--tx2);cursor:pointer;margin-bottom:12px">
-      <input type="checkbox" id="pl-delete-input" style="width:15px;height:15px;accent-color:var(--primary)">
-      Tự động xóa folder input sau khi xong
-    </label>
-    <div class="flex-row">
-      <button class="btn btn-primary" id="run-btn" onclick="startPipeline()">▷ Chạy</button>
-      <button class="btn btn-danger" id="stop-btn" onclick="stopPipeline()" style="display:none">■ Dừng</button>
-      <button class="btn btn-ghost" onclick="loadDefaults()">↻ Load config</button>
-      <span id="pl-status" style="font-size:12px;color:var(--tx3)"></span>
-    </div>
-  </div>
-
-  <div class="card" style="padding:20px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3)">Pipeline Log</span>
-      <span id="log-count" style="font-size:12px;color:var(--tx3)"></span>
-    </div>
-    <div class="log-box" id="pipeline-log"></div>
-  </div>
-</div>
-
-<!-- ═══════════════ HISTORY TAB ══════════════════════════════════════════ -->
-<div id="tab-history" class="tab-pane">
-  <div class="hist-toolbar">
-    <input class="hist-search" id="hist-search" placeholder="🔍 Tìm tên file, run ID…" oninput="filterHistory()">
-    <div class="filter-chip active" data-filter="all"     onclick="setFilter('all',this)">Tất cả</div>
-    <div class="filter-chip"       data-filter="live"    onclick="setFilter('live',this)">Live</div>
-    <div class="filter-chip"       data-filter="run"     onclick="setFilter('run',this)">Pipeline</div>
-    <div class="filter-chip"       data-filter="labeled" onclick="setFilter('labeled',this)">Có nhãn</div>
-    <button class="btn btn-ghost" style="margin-left:auto;padding:6px 12px;font-size:12px"
-            onclick="loadHistory()">↺ Làm mới</button>
-  </div>
-  <div id="hist-container">
-    <div class="empty-state"><div class="spin">↻</div></div>
-  </div>
-</div>
-
-<!-- ═══════════════ GALLERY / IMAGE FILTER TAB ═══════════════════════════ -->
-<div id="tab-gallery" class="tab-pane">
-
-  <!-- Upload bar -->
-  <div class="upload-bar">
-    <span id="gal-sel-count" class="sel-count">0 ảnh được chọn</span>
-    <input class="form-input" id="gal-folder-name" placeholder="Tên folder Drive…"
-           value="FloodAI_Gallery" style="width:220px;flex-shrink:0">
-    <button class="btn btn-primary" id="gal-upload-btn" onclick="uploadSelectedToDrive()" disabled>
-      ☁️ Upload lên Drive &amp; Chia sẻ
-    </button>
-    <button class="btn btn-ghost" style="padding:8px 12px;font-size:12px"
-            onclick="selectAllFiltered()" title="Chọn tất cả ảnh đang hiển thị">Chọn tất</button>
-    <button class="btn btn-ghost" style="padding:8px 12px;font-size:12px"
-            onclick="clearSelection()">Bỏ chọn</button>
-    <button class="btn btn-ghost" style="margin-left:auto;padding:8px 12px;font-size:12px"
-            onclick="loadGallery()">↺ Làm mới</button>
-  </div>
-
-  <!-- Drive result link -->
-  <div class="drive-link-box" id="gal-drive-result" style="display:none">
-    <span style="font-size:18px">✅</span>
-    <div>
-      <div style="font-size:12px;color:var(--tx3);margin-bottom:3px">Đã upload &amp; chia sẻ thành công:</div>
-      <a id="gal-drive-link" href="#" target="_blank">Mở link Drive →</a>
-    </div>
-    <button class="btn btn-ghost" style="margin-left:auto;font-size:12px;padding:6px 12px"
-            onclick="copyDriveLink()">📋 Copy</button>
-  </div>
-
-  <!-- Pull images from Google Drive -->
-  <div class="card" style="padding:16px;margin-bottom:16px;border:1px dashed rgba(52,193,89,.4)">
-    <div class="sec-title" style="font-size:13px;margin-bottom:12px">☁️ Kéo ảnh từ Google Drive</div>
-    <div style="font-size:11px;color:var(--tx3);margin-bottom:10px;line-height:1.5">
-      Tranh AI/vẽ sẽ bị lọc tự động. Ảnh hợp lệ hiển thị bên dưới để xem trước.
-    </div>
-    <div style="margin-bottom:10px">
-      <div class="form-group">
-        <label class="form-label" for="drv-link">Link folder Google Drive</label>
-        <input class="form-input" id="drv-link"
-               placeholder="VD: https://drive.google.com/drive/folders/1BxiM…"
-               style="width:100%">
-      </div>
-    </div>
-    <div class="flex-row" style="align-items:center;gap:10px">
-      <button class="btn btn-primary" id="drv-pull-btn" onclick="pullFromDrive()"
-              style="background:var(--ok);box-shadow:0 2px 8px rgba(52,193,89,.35)">
-        ↓ Pull từ Drive
-      </button>
-      <span id="drv-status" style="font-size:12px;color:var(--tx3)"></span>
-    </div>
-    <div id="drv-result" style="display:none;margin-top:10px;padding:10px 14px;
-         background:rgba(52,193,89,.08);border:1px solid rgba(52,193,89,.25);
-         border-radius:8px;font-size:13px;color:var(--tx2)"></div>
-    <div id="drv-preview" style="display:none;margin-top:12px">
-      <div style="font-size:11px;font-weight:600;color:var(--tx3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">Ảnh sau lọc</div>
-      <div id="drv-thumbs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
-      <div class="flex-row" style="align-items:center;gap:10px">
-        <button class="btn btn-primary" id="drv-upload-btn" onclick="drivePullUpload()"
-                style="font-size:12px;padding:6px 14px">
-          ↑ Gửi lên Drive
-        </button>
-        <span id="drv-upload-status" style="font-size:12px;color:var(--tx3)"></span>
-      </div>
-      <div id="drv-share-link" style="display:none;margin-top:8px;padding:8px 12px;
-           background:rgba(77,163,255,.08);border:1px solid rgba(77,163,255,.25);
-           border-radius:8px;font-size:12px;word-break:break-all"></div>
-    </div>
-  </div>
-
-  <!-- Upload new images to training library -->
-  <div class="card" style="padding:16px;margin-bottom:16px;border:1px dashed rgba(77,163,255,.4)">
-    <div class="sec-title" style="font-size:13px;margin-bottom:12px">Tải ảnh lên thư viện training</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-      <div class="form-group" style="grid-column:1/-1">
-        <label class="form-label" for="up-files">Chọn ảnh (JPG, PNG, WEBP)</label>
-        <input type="file" id="up-files" multiple accept="image/*" style="display:none" onchange="handleFileSelect(event)">
-        <label for="up-files" id="up-dropzone"
-               style="display:block;border:2px dashed var(--border);border-radius:10px;padding:24px;text-align:center;
-                      cursor:pointer;background:var(--bg2);transition:border-color .2s;font-size:13px;color:var(--tx3)">
-          <div style="font-size:22px;margin-bottom:5px">+</div>
-          <div>Nhấn để chọn hoặc kéo ảnh vào đây</div>
-          <div id="up-file-list" style="margin-top:8px;font-size:12px;color:var(--primary)"></div>
-        </label>
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="up-level">Mức lũ *</label>
-        <select class="form-select" id="up-level">
-          <option value="">— Chọn mức lũ —</option>
-          <option value="NO_FLOOD">Không ngập</option>
-          <option value="PUDDLE">Vũng nước (&lt;5cm)</option>
-          <option value="ANKLE">Ngập mắt cá (5–20cm)</option>
-          <option value="KNEE">Ngập đầu gối (20–50cm)</option>
-          <option value="WAIST">Ngập hông (50–120cm)</option>
-          <option value="CHEST">Ngập ngực (120–200cm)</option>
-          <option value="SUBMERGED">Ngập hoàn toàn (&gt;200cm)</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="up-depth">Độ sâu (cm)</label>
-        <input class="form-input" type="number" id="up-depth" min="0" max="500" placeholder="VD: 45">
-      </div>
-      <div class="form-group" style="grid-column:1/-1">
-        <label class="form-label" for="up-notes">Ghi chú</label>
-        <input class="form-input" id="up-notes" placeholder="Tùy chọn — VD: nguồn ảnh, góc chụp…">
-      </div>
-    </div>
-    <div class="flex-row">
-      <button class="btn btn-primary" id="up-submit-btn" onclick="uploadTrainingImages()" disabled>
-        ↑ Upload vào thư viện
-      </button>
-      <span id="up-status" style="font-size:12px;color:var(--tx3)"></span>
-    </div>
-  </div>
-
-  <!-- Filter chips -->
-  <div class="gallery-toolbar">
-    <span style="font-size:12px;font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em">Lọc theo loại:</span>
-    <div class="cat-chip active" data-cat="all"        onclick="setGalFilter('all',this)">Tất cả</div>
-    <div class="cat-chip"        data-cat="ai"         onclick="setGalFilter('ai',this)">🤖 Ảnh AI</div>
-    <div class="cat-chip"        data-cat="hand_drawn" onclick="setGalFilter('hand_drawn',this)">✏️ Vẽ tay</div>
-    <div class="cat-chip"        data-cat="oil_painting" onclick="setGalFilter('oil_painting',this)">🎨 Sơn dầu</div>
-    <div class="cat-chip"        data-cat="photo"      onclick="setGalFilter('photo',this)">📷 Ảnh thật</div>
-    <div class="cat-chip"        data-cat="untagged"   onclick="setGalFilter('untagged',this)">❓ Chưa phân loại</div>
-    <input class="hist-search" id="gal-search" placeholder="🔍 Tìm ảnh…" oninput="renderGallery()"
-           style="margin-left:auto;max-width:220px">
-  </div>
-
-  <div id="gallery-container">
-    <div class="empty-state"><div class="spin">↻</div><div class="empty-msg" style="margin-top:8px">Đang tải…</div></div>
-  </div>
-</div>
-
-<!-- ═══════════════ LOGS TAB ════════════════════════════════════════════ -->
-<div id="tab-logs" class="tab-pane">
-  <div class="card" style="padding:20px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3)">Pipeline Log đầy đủ</span>
-      <button class="btn btn-ghost" style="font-size:12px;padding:6px 12px" onclick="clearLog()">🗑 Xóa log</button>
-    </div>
-    <div class="log-box" id="full-log" style="height:380px"></div>
-  </div>
-</div>
-
-</div><!-- .adm -->
-
-<!-- ═══════════════ IMAGE MODAL ══════════════════════════════════════════ -->
-<div class="modal-bg" id="modal" onclick="closeModal(event)">
-  <div class="modal-box">
-    <div class="modal-hdr">
-      <span class="modal-title" id="modal-title"></span>
-      <button class="icon-btn" onclick="closeModalBtn()">
-        <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    </div>
-    <img class="modal-img" id="modal-img" src="" alt="">
-  </div>
-</div>
-
-<!-- ═══════════════ ANNOTATE MODAL ═══════════════════════════════════════ -->
-<div class="ann-modal-bg" id="ann-modal">
-  <div class="ann-modal-box">
-    <div class="ann-hdr">
-      <span class="ann-title">Nhận xét & Học</span>
-      <button class="icon-btn" onclick="closeAnnotateModal()">
-        <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    </div>
-    <div class="ann-body">
-      <img class="ann-preview" id="ann-img" src="" alt="">
-      <div class="ann-pred" id="ann-pred-row" style="display:none">
-        <span>🤖 Dự đoán:</span>
-        <span id="ann-pred-level" class="chip"></span>
-        <span id="ann-pred-depth" style="font-weight:600;color:var(--tx)"></span>
-        <span id="ann-pred-conf" class="chip chip-warn"></span>
-      </div>
-      <div class="ann-form">
-        <div class="form-group">
-          <label class="form-label" for="ann-level">Mức lũ thực tế *</label>
-          <select class="form-select" id="ann-level">
-            <option value="">— Chọn mức lũ —</option>
-            <option value="NO_FLOOD">Không ngập</option>
-            <option value="PUDDLE">Vũng nước (&lt;5cm)</option>
-            <option value="ANKLE">Ngập mắt cá (5–20cm)</option>
-            <option value="KNEE">Ngập đầu gối (20–50cm)</option>
-            <option value="WAIST">Ngập hông (50–120cm)</option>
-            <option value="CHEST">Ngập ngực (120–200cm)</option>
-            <option value="SUBMERGED">Ngập hoàn toàn (&gt;200cm)</option>
+      <div class="admin-section">
+        <div class="admin-section-title">Tạo cảnh báo khẩn cấp</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <input type="text" id="alert-location" placeholder="Khu vực..."
+            style="flex:1;padding:9px 12px;border:1px solid var(--border);
+            border-radius:var(--radius-md);font-family:var(--font);font-size:13px;
+            background:var(--card);color:var(--tx);min-width:160px">
+          <select id="alert-level" style="padding:9px 12px;border:1px solid var(--border);
+            border-radius:var(--radius-md);font-family:var(--font);font-size:13px;
+            background:var(--card);color:var(--tx)">
+            <option value="ankle">Ngập nhẹ</option>
+            <option value="knee" selected>Ngập đầu gối</option>
+            <option value="waist">Ngập ngang eo</option>
+            <option value="chest">Rất nguy hiểm</option>
           </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="ann-depth">Độ sâu (cm)</label>
-          <input class="form-input" type="number" id="ann-depth" min="0" max="500" placeholder="VD: 45">
-        </div>
-        <div class="form-group ann-full">
-          <label class="form-label" for="ann-notes">Ghi chú</label>
-          <input class="form-input" id="ann-notes" placeholder="VD: ảnh từ Facebook, góc chụp từ trên cao…">
+          <button class="btn btn-danger" onclick="createAlert()" style="padding:9px 16px">
+            <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Tạo cảnh báo
+          </button>
         </div>
       </div>
-      <div style="font-size:12px;color:var(--tx3);background:var(--bg2);padding:10px 14px;border-radius:8px;line-height:1.6">
-        <span class="learn-pulse"></span>Nhãn sẽ lưu vào <strong>training_images.db</strong> và kích hoạt retrain AI trong nền.
+    </div>
+
+    <!-- SUBMISSIONS TAB -->
+    <div class="tab-panel" id="tab-submissions">
+      <div class="admin-page-title">Nguồn ảnh</div>
+      <div id="submissions-list">
+        <div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div>
       </div>
     </div>
-    <div class="ann-foot">
-      <button class="btn btn-ghost" onclick="closeAnnotateModal()">Hủy</button>
-      <button class="btn btn-primary" id="ann-submit-btn" onclick="submitAnnotation()">✓ Xác nhận &amp; Học</button>
+
+    <!-- REVIEW TAB -->
+    <div class="tab-panel" id="tab-review">
+      <div class="admin-page-title">Duyệt tin</div>
+      <p style="font-size:13px;color:var(--tx2);margin-bottom:20px;line-height:1.65">
+        Kết quả AI đạt confidence cao được tạo bản nháp tự động. 
+        Admin duyệt trước khi hiển thị công khai.
+      </p>
+      <div id="review-list">
+        <div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div>
+      </div>
     </div>
+
+    <!-- JOBS TAB -->
+    <div class="tab-panel" id="tab-jobs">
+      <div class="admin-page-title">Kết quả AI</div>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
+        <button class="btn btn-outline" onclick="loadJobs()" style="font-size:13px">
+          <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+          Làm mới
+        </button>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="job-table">
+          <thead><tr>
+            <th>Job ID</th><th>Trạng thái</th><th>Tiến độ</th>
+            <th>Mức ngập</th><th>Thời gian</th><th>Hành động</th>
+          </tr></thead>
+          <tbody id="jobs-tbody">
+            <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--tx3)">Đang tải...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ARTICLES TAB -->
+    <div class="tab-panel" id="tab-articles">
+      <div class="admin-page-title">Bài viết</div>
+      <div id="articles-list">
+        <div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div>
+      </div>
+    </div>
+
+    <!-- MAP POINTS TAB -->
+    <div class="tab-panel" id="tab-mappoints">
+      <div class="admin-page-title">Điểm bản đồ</div>
+      <div id="mappoints-list">
+        <div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div>
+      </div>
+    </div>
+
   </div>
 </div>
-
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-// ── Helpers ───────────────────────────────────────────────────────────────
-function escHtml(s){
-  var d=document.createElement('div');d.textContent=String(s||'');return d.innerHTML;
-}
-
-// ── Tab switching ─────────────────────────────────────────────────────────
-const TAB_TITLES = {
-  dashboard:'Dashboard & Nhận xét', pipeline:'Pipeline',
-  history:'Lịch sử', gallery:'Bộ lọc ảnh', logs:'Logs',
+const LEVEL_META={
+  dry:{label:'Không ngập',badge:'badge-ok'},
+  ankle:{label:'Ngập nhẹ',badge:'badge-low'},
+  knee:{label:'Ngập đầu gối',badge:'badge-medium'},
+  waist:{label:'Ngập nặng',badge:'badge-high'},
+  chest:{label:'Rất nguy hiểm',badge:'badge-critical'},
+  submerged:{label:'Ngập hoàn toàn',badge:'badge-critical'},
+  unknown:{label:'Chưa xác định',badge:'badge-unknown'},
 };
-let activeTab = 'dashboard';
 
-function switchTab(name, el) {
-  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById('tab-' + name).classList.add('active');
-  if (el) el.classList.add('active');
-  activeTab = name;
-  if (name === 'dashboard') loadDashboard();
-  if (name === 'history')   loadHistory();
-  if (name === 'gallery')   loadGallery();
-  if (name === 'logs')      renderFullLog();
+function showTab(name, linkEl){
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.admin-nav-link').forEach(l=>l.classList.remove('active'));
+  document.getElementById('tab-'+name)?.classList.add('active');
+  if(linkEl)linkEl.classList.add('active');
+  if(name==='jobs')loadJobs();
+  if(name==='review')loadReview();
+  if(name==='submissions')loadSubmissions();
+  if(name==='articles')loadArticles();
+  if(name==='mappoints')loadMapPoints();
 }
 
-function refreshAll() {
-  if (activeTab === 'dashboard') loadDashboard();
-  else if (activeTab === 'history') loadHistory();
-  else if (activeTab === 'gallery') loadGallery();
-}
-
-// ── LEVEL constants ───────────────────────────────────────────────────────
-const LEVEL_COLORS = {
-  'NO_FLOOD':'#22c984','PUDDLE':'#34d399','ANKLE':'#6dd9a8',
-  'KNEE':'#f0a428','WAIST':'#f97316','CHEST':'#e85065','SUBMERGED':'#991b1b',
-};
-const LEVEL_VI = {
-  NO_FLOOD:'Không ngập', PUDDLE:'Vũng nước', ANKLE:'Mắt cá',
-  KNEE:'Đầu gối', WAIST:'Hông', CHEST:'Ngực', SUBMERGED:'Ngập hoàn toàn',
-};
-const LEVEL_ORDER = ['NO_FLOOD','PUDDLE','ANKLE','KNEE','WAIST','CHEST','SUBMERGED'];
-
-// ── Dashboard ─────────────────────────────────────────────────────────────
-let _liveItems = [], _runItems = [];
-
-async function loadDashboard() {
-  try {
-    const [sr, lr, rr, casesRes, trainRes] = await Promise.all([
-      fetch('/review_stats').then(r=>r.json()).catch(()=>({})),
-      fetch('/live_history').then(r=>r.json()).catch(()=>({items:[]})),
-      fetch('/run_history').then(r=>r.json()).catch(()=>[]),
-      fetch('/review_cases').then(r=>r.json()).catch(()=>({cases:[]})),
-      fetch('/training_summary').then(r=>r.json()).catch(()=>({total:0,by_level:{}})),
-    ]);
-
-    _liveItems = lr.items || [];
-    _runItems  = rr || [];
-
-    document.getElementById('st-pending').textContent     = sr.pending    ?? '—';
-    document.getElementById('st-reviewed').textContent    = sr.reviewed   ?? '—';
-    document.getElementById('st-train-total').textContent = trainRes.total ?? '—';
-    document.getElementById('st-live').textContent        = _liveItems.length;
-    document.getElementById('st-runs').textContent        = _runItems.length;
-
-    renderReviewQueue(casesRes.cases || []);
-    renderTrainDist(trainRes.by_level || {});
-
-    const underrep = casesRes.underrepresented || [];
-    const urEl = document.getElementById('rv-underrep');
-    urEl.innerHTML = !underrep.length
-      ? '<span style="color:var(--ok)">✓ Dữ liệu training cân đối</span>'
-      : underrep.map(lv =>
-          `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-             <span style="width:9px;height:9px;border-radius:50%;background:${LEVEL_COLORS[lv]||'#888'};display:inline-block;flex-shrink:0"></span>
-             <span style="font-weight:600;color:var(--tx)">${LEVEL_VI[lv]||lv}</span>
-             <span style="font-size:11px;color:var(--warn)">— cần thêm ảnh</span>
-           </div>`
-        ).join('');
-
-    // Recent activity
-    const acts = [];
-    _liveItems.slice(0,4).forEach(i => acts.push({
-      icon:'◎', title:i.name,
-      sub:i.db?`${i.db.actual_level} · ${i.db.actual_depth} cm`:'Live prediction',
-      time:(i.mtime||'').substring(5,16),
-    }));
-    _runItems.slice(0,3).forEach(r => acts.push({
-      icon:'▷', title:r.run_id||r.run_dir||'Run',
-      sub:`${r.total_analyzed||0} ảnh · ${r.total_filtered||0} lọc`,
-      time:r.run_dir?r.run_dir.substring(0,10):'',
-    }));
-    const al = document.getElementById('recent-activity');
-    al.innerHTML = acts.length
-      ? acts.slice(0,6).map(a=>`
-          <div class="act-item">
-            <span class="act-icon">${a.icon}</span>
-            <div class="act-info">
-              <div class="act-name">${escHtml(a.title)}</div>
-              <div class="act-sub">${escHtml(a.sub)}</div>
-            </div>
-            <span style="font-size:11px;color:var(--tx3)">${escHtml(a.time)}</span>
-          </div>`).join('')
-      : '<div class="empty-state" style="padding:20px 0"><div class="empty-icon">○</div><div class="empty-msg">Chưa có hoạt động</div></div>';
-
-    // Level distribution
-    const ld = document.getElementById('level-dist');
-    const labeled = _liveItems.filter(i=>i.db&&i.db.actual_level);
-    if (!labeled.length) {
-      ld.innerHTML = '<div class="empty-state" style="padding:12px 0"><div class="empty-icon">○</div><div class="empty-msg">Chưa có nhãn</div></div>';
-    } else {
-      const counts={};
-      labeled.forEach(i=>{ counts[i.db.actual_level]=(counts[i.db.actual_level]||0)+1; });
-      const total=Object.values(counts).reduce((a,b)=>a+b,0);
-      ld.innerHTML=Object.entries(counts).map(([lv,n])=>{
-        const c=LEVEL_COLORS[lv]||'#888'; const pct=Math.round(n/total*100);
-        return `<div class="lvl-bar-row">
-          <div class="lvl-bar-lbl">${escHtml(lv)}</div>
-          <div class="lvl-bar-track"><div class="lvl-bar-fill" style="width:${pct}%;background:${c}"></div></div>
-          <div class="lvl-bar-n">${n}</div>
-        </div>`;
-      }).join('');
-    }
-  } catch(e) { toast('Lỗi tải dashboard: '+e.message,'err'); }
-}
-
-function renderTrainDist(byLevel) {
-  const el = document.getElementById('rv-train-dist');
-  if (!Object.keys(byLevel).length) {
-    el.innerHTML='<div class="empty-state" style="padding:10px 0"><div class="empty-icon">○</div><div class="empty-msg">Chưa có training data</div></div>';
-    return;
-  }
-  const total=Object.values(byLevel).reduce((a,b)=>a+b,0);
-  el.innerHTML=LEVEL_ORDER.filter(k=>byLevel[k]).map(k=>{
-    const n=byLevel[k]; const c=LEVEL_COLORS[k]||'#888'; const pct=Math.round(n/total*100);
-    return `<div class="lvl-bar-row">
-      <div class="lvl-bar-lbl">${LEVEL_VI[k]||k}</div>
-      <div class="lvl-bar-track"><div class="lvl-bar-fill" style="width:${pct}%;background:${c}"></div></div>
-      <div class="lvl-bar-n">${n}</div>
-    </div>`;
-  }).join('');
-}
-
-function renderReviewQueue(cases) {
-  const el = document.getElementById('rv-queue');
-  document.getElementById('rv-queue-count').textContent = cases.length ? `(${cases.length})` : '';
-  if (!cases.length) {
-    el.innerHTML='<div class="empty-state" style="padding:20px 0"><div class="empty-icon">✓</div><div class="empty-title">Không có ảnh cần review</div></div>';
-    return;
-  }
-  el.innerHTML = cases.slice(0,8).map(c=>{
-    const conf=parseFloat(c.confidence||0);
-    const confCls=conf>=0.7?'chip-ok':conf>=0.4?'chip-warn':'chip-err';
-    const lvlColor=LEVEL_COLORS[c.predicted_level]||'#888';
-    return `<div class="rv-card">
-      <img class="rv-img" src="/case_image/${c.id}" onerror="this.src=''" loading="lazy"
-           onclick="openModal(this.src,'${escHtml(c.image_hash||'')}')">
-      <div class="rv-body">
-        <div class="rv-head">
-          <div class="rv-pred">
-            <span class="chip" style="background:${lvlColor}20;color:${lvlColor};border:1px solid ${lvlColor}40">
-              ${escHtml(c.predicted_level||'?')}
-            </span>
-            <span style="font-family:monospace;font-size:11px;font-weight:700">
-              ${c.predicted_depth!=null?c.predicted_depth+' cm':'—'}
-            </span>
-            <span class="chip ${confCls}">${Math.round(conf*100)}%</span>
-          </div>
-          <span class="chip" style="font-size:10px;opacity:.7">${escHtml(c.review_reason||'')}</span>
-        </div>
-        <div class="rv-form">
-          <div class="form-group">
-            <label class="form-label">Mức thực tế</label>
-            <select class="form-select" id="rv-level-${c.id}">
-              <option value="">— Chọn —</option>
-              ${LEVEL_ORDER.map(l=>`<option value="${l}">${LEVEL_VI[l]||l}</option>`).join('')}
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Độ sâu (cm)</label>
-            <input class="form-input" type="number" id="rv-depth-${c.id}" placeholder="VD: 30">
-          </div>
-          <div class="form-group rv-form-full">
-            <label class="form-label">Ghi chú</label>
-            <input class="form-input" id="rv-notes-${c.id}" placeholder="Tùy chọn">
-          </div>
-        </div>
-        <div class="rv-actions">
-          <button class="btn btn-primary" style="font-size:12px;padding:7px 14px"
-                  onclick="submitReview(${c.id})">✓ Xác nhận</button>
-          <button class="btn btn-ghost" style="font-size:12px;padding:7px 14px"
-                  onclick="skipReview(${c.id})">Bỏ qua</button>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-async function submitReview(id) {
-  const level = document.getElementById('rv-level-'+id)?.value;
-  const depth = parseFloat(document.getElementById('rv-depth-'+id)?.value||0);
-  const notes = document.getElementById('rv-notes-'+id)?.value||'';
-  if (!level) { toast('Chọn mức lũ trước!','warn'); return; }
-  try {
-    const r=await fetch('/review/'+id,{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({actual_depth:depth,actual_level:level,notes})});
-    if((await r.json()).status==='ok'){toast('Đã review ✓','ok');loadDashboard();}
-  } catch(e){toast('Lỗi: '+e.message,'err');}
-}
-
-async function skipReview(id) {
-  await fetch('/skip/'+id,{method:'POST'});
-  toast('Đã bỏ qua','warn');loadDashboard();
-}
-
-async function triggerRetrain() {
-  try{await fetch('/trigger_retrain',{method:'POST'});toast('Retrain AI đang chạy trong nền ✓','ok');}
-  catch(e){toast('Lỗi: '+e.message,'err');}
-}
-
-// ── Pipeline ──────────────────────────────────────────────────────────────
-const STEPS=['Tải ảnh','Sao chép','Địa điểm','Depth AI','Báo cáo'];
-let _logOffset=0, _pollTimer=null, _logStore=[];
-
-function renderSteps(current) {
-  const bar=document.getElementById('steps-bar');
-  const lbl=document.getElementById('step-labels');
-  bar.innerHTML=STEPS.map((_,i)=>
-    `<div class="step-seg ${i<current?'done':i===current?'active':''}"></div>`).join('');
-  lbl.innerHTML=STEPS.map((s,i)=>
-    `<div class="step-lbl ${i<current?'done':i===current?'active':''}">${s}</div>`).join('');
-  document.getElementById('pipeline-steps').style.display='block';
-}
-
-let _sourceMode='local';
-function switchSource(mode) {
-  _sourceMode=mode;
-  document.getElementById('src-local-btn').classList.toggle('active',mode==='local');
-  document.getElementById('src-drive-btn').classList.toggle('active',mode==='drive');
-  const inp=document.getElementById('pl-input-path');
-  const hint=document.getElementById('pl-input-hint');
-  if(mode==='local'){
-    inp.placeholder='Đường dẫn folder ảnh (VD: C:/flood_images)';
-    hint.textContent='Nhập đường dẫn tuyệt đối đến folder chứa ảnh trên máy';
-  }else{
-    inp.placeholder='Link Drive hoặc Folder ID (VD: https://drive.google.com/drive/folders/...)';
-    hint.textContent='Dán link Google Drive folder chứa ảnh lũ.';
-  }
-}
-
-async function startPipeline() {
-  const inputPath=document.getElementById('pl-input-path').value.trim();
-  if(!inputPath){toast('Vui lòng nhập đường dẫn!','err');return;}
-  let resolvedPath=inputPath;
-  if(_sourceMode==='drive'){const m=inputPath.match(/\/folders\/([^/?&]+)/);if(m)resolvedPath=m[1];}
-  const cfg={
-    mode:_sourceMode,input_path:resolvedPath,
-    yolo_model:document.getElementById('pl-yolo').value,
-    output_dir:document.getElementById('pl-output').value,
-    depth_model:document.getElementById('pl-depth').value,
-    drive_folder:document.getElementById('pl-drive').value,
-    delete_input_folder:document.getElementById('pl-delete-input').checked,
-  };
+// DASHBOARD
+async function loadDashboard(){
   try{
-    const r=await fetch('/start_pipeline',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
-    const d=await r.json();
-    if(d.error){toast(d.error,'err');return;}
-    toast('Pipeline đã bắt đầu ▷','ok');
-    document.getElementById('run-btn').style.display='none';
-    document.getElementById('stop-btn').style.display='';
-    _logOffset=0;_logStore=[];
-    document.getElementById('pipeline-log').innerHTML='';
-    document.getElementById('full-log').innerHTML='';
-    renderSteps(0);
-    _pollTimer=setInterval(pollLog,800);
-  }catch(e){toast('Lỗi: '+e.message,'err');}
-}
-
-async function stopPipeline() {
-  await fetch('/stop_pipeline',{method:'POST'});
-  toast('Đã dừng pipeline ■','warn');
-  clearInterval(_pollTimer);
-  document.getElementById('run-btn').style.display='';
-  document.getElementById('stop-btn').style.display='none';
-  document.getElementById('pl-status').textContent='Đã dừng';
-}
-
-async function pollLog() {
+    const r=await fetch('/api/metrics');const d=await r.json();
+    document.getElementById('s-total').textContent=d.jobs?.total??'—';
+    document.getElementById('s-done').textContent=d.jobs?.done??'—';
+    document.getElementById('s-pending').textContent=d.jobs?.pending??'—';
+    document.getElementById('s-failed').textContent=d.jobs?.failed??'—';
+  }catch{}
   try{
-    const r=await fetch(`/pipeline_log?offset=${_logOffset}`);
-    const d=await r.json();
-    if(d.lines&&d.lines.length){
-      _logOffset=d.next_offset;
-      d.lines.forEach(l=>{_logStore.push(l);appendLog(l,'pipeline-log');});
-    }
-    renderSteps(d.step||0);
-    document.getElementById('pl-status').textContent=
-      d.status==='running'?'● Đang chạy…':d.status==='done'?'✓ Hoàn thành':d.status==='error'?'✕ Lỗi':'';
-    if(d.status!=='running'){
-      clearInterval(_pollTimer);
-      document.getElementById('run-btn').style.display='';
-      document.getElementById('stop-btn').style.display='none';
-      if(d.status==='done')toast('Pipeline hoàn thành ✓','ok');
-      if(d.status==='error')toast('Pipeline gặp lỗi ✕','err');
-    }
-  }catch(e){}
+    const r2=await fetch('/api/jobs?limit=8');const jobs=await r2.json();
+    const el=document.getElementById('recent-activity');
+    if(!jobs.length){el.innerHTML='<div style="padding:16px;color:var(--tx3);font-size:13px">Chưa có hoạt động nào.</div>';return;}
+    el.innerHTML=`<table class="job-table"><thead><tr>
+      <th>Job ID</th><th>Trạng thái</th><th>Tiến độ</th><th>Thời gian</th>
+    </tr></thead><tbody>`+jobs.map(j=>`<tr>
+      <td class="job-id">${j.job_id.slice(-10)}</td>
+      <td><span class="badge ${j.status==='done'?'badge-verified':j.status==='failed'?'badge-high':'badge-ai'}">${j.status}</span></td>
+      <td><div style="display:flex;align-items:center;gap:8px;min-width:120px">
+        <div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:${j.progress||0}%"></div></div>
+        <span style="font-size:11px;color:var(--tx3)">${j.progress||0}%</span>
+      </div></td>
+      <td>${timeAgo(j.created_at)}</td>
+    </tr>`).join('')+'</tbody></table>';
+  }catch{}
 }
 
-function appendLog(l,boxId='pipeline-log'){
-  const box=document.getElementById(boxId);if(!box)return;
-  const div=document.createElement('div');
-  div.className=`log-line log-${l.level}`;
-  div.innerHTML=`<span class="log-ts">${l.ts}</span><span>${escHtml(l.text)}</span>`;
-  box.appendChild(div);
-  if(box.children.length>300)box.removeChild(box.firstChild);
-  box.scrollTop=box.scrollHeight;
-}
-
-function renderFullLog(){
-  const box=document.getElementById('full-log');box.innerHTML='';
-  _logStore.forEach(l=>appendLog(l,'full-log'));box.scrollTop=box.scrollHeight;
-}
-function clearLog(){_logStore=[];document.getElementById('full-log').innerHTML='';document.getElementById('pipeline-log').innerHTML='';}
-
-async function loadDefaults(){
+// JOBS TAB
+async function loadJobs(){
   try{
-    const r=await fetch('/pipeline_defaults');const d=await r.json();
-    if(d.yolo_model)document.getElementById('pl-yolo').value=d.yolo_model;
-    if(d.depth_model)document.getElementById('pl-depth').value=d.depth_model;
-    if(d.output_dir)document.getElementById('pl-output').value=d.output_dir;
-    if(d.drive_folder)document.getElementById('pl-drive').value=d.drive_folder;
-    toast('Đã load từ config.yaml ✓','ok');
-  }catch(e){toast('Không đọc được config.yaml','warn');}
+    const r=await fetch('/api/jobs?limit=50');const jobs=await r.json();
+    const tb=document.getElementById('jobs-tbody');
+    if(!jobs.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--tx3)">Chưa có job nào.</td></tr>';return;}
+    tb.innerHTML=jobs.map(j=>{
+      const lvl=j.result?.level||'unknown';
+      const info=LEVEL_META[lvl]||LEVEL_META.unknown;
+      return `<tr>
+        <td class="job-id">${j.job_id.slice(-12)}</td>
+        <td><span class="badge ${j.status==='done'?'badge-verified':j.status==='failed'?'badge-high':'badge-ai'}">${j.status}</span></td>
+        <td><div class="progress-bar" style="width:80px"><div class="progress-fill" style="width:${j.progress||0}%"></div></div></td>
+        <td><span class="badge ${info.badge}">${info.label}</span></td>
+        <td>${timeAgo(j.created_at)}</td>
+        <td><a href="/article/${j.job_id}" style="color:var(--blue);font-size:12px;font-weight:500">Xem →</a></td>
+      </tr>`;
+    }).join('');
+  }catch{document.getElementById('jobs-tbody').innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--tx3)">Không thể tải.</td></tr>';}
 }
 
-// ── History ───────────────────────────────────────────────────────────────
-let _histData=[], _histFilter='all', _histSearch='';
-
-async function loadHistory(){
-  document.getElementById('hist-container').innerHTML=
-    '<div class="empty-state"><div class="spin">↻</div></div>';
+// REVIEW TAB
+async function loadReview(){
   try{
-    const [lr,rr]=await Promise.all([
-      fetch('/live_history').then(r=>r.json()).catch(()=>({items:[]})),
-      fetch('/run_history').then(r=>r.json()).catch(()=>[]),
-    ]);
-    _histData=[];
-    (lr.items||[]).forEach(item=>_histData.push({type:'live',item}));
-    (rr||[]).forEach(run=>_histData.push({type:'run',item:run}));
-    _histData.sort((a,b)=>{
-      const tA=a.type==='live'?(a.item.mtime||''):(a.item.run_dir||'');
-      const tB=b.type==='live'?(b.item.mtime||''):(b.item.run_dir||'');
-      return tB.localeCompare(tA);
-    });
-    renderHistory();
-  }catch(e){
-    toast('Lỗi tải lịch sử: '+e.message,'err');
-    document.getElementById('hist-container').innerHTML=
-      `<div class="empty-state"><div class="empty-icon">!</div><div class="empty-msg">${escHtml(e.message)}</div></div>`;
-  }
-}
-
-function setFilter(f,el){
-  _histFilter=f;
-  document.querySelectorAll('#tab-history .filter-chip').forEach(c=>c.classList.remove('active'));
-  el.classList.add('active');renderHistory();
-}
-function filterHistory(){_histSearch=document.getElementById('hist-search').value.toLowerCase();renderHistory();}
-
-function renderHistory(){
-  const container=document.getElementById('hist-container');
-  let data=_histData;
-  if(_histFilter!=='all'){
-    data=_histFilter==='labeled'
-      ?data.filter(d=>d.type==='live'&&d.item.db)
-      :data.filter(d=>d.type===_histFilter);
-  }
-  if(_histSearch)data=data.filter(d=>{
-    const n=d.type==='live'?d.item.name:(d.item.run_id||d.item.run_dir||'');
-    return n.toLowerCase().includes(_histSearch);
-  });
-  if(!data.length){
-    container.innerHTML='<div class="empty-state"><div class="empty-icon">○</div><div class="empty-title">Không có kết quả</div></div>';
-    return;
-  }
-  const live=data.filter(d=>d.type==='live');
-  const runs=data.filter(d=>d.type==='run');
-  let html='';
-
-  if(live.length){
-    html+=`<div class="sec-title" style="margin-bottom:14px">Live Model (${live.length})</div>`;
-    html+=`<div class="hist-grid" style="margin-bottom:22px">`;
-    live.forEach(({item})=>{
-      const src=item.overlay?`/live_image/${item.overlay}`:`/live_image/${item.name}`;
-      const db=item.db;const lvlColor=db?(LEVEL_COLORS[db.actual_level]||'#888'):null;
-      html+=`<div class="hist-card" onclick="openModal('${escHtml(src)}','${escHtml(item.name)}')">
-        <div class="hist-thumb">
-          <img src="${escHtml(src)}" onerror="this.src='/live_image/${escHtml(item.name)}';this.onerror=null" loading="lazy">
-          <span class="hist-type-badge badge-live">live</span>
-          ${item.overlay?`<span class="hist-type-badge badge-overlay">overlay</span>`:''}
-        </div>
-        <div class="hist-meta">
-          <div class="hist-name" title="${escHtml(item.name)}">${escHtml(item.name)}</div>
-          ${db?`<div style="margin-bottom:6px">
-            <span class="badge" style="background:${lvlColor}20;color:${lvlColor};border:1px solid ${lvlColor}40">${escHtml(db.actual_level)}</span>
-            <span style="font-family:monospace;font-size:11px;font-weight:700;margin-left:4px">${db.actual_depth} cm</span>
-          </div>`:`<div style="margin-bottom:6px"><span class="badge" style="background:var(--bg2);color:var(--tx3)">Chưa nhãn</span></div>`}
-          <div class="hist-footer">
-            <span class="hist-size">${(item.size_kb||0).toFixed(0)} KB</span>
-            <button class="ann-btn" onclick="event.stopPropagation();openAnnotate('${escHtml(item.name)}','${escHtml(src)}',${JSON.stringify(db||null)})">📝</button>
-          </div>
-        </div>
-      </div>`;
-    });
-    html+=`</div>`;
-  }
-
-  if(runs.length){
-    html+=`<div class="sec-title" style="margin-bottom:14px">Pipeline Runs (${runs.length})</div>`;
-    html+=`<div style="display:flex;flex-direction:column;gap:14px">`;
-    runs.forEach(({item:run})=>{
-      const badges=Object.entries(run.flood_summary||{})
-        .map(([lv,n])=>`<span class="run-badge">${lv}: ${n}</span>`).join('');
-      const overlays=(run.overlay_images||[]).slice(0,6)
-        .map(fn=>`<img src="/run_image/${encodeURIComponent(run.run_dir)}/depth_overlays/${fn}"
-          onclick="openModal(this.src,'${escHtml(fn)}')" loading="lazy" onerror="this.style.display='none'">`).join('');
-      const origs=(run.original_images||[]).slice(0,6)
-        .map(fn=>`<img src="/run_image/${encodeURIComponent(run.run_dir)}/original_images/${fn}"
-          onclick="openModal(this.src,'${escHtml(fn)}')" loading="lazy" onerror="this.style.display='none'">`).join('');
-      const safeDir=escHtml(run.run_dir||'');
-      html+=`<div class="run-card" id="runcard-${safeDir}">
-        <div class="run-hdr">
+    const r=await fetch('/api/jobs?limit=30');const jobs=await r.json();
+    const el=document.getElementById('review-list');
+    const needsReview=jobs.filter(j=>j.status==='done');
+    if(!needsReview.length){el.innerHTML='<div style="padding:24px;text-align:center;color:var(--tx3)">Không có bài nào cần duyệt.</div>';return;}
+    el.innerHTML=needsReview.map(j=>{
+      const lvl=j.result?.level||'unknown';
+      const info=LEVEL_META[lvl]||LEVEL_META.unknown;
+      const loc=j.result?.location||'Khu vực phân tích';
+      return `<div class="review-card">
+        <div class="rc-top">
           <div>
-            <div class="run-id">${escHtml(run.run_id||run.run_dir||'Run')}</div>
-            <div class="run-meta">
-              <span>📥 ${run.total_crawled||0}</span>
-              <span>🔍 ${run.total_filtered||0}</span>
-              <span>🧠 ${run.total_analyzed||0}</span>
-              ${run.drive_folder&&run.drive_folder!=='N/A'
-                ?`<span><a href="https://drive.google.com/drive/folders/${run.drive_folder}" target="_blank" style="color:var(--primary)">Drive ↗</a></span>`:''}
-            </div>
+            <div class="rc-title">${info.label} tại ${loc}</div>
+            <div class="rc-meta">Job: ${j.job_id.slice(-10)} · ${timeAgo(j.created_at)}</div>
           </div>
-          <div class="run-badges">${badges}</div>
+          <span class="badge ${info.badge}">${info.label}</span>
         </div>
-        ${overlays?`<div style="font-size:11px;color:var(--tx3);margin:8px 0 4px;text-transform:uppercase;letter-spacing:.06em">AI Overlay</div><div class="img-strip">${overlays}</div>`:''}
-        ${origs?`<div style="font-size:11px;color:var(--tx3);margin:8px 0 4px;text-transform:uppercase;letter-spacing:.06em">Ảnh gốc</div><div class="img-strip">${origs}</div>`:''}
-        <button class="rd-btn" onclick="toggleRunDetail('${safeDir}',this)">📊 Xem chi tiết</button>
-        <div class="rd-panel" id="rdpanel-${safeDir}">
-          <div class="rd-inner" id="rdinner-${safeDir}"><div class="empty-state">Đang tải…</div></div>
+        <div style="font-size:13px;color:var(--tx2);margin-bottom:12px;line-height:1.6">
+          ${j.result?.depth_range?`Ước tính: <strong>${j.result.depth_range}</strong> · `:''}
+          Độ tin cậy: <strong>${j.result?.confidence_label||'Chưa rõ'}</strong>
+        </div>
+        <div class="rc-actions">
+          <button class="btn-approve rc-btn" onclick="approveJob('${j.job_id}',this)">✓ Duyệt đăng</button>
+          <button class="rc-btn btn-review" onclick="flagReview('${j.job_id}',this)">⚑ Cần xác minh</button>
+          <button class="rc-btn btn-reject" onclick="rejectJob('${j.job_id}',this)">✕ Từ chối</button>
+          <button class="rc-btn btn-alert-create" onclick="createAlertFromJob('${j.job_id}','${loc}','${lvl}')">🚨 Tạo cảnh báo</button>
+          <a href="/article/${j.job_id}" target="_blank" style="padding:6px 13px;font-size:12px;font-weight:600;color:var(--blue);text-decoration:none">Xem bài →</a>
         </div>
       </div>`;
-    });
-    html+=`</div>`;
-  }
-  container.innerHTML=html;
+    }).join('');
+  }catch{document.getElementById('review-list').innerHTML='<div style="padding:24px;text-align:center;color:var(--tx3)">Không thể tải.</div>';}
 }
 
-const _rdCache={};
-async function toggleRunDetail(runDir,btn){
-  const panel=document.getElementById('rdpanel-'+runDir);
-  const inner=document.getElementById('rdinner-'+runDir);
-  if(!panel)return;
-  if(panel.classList.contains('open')){panel.classList.remove('open');btn.textContent='📊 Xem chi tiết';return;}
-  panel.classList.add('open');btn.textContent='▲ Thu gọn';
-  if(_rdCache[runDir]){renderRunDetail(inner,_rdCache[runDir],runDir);return;}
-  inner.innerHTML='<div class="empty-state"><div class="spin">↻</div></div>';
+function approveJob(id,btn){btn.textContent='✓ Đã duyệt';btn.style.opacity='.5';btn.disabled=true;}
+function flagReview(id,btn){btn.textContent='⚑ Đã đánh dấu';btn.style.opacity='.5';btn.disabled=true;}
+function rejectJob(id,btn){btn.textContent='✕ Đã từ chối';btn.style.opacity='.5';btn.disabled=true;}
+function createAlertFromJob(id,loc,lvl){
+  document.getElementById('alert-location').value=loc;
+  document.getElementById('alert-level').value=lvl||'knee';
+  showTab('dashboard',document.querySelector('.admin-nav-link'));
+  alert('Đã điền thông tin cảnh báo. Kiểm tra và nhấn "Tạo cảnh báo".');
+}
+
+function createAlert(){
+  const loc=document.getElementById('alert-location').value.trim();
+  const level=document.getElementById('alert-level').value;
+  if(!loc){alert('Nhập khu vực cảnh báo.');return;}
+  alert(`Cảnh báo đã được tạo:\n${loc} — ${level}`);
+}
+
+async function loadSubmissions(){
   try{
-    const d=await fetch('/run_detail/'+encodeURIComponent(runDir)).then(r=>r.json());
-    _rdCache[runDir]=d;renderRunDetail(inner,d,runDir);
-  }catch(e){inner.innerHTML=`<div class="empty-state">Lỗi: ${escHtml(e.message)}</div>`;}
+    const r=await fetch('/api/jobs?limit=30');const jobs=await r.json();
+    const el=document.getElementById('submissions-list');
+    if(!jobs.length){el.innerHTML='<div style="padding:24px;text-align:center;color:var(--tx3)">Chưa có nguồn ảnh nào.</div>';return;}
+    el.innerHTML=`<table class="job-table"><thead><tr>
+      <th>Job ID</th><th>Trạng thái</th><th>Thông báo</th><th>Thời gian</th><th>Output</th>
+    </tr></thead><tbody>`+jobs.map(j=>`<tr>
+      <td class="job-id">${j.job_id.slice(-12)}</td>
+      <td><span class="badge ${j.status==='done'?'badge-verified':j.status==='running'?'badge-ai':j.status==='failed'?'badge-high':'badge-unknown'}">${j.status}</span></td>
+      <td style="color:var(--tx3);font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${j.message||'—'}</td>
+      <td>${timeAgo(j.created_at)}</td>
+      <td><a href="/article/${j.job_id}" style="color:var(--blue);font-size:12px">Xem →</a></td>
+    </tr>`).join('')+'</tbody></table>';
+  }catch{}
 }
 
-function renderRunDetail(el,data,runDir){
-  const s=data.summary||{};
-  const rows=data.rows||[];
-  const fs=s.flood_summary||{};
-  const maxN=Math.max(1,...Object.values(fs));
-  const bars=LEVEL_ORDER.filter(k=>fs[k]).map(k=>{
-    const pct=Math.round((fs[k]/maxN)*100);
-    const c=LEVEL_COLORS[k]||'#888';
-    return `<div class="lvl-bar-row">
-      <div class="lvl-bar-lbl">${LEVEL_VI[k]||k}</div>
-      <div class="lvl-bar-track"><div class="lvl-bar-fill" style="width:${pct}%;background:${c}"></div></div>
-      <div class="lvl-bar-n">${fs[k]}</div>
-    </div>`;
-  }).join('');
-  el.innerHTML=`
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
-      <div class="stat-card" style="text-align:center"><div class="stat-num">${s.total_crawled||0}</div><div class="stat-lbl">Đầu vào</div></div>
-      <div class="stat-card" style="text-align:center"><div class="stat-num">${s.total_filtered||0}</div><div class="stat-lbl">Sau lọc</div></div>
-      <div class="stat-card" style="text-align:center"><div class="stat-num">${s.total_analyzed||0}</div><div class="stat-lbl">Phân tích</div></div>
-      <div class="stat-card" style="text-align:center">
-        <div class="stat-num" style="font-size:20px">${s.drive_folder&&s.drive_folder!=='N/A'?'✅':'—'}</div>
-        <div class="stat-lbl">${s.drive_folder&&s.drive_folder!=='N/A'
-          ?`<a href="https://drive.google.com/drive/folders/${s.drive_folder}" target="_blank" style="color:var(--primary)">Drive ↗</a>`:'Drive'}</div>
-      </div>
-    </div>
-    ${bars?`<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);margin-bottom:8px">Phân bố mức lũ</div>${bars}`:''}
-    <div style="margin-top:12px;display:flex;gap:8px">
-      <a class="btn btn-ghost" style="font-size:12px;padding:6px 14px"
-         href="/run_csv/${encodeURIComponent(runDir)}" target="_blank">⬇ Download CSV</a>
-    </div>`;
+async function loadArticles(){
+  document.getElementById('articles-list').innerHTML=
+    '<div style="padding:24px;text-align:center;color:var(--tx2)">Bài viết được tạo tự động từ kết quả AI sau khi admin duyệt. Chuyển sang tab <strong>Duyệt tin</strong> để xem và duyệt bài.</div>';
 }
-
-// ── Annotate modal ────────────────────────────────────────────────────────
-let _annTarget=null;
-
-function openAnnotate(name,src,db){
-  _annTarget={name,src};
-  document.getElementById('ann-img').src=src;
-  const pr=document.getElementById('ann-pred-row');
-  if(db){
-    pr.style.display='flex';
-    document.getElementById('ann-pred-level').textContent=db.actual_level||'';
-    document.getElementById('ann-pred-depth').textContent=db.actual_depth!=null?db.actual_depth+' cm':'';
-    document.getElementById('ann-pred-conf').textContent='';
-    if(db.actual_level)document.getElementById('ann-level').value=db.actual_level;
-    if(db.actual_depth)document.getElementById('ann-depth').value=db.actual_depth;
-  }else{pr.style.display='none';}
-  document.getElementById('ann-notes').value='';
-  document.getElementById('ann-modal').classList.add('open');
+async function loadMapPoints(){
+  document.getElementById('mappoints-list').innerHTML=
+    '<div style="padding:24px;text-align:center;color:var(--tx2)">Điểm bản đồ được tạo tự động từ kết quả có GPS. Xem tại <a href="/map" style="color:var(--blue)">trang bản đồ</a>.</div>';
 }
-function closeAnnotateModal(){document.getElementById('ann-modal').classList.remove('open');_annTarget=null;}
-
-async function submitAnnotation(){
-  const level=document.getElementById('ann-level').value;
-  const depth=parseFloat(document.getElementById('ann-depth').value||0);
-  const notes=document.getElementById('ann-notes').value;
-  if(!level){toast('Chọn mức lũ trước!','warn');return;}
-  if(!_annTarget){closeAnnotateModal();return;}
-  document.getElementById('ann-submit-btn').disabled=true;
-  try{
-    const r=await fetch('/annotate_live_image',{method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({image_name:_annTarget.name,actual_level:level,actual_depth:depth,notes})});
-    const d=await r.json();
-    if(d.error)throw new Error(d.error);
-    toast('Đã lưu nhãn & kích hoạt retrain ✓','ok');
-    closeAnnotateModal();loadDashboard();
-  }catch(e){toast('Lỗi: '+e.message,'err');}
-  finally{document.getElementById('ann-submit-btn').disabled=false;}
-}
-
-// ── Gallery / Image Filter ────────────────────────────────────────────────
-const CAT_LABELS={ai:'Ảnh AI',hand_drawn:'Vẽ tay',oil_painting:'Sơn dầu',photo:'Ảnh thật',untagged:''};
-const CAT_CLASS={ai:'cat-ai',hand_drawn:'cat-hand',oil_painting:'cat-oil',photo:'cat-photo'};
-
-let _galData=[], _galFilter='all', _galSelected=new Set();
-
-async function loadGallery(){
-  document.getElementById('gallery-container').innerHTML=
-    '<div class="empty-state"><div class="spin">↻</div><div class="empty-msg" style="margin-top:8px">Đang tải…</div></div>';
-  try{
-    const r=await fetch('/gallery_images');
-    const d=await r.json();
-    _galData=d.images||[];
-    _galSelected=new Set();
-    updateSelCount();
-    renderGallery();
-  }catch(e){
-    document.getElementById('gallery-container').innerHTML=
-      `<div class="empty-state"><div class="empty-icon">!</div><div class="empty-msg">${escHtml(e.message)}</div></div>`;
-  }
-}
-
-function setGalFilter(cat,el){
-  _galFilter=cat;
-  document.querySelectorAll('.cat-chip').forEach(c=>c.classList.remove('active'));
-  el.classList.add('active');
-  renderGallery();
-}
-
-function renderGallery(){
-  const search=(document.getElementById('gal-search')?.value||'').toLowerCase();
-  let data=_galData;
-  if(_galFilter!=='all'){
-    data=_galFilter==='untagged'
-      ?data.filter(i=>!i.category||i.category==='untagged')
-      :data.filter(i=>i.category===_galFilter);
-  }
-  if(search)data=data.filter(i=>(i.filename||'').toLowerCase().includes(search));
-
-  const container=document.getElementById('gallery-container');
-  if(!data.length){
-    container.innerHTML='<div class="empty-state"><div class="empty-icon">○</div><div class="empty-title">Không có ảnh</div><div class="empty-msg">Thử thay đổi bộ lọc</div></div>';
-    return;
-  }
-  container.innerHTML=`<div class="gallery-grid">${data.map(img=>{
-    const sel=_galSelected.has(img.id);
-    const cat=img.category||'untagged';
-    const catLbl=CAT_LABELS[cat]||cat;
-    const catCls=CAT_CLASS[cat]||'';
-    const lvlColor=LEVEL_COLORS[img.actual_level]||'#888';
-    return `<div class="gal-card${sel?' selected':''}" id="galcard-${img.id}">
-      <div class="gal-thumb">
-        <img src="/training_image/${img.id}" loading="lazy"
-             onerror="this.parentElement.style.background='var(--bg2)'"
-             onclick="openModal(this.src,'${escHtml(img.filename||'')}')" >
-        <div class="gal-check${sel?' checked':''}" onclick="toggleGalSelect(${img.id},event)" title="Chọn ảnh này">
-          <svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg>
-        </div>
-      </div>
-      <div class="gal-meta">
-        <div class="gal-name" title="${escHtml(img.filename||'')}">${escHtml(img.filename||'')}</div>
-        <div class="gal-tags">
-          ${catLbl?`<span class="cat-badge ${catCls}">${escHtml(catLbl)}</span>`:''}
-          ${img.actual_level?`<span class="badge" style="background:${lvlColor}20;color:${lvlColor};border:1px solid ${lvlColor}40;font-size:10px">${escHtml(img.actual_level)}</span>`:''}
-        </div>
-        <select class="cat-select" onchange="tagImage(${img.id},this.value)" title="Phân loại ảnh">
-          <option value="">— Phân loại —</option>
-          <option value="ai"${cat==='ai'?' selected':''}>🤖 Ảnh AI</option>
-          <option value="hand_drawn"${cat==='hand_drawn'?' selected':''}>✏️ Vẽ tay</option>
-          <option value="oil_painting"${cat==='oil_painting'?' selected':''}>🎨 Sơn dầu</option>
-          <option value="photo"${cat==='photo'?' selected':''}>📷 Ảnh thật</option>
-        </select>
-      </div>
-    </div>`;
-  }).join('')}</div>`;
-}
-
-function toggleGalSelect(id,ev){
-  ev.stopPropagation();
-  if(_galSelected.has(id))_galSelected.delete(id);
-  else _galSelected.add(id);
-  const card=document.getElementById('galcard-'+id);
-  const chk=card?.querySelector('.gal-check');
-  card?.classList.toggle('selected',_galSelected.has(id));
-  chk?.classList.toggle('checked',_galSelected.has(id));
-  updateSelCount();
-}
-
-function selectAllFiltered(){
-  const search=(document.getElementById('gal-search')?.value||'').toLowerCase();
-  let data=_galData;
-  if(_galFilter!=='all'){
-    data=_galFilter==='untagged'
-      ?data.filter(i=>!i.category||i.category==='untagged')
-      :data.filter(i=>i.category===_galFilter);
-  }
-  if(search)data=data.filter(i=>(i.filename||'').toLowerCase().includes(search));
-  data.forEach(i=>_galSelected.add(i.id));
-  renderGallery();updateSelCount();
-}
-
-function clearSelection(){
-  _galSelected.clear();renderGallery();updateSelCount();
-}
-
-function updateSelCount(){
-  const n=_galSelected.size;
-  document.getElementById('gal-sel-count').textContent=`${n} ảnh được chọn`;
-  document.getElementById('gal-upload-btn').disabled=n===0;
-}
-
-async function tagImage(id,cat){
-  if(!cat)return;
-  try{
-    await fetch(`/tag_image/${id}`,{method:'POST',
-      headers:{'Content-Type':'application/json'},body:JSON.stringify({category:cat})});
-    const item=_galData.find(i=>i.id===id);if(item)item.category=cat;
-    toast('Đã phân loại ✓','ok');
-  }catch(e){toast('Lỗi: '+e.message,'err');}
-}
-
-async function uploadSelectedToDrive(){
-  if(!_galSelected.size){toast('Chưa chọn ảnh nào!','warn');return;}
-  const folderName=document.getElementById('gal-folder-name').value.trim()||'FloodAI_Gallery';
-  const btn=document.getElementById('gal-upload-btn');
-  btn.disabled=true;btn.textContent='⏳ Đang upload…';
-  document.getElementById('gal-drive-result').style.display='none';
-  try{
-    const r=await fetch('/upload_gallery_to_drive',{method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({image_ids:[..._galSelected],folder_name:folderName})});
-    const d=await r.json();
-    if(d.error)throw new Error(d.error);
-    const linkEl=document.getElementById('gal-drive-link');
-    linkEl.href=d.share_link;linkEl.textContent=d.share_link;
-    document.getElementById('gal-drive-result').style.display='flex';
-    toast('Upload & chia sẻ thành công ✓','ok');
-  }catch(e){toast('Lỗi upload: '+e.message,'err');}
-  finally{btn.disabled=_galSelected.size===0;btn.textContent='☁️ Upload lên Drive & Chia sẻ';}
-}
-
-function copyDriveLink(){
-  const link=document.getElementById('gal-drive-link').href;
-  navigator.clipboard.writeText(link).then(()=>toast('Đã copy link ✓','ok')).catch(()=>{});
-}
-
-// ── Modal ─────────────────────────────────────────────────────────────────
-function openModal(src,title){
-  document.getElementById('modal-img').src=src;
-  document.getElementById('modal-title').textContent=title||src;
-  document.getElementById('modal').classList.add('open');
-}
-function closeModal(e){if(e.target===document.getElementById('modal'))closeModalBtn();}
-function closeModalBtn(){document.getElementById('modal').classList.remove('open');document.getElementById('modal-img').src='';}
-
-// ── Upload training images ────────────────────────────────────────────────
-let _upFiles = [];
-
-function _setUpFiles(files) {
-  _upFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
-  const list = document.getElementById('up-file-list');
-  const btn  = document.getElementById('up-submit-btn');
-  if (_upFiles.length) {
-    list.textContent = `${_upFiles.length} file: ${_upFiles.map(f => f.name).join(', ')}`;
-    btn.disabled = false;
-  } else {
-    list.textContent = '';
-    btn.disabled = true;
-  }
-}
-
-function handleFileSelect(e) { _setUpFiles(e.target.files); }
-function handleFileDrop(e)   { _setUpFiles(e.dataTransfer.files); }
-
-async function pullFromDrive() {
-  const link = document.getElementById('drv-link').value.trim();
-  if (!link) { toast('Nhập link Google Drive!', 'warn'); return; }
-
-  const btn     = document.getElementById('drv-pull-btn');
-  const status  = document.getElementById('drv-status');
-  const result  = document.getElementById('drv-result');
-  const preview = document.getElementById('drv-preview');
-  const thumbs  = document.getElementById('drv-thumbs');
-
-  btn.disabled = true;
-  btn.textContent = '⏳ Đang kéo…';
-  status.textContent = 'Đang kết nối Drive, tải và lọc ảnh — vui lòng chờ…';
-  result.style.display = 'none';
-  preview.style.display = 'none';
-  thumbs.innerHTML = '';
-
-  try {
-    const r = await fetch('/pull_from_drive', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({drive_link: link}),
-    });
-    const d = await r.json();
-    if (!r.ok) { toast('Lỗi: ' + (d.error || r.status), 'err'); return; }
-
-    result.style.display = 'block';
-    result.innerHTML =
-      `✅ <strong>${d.saved}</strong> ảnh hợp lệ` +
-      (d.filtered_fake ? ` · 🎨 Tranh/AI bị lọc: ${d.filtered_fake}` : '') +
-      (d.errors        ? ` · ❌ Lỗi: ${d.errors}`                     : '');
-
-    if (d.files && d.files.length) {
-      preview.style.display = 'block';
-      d.files.forEach(fname => {
-        const img = document.createElement('img');
-        img.src = `/drive_pull_image/${encodeURIComponent(fname)}`;
-        img.title = fname;
-        img.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid rgba(255,255,255,.1)';
-        img.onclick = () => window.open(img.src, '_blank');
-        thumbs.appendChild(img);
-      });
-      toast(`Đã lọc xong ${d.saved} ảnh từ Drive`, 'ok');
-    } else {
-      toast('Không có ảnh nào hợp lệ sau khi lọc', 'warn');
-    }
-    status.textContent = '';
-  } catch(e) {
-    toast('Lỗi kết nối: ' + e.message, 'err');
-    status.textContent = '';
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '↓ Pull từ Drive';
-  }
-}
-
-async function drivePullUpload() {
-  const btn       = document.getElementById('drv-upload-btn');
-  const status    = document.getElementById('drv-upload-status');
-  const shareDiv  = document.getElementById('drv-share-link');
-  const thumbs    = document.getElementById('drv-thumbs');
-
-  btn.disabled = true;
-  btn.textContent = '⏳ Đang upload…';
-  status.textContent = 'Đang gửi lên Drive và tạo link chia sẻ…';
-  shareDiv.style.display = 'none';
-
-  try {
-    const r = await fetch('/drive_pull_upload', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({folder_name: 'FloodAI_Filtered'}),
-    });
-    const d = await r.json();
-    if (!r.ok) { toast('Lỗi: ' + (d.error || r.status), 'err'); return; }
-    shareDiv.style.display = 'block';
-    shareDiv.innerHTML = `🔗 Link Drive: <a href="${d.share_link}" target="_blank"
-      style="color:var(--primary)">${d.share_link}</a>`;
-    thumbs.innerHTML = '';
-    document.getElementById('drv-preview').style.display = 'none';
-    document.getElementById('drv-result').style.display = 'none';
-    shareDiv.style.display = 'block';
-    document.getElementById('drv-preview').style.display = 'block';
-    document.getElementById('drv-thumbs').style.display = 'none';
-    document.querySelector('#drv-preview .flex-row').style.display = 'none';
-    toast('Đã upload và xoá thư mục tạm', 'ok');
-    status.textContent = '';
-  } catch(e) {
-    toast('Lỗi kết nối: ' + e.message, 'err');
-    status.textContent = '';
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '↑ Gửi lên Drive';
-  }
-}
-
-async function uploadTrainingImages() {
-  const level = document.getElementById('up-level').value;
-  if (!level)       { toast('Chọn mức lũ trước!', 'warn'); return; }
-  if (!_upFiles.length) { toast('Chưa chọn ảnh!', 'warn'); return; }
-  const depth = Number.parseFloat(document.getElementById('up-depth').value || 0);
-  const notes = document.getElementById('up-notes').value;
-  const btn   = document.getElementById('up-submit-btn');
-  const status= document.getElementById('up-status');
-  btn.disabled = true;
-  let ok = 0, fail = 0;
-  for (const file of _upFiles) {
-    status.textContent = `Đang upload ${file.name}…`;
-    try {
-      const b64 = await new Promise((res, rej) => {
-        const r = new FileReader();
-        r.onload  = () => res(r.result.split(',')[1]);
-        r.onerror = rej;
-        r.readAsDataURL(file);
-      });
-      const resp = await fetch('/upload_training', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: file.name, data_b64: b64,
-                               actual_level: level, actual_depth: depth, notes }),
-      });
-      const d = await resp.json();
-      if (d.status === 'ok' || d.status === 'duplicate') ok++; else fail++;
-    } catch (e) { fail++; console.error('Upload error:', e); }
-  }
-  status.textContent = `Xong: ${ok} ảnh OK${fail ? ', ' + fail + ' lỗi' : ''}`;
-  toast(`Upload xong: ${ok} ảnh ✓`, ok > 0 ? 'ok' : 'warn');
-  _upFiles = [];
-  document.getElementById('up-files').value = '';
-  document.getElementById('up-file-list').textContent = '';
-  btn.disabled = true;
-  loadGallery();
-}
-
-// ── Init ──────────────────────────────────────────────────────────────────
-window.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModalBtn();closeAnnotateModal();}});
-
-// Wire up drag-and-drop on the upload dropzone after DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-  const dz = document.getElementById('up-dropzone');
-  if (!dz) return;
-  dz.addEventListener('dragover',  e => { e.preventDefault(); dz.style.borderColor = 'var(--primary)'; });
-  dz.addEventListener('dragleave', () => { dz.style.borderColor = 'var(--border)'; });
-  dz.addEventListener('drop',      e => { e.preventDefault(); dz.style.borderColor = 'var(--border)'; handleFileDrop(e); });
-});
 
 loadDashboard();
 </script>
