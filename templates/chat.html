@@ -11,8 +11,11 @@
 
 {% block head %}
 <style>
-/* Override page-body for chat layout */
-.page-body { display:flex; flex-direction:column; overflow:hidden; }
+/* Override page-main for chat layout */
+.page-main {
+  display:flex; flex-direction:column; overflow:hidden;
+  padding:0; height:calc(100vh - 130px);
+}
 
 /* Messages area */
 .chat-body {
