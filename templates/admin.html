@@ -134,6 +134,37 @@
       </div>
 
       <div class="admin-section">
+        <div class="admin-section-title">Phân tích ảnh từ Google Drive</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="font-size:13px;color:var(--tx2);line-height:1.6">
+            Paste link folder Google Drive — hệ thống sẽ tự tải ảnh về và chạy pipeline.
+          </div>
+          <input type="text" id="drive-url"
+            placeholder="https://drive.google.com/drive/folders/..."
+            style="padding:10px 13px;border:1.5px solid var(--border);border-radius:var(--radius-md);
+            font-family:var(--font);font-size:13px;background:var(--card2);color:var(--tx);width:100%">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <label style="font-size:13px;color:var(--tx2);display:flex;align-items:center;gap:6px">
+              <input type="number" id="drive-max" value="200" min="1" max="1000"
+                style="width:70px;padding:7px 9px;border:1px solid var(--border);
+                border-radius:var(--radius-md);font-size:13px;background:var(--card2);color:var(--tx)">
+              ảnh tối đa
+            </label>
+            <label style="font-size:13px;color:var(--tx2);display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="drive-safe" checked> Safe mode (không upload lại Drive)
+            </label>
+            <button class="btn btn-primary" onclick="pullDrive()"
+                    style="padding:9px 18px;font-size:13px" id="drive-btn">
+              <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Tải và phân tích
+            </button>
+          </div>
+          <div id="drive-status" style="display:none;padding:11px 14px;border-radius:var(--radius-md);
+            border:1px solid var(--border);font-size:13px;line-height:1.6"></div>
+        </div>
+      </div>
+
+      <div class="admin-section">
         <div class="admin-section-title">Tạo cảnh báo khẩn cấp</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <input type="text" id="alert-location" placeholder="Khu vực..."
@@ -367,6 +398,55 @@ async function loadArticles(){
 async function loadMapPoints(){
   document.getElementById('mappoints-list').innerHTML=
     '<div style="padding:24px;text-align:center;color:var(--tx2)">Điểm bản đồ được tạo tự động từ kết quả có GPS. Xem tại <a href="/map" style="color:var(--blue)">trang bản đồ</a>.</div>';
+}
+
+async function pullDrive(){
+  const url=document.getElementById('drive-url').value.trim();
+  const max=parseInt(document.getElementById('drive-max').value)||200;
+  const safe=document.getElementById('drive-safe').checked;
+  const btn=document.getElementById('drive-btn');
+  const status=document.getElementById('drive-status');
+
+  if(!url){alert('Nhập link Google Drive folder.');return;}
+
+  btn.disabled=true;btn.textContent='Đang kết nối...';
+  status.style.display='block';
+  status.style.background='var(--blue-s)';
+  status.style.borderColor='rgba(21,101,192,.2)';
+  status.style.color='var(--blue)';
+  status.innerHTML='⏳ Đang kết nối Google Drive và tải ảnh...';
+
+  try{
+    const r=await fetch('/api/drive/analyze',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({drive_url:url,safe,max_files:max}),
+    });
+    const d=await r.json();
+    if(r.ok){
+      status.style.background='var(--ok-s)';
+      status.style.borderColor='rgba(22,163,74,.2)';
+      status.style.color='var(--ok)';
+      status.innerHTML=`✅ ${d.message}<br>
+        <span style="font-size:12px;color:var(--tx3)">
+          Chuyển sang tab <strong>Kết quả AI</strong> để theo dõi tiến độ.
+        </span>`;
+      setTimeout(()=>{
+        showTab('jobs',document.querySelectorAll('.admin-nav-link')[3]);
+        loadJobs();
+      },2000);
+    }else{
+      status.style.background='var(--warn-high-s)';
+      status.style.borderColor='rgba(220,38,38,.2)';
+      status.style.color='var(--warn-high)';
+      status.innerHTML='❌ Lỗi: '+(d.error||'Không kết nối được Drive');
+    }
+  }catch(e){
+    status.style.background='var(--warn-high-s)';
+    status.style.color='var(--warn-high)';
+    status.innerHTML='❌ Không thể kết nối server';
+  }
+  btn.disabled=false;btn.innerHTML=`<svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Tải và phân tích`;
 }
 
 loadDashboard();

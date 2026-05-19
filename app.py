@@ -17,7 +17,6 @@ import time
 import urllib.request
 from functools import wraps
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -871,9 +870,67 @@ def api_analyze():
     }), 202
 
 
-@app.route("/api/jobs/<job_id>", methods=["GET"])
+@app.route("/api/drive/analyze", methods=["POST"])
 @login_required
-def api_job_status(job_id: str):
+def api_drive_analyze():
+    """
+    Admin paste link Google Drive folder → pull ảnh → chạy pipeline.
+    JSON body: { "drive_url": "https://drive.google.com/drive/folders/...", "safe": true }
+    """
+    data      = request.get_json(force=True) or {}
+    drive_url = (data.get("drive_url") or "").strip()
+    safe_mode = data.get("safe", True)
+    max_files = int(data.get("max_files", 200))
+
+    if not drive_url:
+        return jsonify({"error": "Thiếu drive_url"}), 400
+
+    # Kiểm tra URL hợp lệ
+    if "drive.google.com" not in drive_url and len(drive_url) < 10:
+        return jsonify({"error": "URL Drive không hợp lệ"}), 400
+
+    import uuid as _uuid
+    job_tmp = BASE_DIR / "_drive_tmp" / _uuid.uuid4().hex
+    job_tmp.mkdir(parents=True, exist_ok=True)
+
+    def _pull_and_submit():
+        try:
+            from uploader.drive_uploader import DriveUploader
+            uploader = DriveUploader()
+            log.info("[Drive] Downloading from: %s", drive_url)
+            images = uploader.download_folder(
+                drive_folder=drive_url,
+                local_dir=job_tmp,
+                max_files=max_files,
+            )
+            if not images:
+                log.warning("[Drive] Không tìm thấy ảnh trong folder")
+                return
+
+            log.info("[Drive] Downloaded %d images → submitting job", len(images))
+            from utils.config_loader import load_config as _load_yaml, apply_config_to_cfg
+            raw = _load_yaml(str(BASE_DIR / "config.yaml"))
+            cfg = apply_config_to_cfg(raw, {})
+            if safe_mode:
+                cfg.update({"skip_drive": True, "skip_learning": True,
+                            "skip_hard_mining": True, "skip_versioning": True})
+
+            svc    = _get_analysis_service()
+            job_id = svc.submit_async(images, input_label=f"Drive: {drive_url[-40:]}")
+            log.info("[Drive] Job submitted: %s", job_id)
+
+        except Exception as exc:
+            log.error("[Drive] Pull failed: %s", exc, exc_info=True)
+
+    # Pull chạy nền — không block request
+    threading.Thread(target=_pull_and_submit, daemon=True).start()
+
+    return jsonify({
+        "status":    "pulling",
+        "drive_url": drive_url,
+        "message":   f"Đang tải ảnh từ Drive (tối đa {max_files} file). Kiểm tra Jobs sau vài phút.",
+        "jobs_url":  "/admin",
+    }), 202
     """Trả về trạng thái hiện tại của một job."""
     from pipeline.job_queue import JobQueue
     status = JobQueue.instance().get(job_id)
