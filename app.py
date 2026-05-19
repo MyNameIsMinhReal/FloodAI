@@ -17,6 +17,7 @@ import time
 import urllib.request
 from functools import wraps
 from pathlib import Path
+from typing import Optional
 
 import yaml
 
