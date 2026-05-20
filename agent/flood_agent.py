@@ -2838,8 +2838,7 @@ class FloodAgent:
             elif action.type == "help":
                 msg = self._help_text()
             elif action.type == "greeting":
-                if not llm_hint:
-                    msg = self._greeting_text()
+                msg = self._greeting_text()
             self.memory.add_message("agent", msg)
             return AgentResponse(
                 message=msg, action=action.type,
