@@ -55,27 +55,20 @@ EVAL_FILE  = BASE_DIR / "training_data" / "flood_conversations_eval.jsonl"
 OUTPUT_DIR = ROOT_DIR / "models" / "flood-agent-lora"
 
 TRAIN_CFG = {
-    # ── 5 epoch: GPU nhàn rỗi → học kỹ hơn, ít overfitting với data ~900+
     "num_train_epochs":            5,
-    # ── Batch 8 × grad_accum 2 = effective batch 16, GPU utilization cao hơn
-    "per_device_train_batch_size": 8,
-    "per_device_eval_batch_size":  8,
-    "gradient_accumulation_steps": 2,
-    # ── Learning rate: 1.5e-4 an toàn hơn cho 1.5B model, cosine decay dần
+    "per_device_train_batch_size": 1,
+    "per_device_eval_batch_size":  1,
+    "gradient_accumulation_steps": 8,
     "learning_rate":               1.5e-4,
     "warmup_ratio":                0.06,
     "lr_scheduler_type":           "cosine",
-    # ── Log/eval thường xuyên để theo dõi loss
     "logging_steps":               5,
     "eval_steps":                  20,
     "save_steps":                  40,
-    "save_total_limit":            3,        # chỉ giữ 3 checkpoint gần nhất
-    # ── Sequence dài hơn → hiểu context tốt hơn (RTX 5050 đủ VRAM)
-    "max_seq_length":              1024,
-    # ── bf16 cho RTX 5050 (Blackwell native bf16, không cần GradScaler)
+    "save_total_limit":            3,
+    "max_seq_length":              512,
     "fp16":                        False,
     "bf16":                        True,
-    # ── Gradient checkpointing: đổi tốc độ lấy VRAM → cho phép seq dài hơn
     "gradient_checkpointing":      True,
     "optim":                       "adamw_torch",
     "load_best_model_at_end":      True,
