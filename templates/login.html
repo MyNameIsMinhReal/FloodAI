@@ -167,6 +167,12 @@ var SITE_KEY = "{{ hcaptcha_site_key }}";
 var currentTab = 'login';
 var regEmail = '';
 
+// Tự mở tab đăng ký nếu được redirect từ header
+if(sessionStorage.getItem('openTab')==='register'){
+  sessionStorage.removeItem('openTab');
+  switchTab('register');
+}
+
 // ── Tab switch ─────────────────────────────────────
 function switchTab(tab) {
   currentTab = tab;
@@ -306,8 +312,8 @@ async function doVerifyOtp() {
       [0,1,2,3,4,5].forEach(function(i){ document.getElementById('d'+i).value=''; });
       document.getElementById('d0').focus();
     } else {
-      showAlert('success', '✓ Xác nhận thành công! Tài khoản đang chờ admin phê duyệt.');
-      document.getElementById('pane-otp').style.display = 'none';
+      showAlert('success', '✓ Đăng ký thành công! Đang chuyển hướng...');
+      setTimeout(function(){ globalThis.location.href = data.redirect || '/'; }, 1000);
     }
   } catch(e) {
     showAlert('error', 'Lỗi kết nối — thử lại sau');

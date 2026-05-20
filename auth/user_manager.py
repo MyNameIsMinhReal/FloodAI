@@ -150,7 +150,8 @@ class UserManager:
     def register(self, email: str, name: str, password: str,
                  requested_role: str = "reviewer") -> Dict:
         """
-        Đăng ký tài khoản mới — trạng thái pending, cần admin phê duyệt.
+        Đăng ký tài khoản mới — active ngay, không cần admin phê duyệt.
+        Admin có thể đổi role sau.
         """
         if requested_role not in ROLES or requested_role == "admin":
             requested_role = "reviewer"
@@ -162,11 +163,11 @@ class UserManager:
                 return {"error": "Email đã tồn tại"}
             conn.execute(
                 "INSERT INTO users (email, name, pass_hash, role, active, pending, created_at) "
-                "VALUES (?, ?, ?, ?, 0, 1, ?)",
+                "VALUES (?, ?, ?, ?, 1, 0, ?)",
                 (email, name, _hash(password), requested_role, _now())
             )
-        log.info(f"[Auth] Đăng ký mới: {email} → {requested_role} (pending)")
-        return {"ok": True, "message": "Đã gửi yêu cầu — chờ admin phê duyệt"}
+        log.info(f"[Auth] Đăng ký mới: {email} → {requested_role} (active)")
+        return {"ok": True, "email": email, "name": name, "role": requested_role}
 
     def approve(self, email: str, actor: str, role: Optional[str] = None) -> Dict:
         """Admin phê duyệt tài khoản pending, có thể đổi role ngay lúc duyệt."""

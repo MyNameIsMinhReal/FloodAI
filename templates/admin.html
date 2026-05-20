@@ -483,15 +483,11 @@ button.admin-nav-link{width:100%;text-align:left;background:none;border:none;cur
     <!-- ════════════════ USERS ════════════════ -->
     <div class="tab-panel" id="tab-users">
       <div class="admin-page-title">Quản lý người dùng</div>
-      <div class="page-subtitle">Duyệt tài khoản mới, phân quyền và quản lý truy cập.</div>
-      <div style="display:flex;gap:0;margin-bottom:20px;border-bottom:1px solid var(--border)">
-        <button class="tab-btn active" id="utab-pending" onclick="switchUserTab('pending',this)">Chờ duyệt <span id="pending-count" class="nav-badge" style="margin-left:6px;position:static">0</span></button>
-        <button class="tab-btn" id="utab-all" onclick="switchUserTab('all',this)">Tất cả người dùng</button>
+      <div class="page-subtitle">Phân quyền và quản lý truy cập — người dùng tự đăng ký được active ngay.</div>
+      <div style="background:var(--blue-s);border:1px solid rgba(21,101,192,.15);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:18px;font-size:13px;color:var(--tx2)">
+        Người dùng mới tự đăng ký với role <strong>reviewer</strong>. Admin có thể nâng quyền hoặc khóa tài khoản tại đây.
       </div>
-      <div id="users-pending-panel">
-        <div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div>
-      </div>
-      <div id="users-all-panel" style="display:none">
+      <div id="users-all-panel">
         <div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div>
       </div>
     </div>
@@ -897,53 +893,29 @@ async function reviewAction(id,action,btn){
 }
 
 // ── USERS ─────────────────────────────────────────
-let _currentUserTab='pending';
-function switchUserTab(tab,btn){
-  _currentUserTab=tab;
-  document.querySelectorAll('#tab-users .tab-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById('users-pending-panel').style.display=tab==='pending'?'':'none';
-  document.getElementById('users-all-panel').style.display=tab==='all'?'':'none';
-  if(tab==='all') loadAllUsers();
-}
-
 async function loadUsers(){
-  await Promise.all([loadPendingUsers(), loadAllUsers()]);
-}
-
-async function loadPendingUsers(){
-  const el=document.getElementById('users-pending-panel');
-  try{
-    const r=await fetch('/api/users/pending');
-    if(!r.ok) throw new Error(r.status);
-    const users=await r.json();
-    const badge=document.getElementById('pending-count');
-    badge.textContent=users.length; badge.style.display=users.length?'':'none';
-    if(!users.length){el.innerHTML='<div style="padding:32px;text-align:center;color:var(--ok)">✓ Không có tài khoản nào đang chờ duyệt.</div>';return;}
-    el.innerHTML=users.map(u=>userCard(u,true)).join('');
-  }catch{el.innerHTML='<div style="padding:24px;text-align:center;color:var(--tx3)">Không thể tải danh sách.</div>';}
+  loadAllUsers();
 }
 
 async function loadAllUsers(){
   const el=document.getElementById('users-all-panel');
-  if(el.dataset.loaded&&_currentUserTab!=='all') return;
+  if(el.dataset.loaded) return;
   try{
     const r=await fetch('/api/users');
     if(!r.ok) throw new Error(r.status);
     const users=await r.json();
     if(!users.length){el.innerHTML='<div style="padding:32px;text-align:center;color:var(--tx3)">Chưa có người dùng nào.</div>';return;}
-    el.innerHTML=users.map(u=>userCard(u,false)).join('');
+    el.innerHTML=users.map(u=>userCard(u)).join('');
     el.dataset.loaded='1';
   }catch{el.innerHTML='<div style="padding:24px;text-align:center;color:var(--tx3)">Không thể tải. Kiểm tra quyền admin.</div>';}
 }
 
-function userCard(u,isPending){
+function userCard(u){
   const initials=(u.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
   const roleOpts=ROLES.map(r=>`<option value="${r}"${r===u.role?' selected':''}>${ROLE_LABELS[r]||r}</option>`).join('');
-  let statusBadge;
-  if(u.active===false)      { statusBadge='<span class="badge badge-high" style="font-size:10px">Bị khóa</span>'; }
-  else if(u.approved===false){ statusBadge='<span class="badge badge-pending" style="font-size:10px">Chờ duyệt</span>'; }
-  else                       { statusBadge='<span class="badge badge-verified" style="font-size:10px">Đã duyệt</span>'; }
+  const statusBadge = u.active===false
+    ? '<span class="badge badge-high" style="font-size:10px">Bị khóa</span>'
+    : '<span class="badge badge-verified" style="font-size:10px">Active</span>';
   const lockCls = u.active===false ? 'green' : 'red';
   const lockTxt = u.active===false ? '🔓 Mở khóa' : '🔒 Khóa';
   return `<div class="user-card" id="uc-${u.email.replace(/[@.]/g,'-')}">
@@ -953,40 +925,15 @@ function userCard(u,isPending){
       <div class="user-email">${u.email} · Đăng ký: ${u.created_at?timeAgo(u.created_at):'—'}</div>
     </div>
     <div class="user-actions">
-      <select class="role-select" id="role-${u.email.replace(/[@.]/g,'-')}" ${isPending?'':'onchange="changeRole(\''+u.email+'\',this)"'}>
+      <select class="role-select" id="role-${u.email.replace(/[@.]/g,'-')}" onchange="changeRole('${u.email}',this)">
         ${roleOpts}
       </select>
-      ${isPending
-        ? `<button class="btn-sm green" onclick="approveUser('${u.email}')">✓ Duyệt</button>
-           <button class="btn-sm red" onclick="rejectUser('${u.email}')">✕ Từ chối</button>`
-        : `<button class="btn-sm amber" onclick="changeRole('${u.email}',document.getElementById('role-${u.email.replace(/[@.]/g,'-')}'))">Đổi quyền</button>
-           <button class="btn-sm ${lockCls}" onclick="toggleLock('${u.email}',${u.active===false})">${lockTxt}</button>`}
+      <button class="btn-sm amber" onclick="changeRole('${u.email}',document.getElementById('role-${u.email.replace(/[@.]/g,'-')}'))">Đổi quyền</button>
+      <button class="btn-sm ${lockCls}" onclick="toggleLock('${u.email}',${u.active===false})">${lockTxt}</button>
     </div>
   </div>`;
 }
 
-async function approveUser(email){
-  const rid=email.replace(/[@.]/g,'-');
-  const role=document.getElementById('role-'+rid)?.value||'reviewer';
-  try{
-    const r=await fetch('/api/users/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,role})});
-    const d=await r.json();
-    if(d.ok||r.ok){
-      document.getElementById('uc-'+rid)?.remove();
-      loadPendingUsers();
-    }else alert(d.error||'Lỗi duyệt tài khoản');
-  }catch{alert('Lỗi kết nối');}
-}
-
-async function rejectUser(email){
-  if(!confirm(`Từ chối tài khoản ${email}?`)) return;
-  const rid=email.replace(/[@.]/g,'-');
-  try{
-    await fetch('/api/users/reject',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
-    document.getElementById('uc-'+rid)?.remove();
-    loadPendingUsers();
-  }catch{alert('Lỗi kết nối');}
-}
 
 async function changeRole(email,sel){
   const role=typeof sel==='string'?sel:sel.value;

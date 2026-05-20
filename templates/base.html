@@ -66,6 +66,15 @@ body{font-family:var(--font);background:var(--paper);color:var(--tx);
 .hdr-btn:hover{background:rgba(255,255,255,.2)}
 .hdr-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;
   stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.hdr-auth{display:flex;align-items:center;gap:6px}
+.hdr-auth-btn{padding:5px 13px;border-radius:var(--radius-md);font-family:var(--font);
+  font-size:12.5px;font-weight:600;cursor:pointer;text-decoration:none;
+  transition:all .15s;border:1px solid rgba(255,255,255,.25);color:#fff;
+  background:rgba(255,255,255,.1);white-space:nowrap}
+.hdr-auth-btn:hover{background:rgba(255,255,255,.2)}
+.hdr-auth-btn.primary{background:var(--blue);border-color:var(--blue)}
+.hdr-auth-btn.primary:hover{background:#1976d2}
+.hdr-user{font-size:12px;color:rgba(255,255,255,.85);display:flex;align-items:center;gap:6px}
 
 .main-nav{background:var(--navy2);border-top:1px solid rgba(255,255,255,.08)}
 .nav-inner{max-width:var(--max-w);margin:0 auto;padding:0 20px;
@@ -199,6 +208,21 @@ body{font-family:var(--font);background:var(--paper);color:var(--tx);
       <button class="hdr-btn" id="theme-toggle" title="Đổi giao diện" onclick="toggleTheme()">
         <svg viewBox="0 0 24 24" id="theme-icon"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
       </button>
+      <div class="hdr-auth">
+        {% if session.get('logged_in') %}
+          <span class="hdr-user">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            {{ session.get('name') or session.get('email','') }}
+          </span>
+          {% if session.get('role') in ['admin','editor','alert_mgr','reviewer'] %}
+          <a href="/admin" class="hdr-auth-btn">Quản trị</a>
+          {% endif %}
+          <a href="/logout" class="hdr-auth-btn">Đăng xuất</a>
+        {% else %}
+          <a href="/login" class="hdr-auth-btn">Đăng nhập</a>
+          <a href="/login#register" class="hdr-auth-btn primary" onclick="sessionStorage.setItem('openTab','register')">Đăng ký</a>
+        {% endif %}
+      </div>
     </div>
   </div>
   <nav class="main-nav">
@@ -239,7 +263,6 @@ body{font-family:var(--font);background:var(--paper);color:var(--tx);
       <a href="/submit">Gửi ảnh</a>
       <a href="/alerts">Cảnh báo</a>
       <a href="/chat">Hỏi AI</a>
-      <a href="/login">Quản trị</a>
     </div>
   </div>
 </footer>

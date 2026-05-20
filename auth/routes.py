@@ -183,17 +183,25 @@ def verify_otp_route():
         return jsonify({"error": "Phiên đăng ký đã hết hạn — vui lòng thử lại"}), 400
 
     result = _um.register(
-        email    = pending["email"],
-        name     = pending["name"],
-        password = pending["password"],
+        email          = pending["email"],
+        name           = pending["name"],
+        password       = pending["password"],
         requested_role = pending.get("role", "reviewer"),
     )
     if "error" in result:
         return jsonify(result), 409
 
+    # Auto-login ngay sau khi đăng ký thành công
+    session["logged_in"] = True
+    session["email"]     = result["email"]
+    session["name"]      = result["name"]
+    session["role"]      = result["role"]
+    session["is_admin"]  = result["role"] == "admin"
+
     return jsonify({
         "ok":      True,
-        "message": "Email đã được xác nhận. Tài khoản đang chờ admin phê duyệt.",
+        "message": "Đăng ký thành công! Đang chuyển hướng...",
+        "redirect": "/",
     })
 
 
