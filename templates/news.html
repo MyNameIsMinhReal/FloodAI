@@ -73,10 +73,10 @@ async function loadAllNews(){
     const r2=await fetch('/api/news/fetch');
     const data=await r2.json();
     (data.articles||data||[]).forEach(a=>items.push({
-      type:'news',id:a.url||a.id,
+      type:'news',id:a.link||a.url||a.id,
       level:'unknown',sev:'unknown',badge:'badge-unknown',
-      title:a.title||'Tin tức',summary:a.summary||a.description||'',
-      time:a.published_at||a.date,source:a.source||'Tin tức',
+      title:a.title||'Tin tức',summary:a.summary||a.body||a.description||'',
+      time:a.published||a.published_at||a.date,source:a.source||'Tin tức',
     }));
   }catch{}
   allItems=items;
