@@ -293,13 +293,38 @@ class LLMEnhancer:
             raise ValueError("Cần chỉ định model_path cho backend transformers")
 
         use_gpu = self._device == "cuda" and torch.cuda.is_available()
-        dtype = torch.float16 if use_gpu else torch.float32
         if use_gpu:
             self._gpu_id = _best_gpu_index()
             device_map = {"": self._gpu_id}
+            # Dùng QLoRA 4-bit để tiết kiệm VRAM lúc inference (~16GB thay vì 65GB)
+            try:
+                from transformers import BitsAndBytesConfig
+                bnb_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_compute_dtype=torch.bfloat16,
+                    bnb_4bit_use_double_quant=True,
+                )
+                log.info(f"[LLM] Loading transformers model: {self.model_path} (4-bit QLoRA, cuda:{self._gpu_id})")
+                self._tokenizer = AutoTokenizer.from_pretrained(
+                    self.model_path, trust_remote_code=True
+                )
+                self._model = AutoModelForCausalLM.from_pretrained(
+                    self.model_path,
+                    quantization_config=bnb_config,
+                    device_map=device_map,
+                    trust_remote_code=True,
+                )
+                self._model.eval()
+                log.info(f"[LLM] Model loaded (4-bit QLoRA on cuda:{self._gpu_id})")
+                return
+            except Exception as e:
+                log.warning(f"[LLM] QLoRA thất bại ({e}), fallback bfloat16")
+            dtype = torch.bfloat16
         else:
             self._gpu_id = None
             device_map = "cpu"
+            dtype = torch.float32
         log.info(f"[LLM] Loading transformers model: {self.model_path} (device_map={device_map}, dtype={dtype})")
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.model_path, trust_remote_code=True
