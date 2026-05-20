@@ -75,7 +75,7 @@ async function loadAllNews(){
     (data.articles||data||[]).forEach(a=>items.push({
       type:'news',id:a.link||a.url||a.id,
       level:'unknown',sev:'unknown',badge:'badge-unknown',
-      title:a.title||'Tin tức',summary:a.summary||a.body||a.description||'',
+      title:a.title||'Tin tức',summary:a.summary||a.description||'',
       time:a.published||a.published_at||a.date,source:a.source||'Tin tức',
     }));
   }catch{}
