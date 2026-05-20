@@ -434,16 +434,16 @@ def train():
 
     # Override config theo FREE VRAM thực tế (quan trọng trên server dùng chung)
     if use_gpu:
-        if vram_gb >= 70:          # A100/H100 80GB → 72B/32B QLoRA, batch cực lớn
-            TRAIN_CFG["max_seq_length"]              = 8192
-            TRAIN_CFG["gradient_checkpointing"]      = False
+        if vram_gb >= 70:          # A100/H100 80GB → 32B QLoRA, batch an toàn
+            TRAIN_CFG["max_seq_length"]              = 4096
+            TRAIN_CFG["gradient_checkpointing"]      = True
             TRAIN_CFG["num_train_epochs"]            = 10
-            TRAIN_CFG["per_device_train_batch_size"] = 32
-            TRAIN_CFG["per_device_eval_batch_size"]  = 32
-            TRAIN_CFG["gradient_accumulation_steps"] = 1
-            TRAIN_CFG["learning_rate"]               = 8e-5  # thấp hơn cho model lớn
-            TRAIN_CFG["optim"]                       = "paged_adamw_8bit"  # tiết kiệm optimizer memory
-            log.info(f"[Config] {vram_gb:.0f}GB free → seq=8192, epochs=10, batch=32 (A100/H100 mode)")
+            TRAIN_CFG["per_device_train_batch_size"] = 4
+            TRAIN_CFG["per_device_eval_batch_size"]  = 4
+            TRAIN_CFG["gradient_accumulation_steps"] = 8   # effective batch = 32
+            TRAIN_CFG["learning_rate"]               = 8e-5
+            TRAIN_CFG["optim"]                       = "paged_adamw_8bit"
+            log.info(f"[Config] {vram_gb:.0f}GB free → seq=4096, epochs=10, batch=4 (grad_ckpt=True, eff_batch=32)")
         elif vram_gb >= 50:        # 50–70GB → 32B QLoRA, batch lớn
             TRAIN_CFG["max_seq_length"]              = 4096
             TRAIN_CFG["gradient_checkpointing"]      = False
