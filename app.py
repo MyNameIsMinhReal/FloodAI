@@ -20,7 +20,10 @@ import urllib.request
 import zipfile
 from functools import wraps
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Dict, Optional
+
+if TYPE_CHECKING:
+    from utils.geo_localizer import GeoEstimate
 
 import yaml
 
@@ -124,7 +127,7 @@ def get_llm():
     return _llm if _llm_ready else None
 
 
-def llm_infer(messages: list, max_new_tokens: int = None) -> str:
+def llm_infer(messages: list, max_new_tokens: Optional[int] = None) -> str:
     """Thread-safe inference. Raises on error."""
     llm = get_llm()
     if llm is None:
@@ -254,7 +257,7 @@ def _fetch_news():
                 link = e.get("link", "")
                 if link in seen_links:
                     continue
-                txt = (e.get("title", "") + " " + e.get("summary", "")).lower()
+                txt = (str(e.get("title") or "") + " " + str(e.get("summary") or "")).lower()
                 if not any(kw in txt for kw in FLOOD_KW):
                     continue
                 seen_links.add(link)
@@ -943,6 +946,11 @@ def api_drive_analyze():
         "message":   f"Đang tải ảnh từ Drive (tối đa {max_files} file). Kiểm tra Jobs sau vài phút.",
         "jobs_url":  "/admin",
     }), 202
+
+
+@app.route("/api/jobs/<job_id>", methods=["GET"])
+@login_required
+def api_job_status(job_id: str):
     """Trả về trạng thái hiện tại của một job."""
     from pipeline.job_queue import JobQueue
     status = JobQueue.instance().get(job_id)

@@ -193,10 +193,11 @@ function clearAlerts() {
 
 // ── Get hCaptcha token ──────────────────────────────
 function getCaptchaToken(id) {
-  var iframe = document.querySelector('#' + id + ' iframe[data-hcaptcha-response]');
-  if (iframe) return iframe.getAttribute('data-hcaptcha-response') || '';
-  var ta = document.querySelector('#' + id + ' [name="h-captcha-response"]');
-  if (ta) return ta.value || '';
+  if (globalThis.hcaptcha) {
+    var el = document.getElementById(id);
+    var widgetId = el ? el.dataset.hcaptchaWidgetId : undefined;
+    return hcaptcha.getResponse(widgetId) || '';
+  }
   return '';
 }
 
