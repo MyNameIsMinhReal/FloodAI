@@ -10,11 +10,14 @@ import html
 import json
 import logging
 import os
+import re
+import shutil
 import sys
 import tempfile
 import threading
 import time
 import urllib.request
+import zipfile
 from functools import wraps
 from pathlib import Path
 from typing import Optional
@@ -58,6 +61,15 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.environ.get("FLASK_ENV") == "production",
 )
+
+# ── Auth blueprints ────────────────────────────────────────────────────────────
+try:
+    from auth.routes import auth_bp, users_bp
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(users_bp)
+    log.info("[Auth] Blueprints registered: /api/auth/*, /api/users/*")
+except Exception as _auth_exc:
+    log.warning(f"[Auth] Could not load auth routes: {_auth_exc}")
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 ADMIN_USER = os.environ.get("ADMIN_USER", "admin")

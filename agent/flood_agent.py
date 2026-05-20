@@ -2136,7 +2136,13 @@ class FloodAgent:
         self.permission  = permission_level
         self.audit_log   = AuditLog()
         self.clusterer   = EventClusterer()
-        self._active_events: List[Dict] = []   # in-memory event store (thay bằng DB nếu cần)
+        self._active_events: List[Dict] = []   # in-memory event store
+
+        # v3.1 — Conversation layer
+        from agent.conversation_state import ConversationState, ResponsePlanner
+        from agent.persona            import Persona, PersonaType
+        self._conv_state: Dict[str, ConversationState] = {}  # session_id → state
+        self._planner    = ResponsePlanner()
 
         # LLM Enhancer — dùng model đã fine-tune nếu có, fallback về FeedbackParser
         self._llm = None
@@ -2669,6 +2675,81 @@ class FloodAgent:
     def get_audit_trail(self, n: int = 20) -> List[Dict]:
         """Lấy n bản ghi audit gần nhất."""
         return self.audit_log.recent(n)
+
+    def get_conversation_state(self, session_id: str = "default") -> Any:
+        """
+        Lấy (hoặc tạo mới) ConversationState cho một session.
+        Dùng session_id để phân biệt nhiều user cùng lúc.
+        """
+        from agent.conversation_state import ConversationState
+        if session_id not in self._conv_state:
+            self._conv_state[session_id] = ConversationState()
+        return self._conv_state[session_id]
+
+    def plan_response(
+        self,
+        result:     Dict,
+        session_id: str  = "default",
+        user_role:  str  = "public_user",
+        image_ok:   bool = True,
+        decision:   Any  = None,
+        length:     str  = "normal",
+    ) -> Any:
+        """
+        Chọn ResponseType + build ResponseSchema — không viết text.
+        Dùng trước build_natural_response() khi cần kiểm soát intent.
+
+        Returns: ResponseSchema (xem conversation_state.py)
+
+        Ví dụ:
+            schema = agent.plan_response(result, session_id="user_42", user_role="public_user")
+            text   = ResponseRewriter.render_schema(schema, mode="public_user")
+        """
+        from agent.conversation_state import (
+            ConversationState, ResponsePlanner, ResponseLength
+        )
+        from agent.response_rewriter import ResponseRewriter
+
+        state = self.get_conversation_state(session_id)
+        state.user_role = user_role
+
+        # Update state với kết quả mới
+        if result:
+            state.update_analysis(
+                level      = str(result.get("flood_level", "UNKNOWN")),
+                confidence = float(result.get("confidence", 0) or 0),
+                depth_cm   = float(result.get("water_height_cm", 0) or 0),
+            )
+
+        length_enum = {
+            "short":  ResponseLength.SHORT,
+            "normal": ResponseLength.NORMAL,
+            "detail": ResponseLength.DETAIL,
+        }.get(length, ResponseLength.NORMAL)
+
+        dec_dict = decision.to_dict() if hasattr(decision, "to_dict") else (decision or {})
+        rtype    = ResponsePlanner.plan(state, result, user_role, image_ok, dec_dict)
+        schema   = ResponsePlanner.build_schema(
+            rtype    = rtype,
+            result   = result,
+            state    = state,
+            location = state.location,
+            decision = dec_dict,
+            length   = length_enum,
+        )
+
+        # Cập nhật state sau khi plan
+        from agent.conversation_state import ResponseType
+        if rtype == ResponseType.ASK_LOCATION:
+            state.mark_asked_location()
+        elif rtype == ResponseType.ASK_TIME:
+            state.mark_asked_time()
+        elif rtype == ResponseType.ASK_BETTER_IMG:
+            state.mark_asked_better_image()
+        elif rtype == ResponseType.WARN:
+            state.mark_warned()
+
+        return schema
 
     def build_natural_response(
         self,

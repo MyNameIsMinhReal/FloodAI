@@ -573,3 +573,134 @@ class ResponseRewriter:
             location        = location,
             missing_fields  = missing_fields,
         )
+
+    # ── render_schema  (#13) ──────────────────────────────────────
+
+    @classmethod
+    def render_schema(
+        cls,
+        schema: Any,   # ResponseSchema from conversation_state.py
+        mode:   ResponseMode | str = ResponseMode.PUBLIC_USER,
+        length: Any = None,        # ResponseLength (optional override)
+    ) -> str:
+        """
+        Render ResponseSchema → natural language text.
+        Tách biệt: ConversationState/Planner tạo schema,
+                   ResponseRewriter render thành text.
+
+        Ví dụ:
+            schema = planner.build_schema(ResponseType.INFORM, result, state)
+            text   = ResponseRewriter.render_schema(schema, mode="public_user")
+        """
+        if schema is None:
+            return ""
+
+        # Import lazy để tránh circular
+        try:
+            from agent.conversation_state import ResponseLength
+        except ImportError:
+            ResponseLength = None
+
+        # Kiểm tra schema có phương thức render không
+        if hasattr(schema, "render"):
+            base = schema.render()
+        else:
+            # Fallback: schema là dict
+            parts = [
+                schema.get("main_message", ""),
+                schema.get("safety_note",  ""),
+                schema.get("action_hint",  "") if str(mode).endswith("admin_review") else "",
+                schema.get("question",     ""),
+            ]
+            base = " ".join(p.strip() for p in parts if p.strip())
+
+        # Validate sau khi render
+        try:
+            from agent.response_validator import ResponseValidator
+            mode_str = mode.value if isinstance(mode, ResponseMode) else str(mode)
+            valid = ResponseValidator.validate(base, mode=mode_str)
+            if not valid and valid.severity == "fail":
+                # Thay từ kỹ thuật đơn giản
+                base = ResponseValidator.filter_tech_words(base)
+        except ImportError:
+            pass
+
+        return base
+
+    # ── explain_decision  (#16) ───────────────────────────────────
+
+    @classmethod
+    def explain_decision(
+        cls,
+        decision: Any,    # AgentDecision hoặc dict
+        result:   Dict,
+        mode:     ResponseMode | str = ResponseMode.PUBLIC_USER,
+    ) -> str:
+        """
+        Giải thích quyết định của agent bằng ngôn ngữ tự nhiên (#16).
+
+        Dùng khi:
+          - Admin hỏi tại sao không đăng
+          - User muốn hiểu kết quả phân tích
+
+        Ví dụ output (admin_review):
+            "Mình chưa khuyên đăng tin này ngay, vì ảnh chưa có vị trí rõ ràng
+             và chất lượng hơi thấp. Có thể đưa vào hàng chờ xác minh hoặc
+             yêu cầu người gửi bổ sung địa điểm."
+
+        Ví dụ output (public_user):
+            "Ảnh này có dấu hiệu ngập nhưng mình chưa chắc chắn lắm về kết quả.
+             Bạn cho mình biết địa điểm chụp ảnh để mình có thể xác nhận rõ hơn."
+        """
+        if hasattr(decision, "to_dict"):
+            dec = decision.to_dict()
+        elif isinstance(decision, dict):
+            dec = decision
+        else:
+            dec = {}
+
+        dec_type   = dec.get("decision", "needs_review")
+        reasons    = dec.get("reasons", [])
+        req_acts   = dec.get("required_actions", [])
+        conf       = float(result.get("confidence", 0) or 0)
+        depth      = float(result.get("water_height_cm", 0) or 0)
+        level      = str(result.get("flood_level", "UNKNOWN") or "UNKNOWN").upper()
+        conf_lbl   = confidence_label(conf)
+        d_range    = depth_range(depth) if depth > 0 else ""
+        is_admin   = str(mode).endswith("admin_review") or mode == ResponseMode.ADMIN_REVIEW
+
+        if dec_type == "publish" and not req_acts:
+            if is_admin:
+                return (
+                    f"Báo cáo này có thể đăng. "
+                    f"Hệ thống ghi nhận ngập {d_range}, kết quả {conf_lbl}. "
+                    f"Không có vấn đề gì đặc biệt cần xử lý trước khi xuất bản."
+                )
+            else:
+                return (
+                    f"Ảnh cho thấy khu vực này {_LEVEL_NATURAL.get(level, 'có dấu hiệu ngập')}, "
+                    f"ước tính {d_range}. Kết quả {conf_lbl}."
+                )
+
+        # needs_review hoặc có required_actions
+        reason_str = reasons[0] if reasons else "Thông tin chưa đủ để kết luận."
+
+        if is_admin:
+            action_str = (
+                f"Có thể {req_acts[0][0].lower() + req_acts[0][1:]} trước khi đăng."
+                if req_acts else "Đưa vào hàng chờ xác minh."
+            )
+            return (
+                f"Mình chưa khuyên đăng tin này ngay, vì {reason_str[0].lower() + reason_str[1:]}. "
+                f"{action_str}"
+            )
+        else:
+            followup = (
+                "Bạn cho mình biết địa điểm chụp ảnh để mình xác nhận rõ hơn."
+                if "vị trí" in reason_str.lower() or "gps" in reason_str.lower()
+                else "Thông tin này nên được kiểm tra thêm trước khi chia sẻ rộng rãi."
+            )
+            return (
+                f"Ảnh có dấu hiệu ngập nhưng kết quả {conf_lbl}. "
+                f"{followup}"
+            )
