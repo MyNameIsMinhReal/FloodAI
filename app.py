@@ -1210,6 +1210,258 @@ def legacy_live():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# ADMIN API — Data helpers
+# ══════════════════════════════════════════════════════════════════════════════
+_DATA_DIR = BASE_DIR / "data"
+
+def _load_json(filename: str, default=None):
+    path = _DATA_DIR / filename
+    if not path.exists():
+        return [] if default is None else default
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return [] if default is None else default
+
+def _save_json(filename: str, data) -> None:
+    _DATA_DIR.mkdir(exist_ok=True)
+    (_DATA_DIR / filename).write_text(
+        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+def _now_iso() -> str:
+    from datetime import datetime as _dt
+    return _dt.now().isoformat(timespec="seconds")
+
+
+# ── Alerts ─────────────────────────────────────────────────────────────────
+@app.route("/api/admin/alerts", methods=["GET"])
+@login_required
+def api_admin_alerts_list():
+    return jsonify(_load_json("alerts.json"))
+
+@app.route("/api/admin/alerts", methods=["POST"])
+@login_required
+def api_admin_alerts_create():
+    data = request.get_json(silent=True) or {}
+    alerts = _load_json("alerts.json")
+    alert = {
+        "id":              str(int(time.time() * 1000)),
+        "location":        data.get("location", ""),
+        "level":           data.get("level", "knee"),
+        "message":         data.get("message", ""),
+        "recommendations": data.get("recommendations", ""),
+        "status":          "active",
+        "created_at":      _now_iso(),
+        "updated_at":      _now_iso(),
+        "expires_at":      data.get("expires_at", ""),
+        "created_by":      session.get("email", "admin"),
+        "job_id":          data.get("job_id", ""),
+    }
+    alerts.insert(0, alert)
+    _save_json("alerts.json", alerts)
+    return jsonify({"ok": True, "alert": alert})
+
+@app.route("/api/admin/alerts/<alert_id>", methods=["PATCH"])
+@login_required
+def api_admin_alerts_update(alert_id: str):
+    data = request.get_json(silent=True) or {}
+    alerts = _load_json("alerts.json")
+    for a in alerts:
+        if a.get("id") == alert_id:
+            for k, v in data.items():
+                if k not in ("id", "created_at", "created_by"):
+                    a[k] = v
+            a["updated_at"] = _now_iso()
+            _save_json("alerts.json", alerts)
+            return jsonify({"ok": True, "alert": a})
+    return jsonify({"error": "Không tìm thấy"}), 404
+
+@app.route("/api/admin/alerts/<alert_id>", methods=["DELETE"])
+@login_required
+def api_admin_alerts_delete(alert_id: str):
+    alerts = [a for a in _load_json("alerts.json") if a.get("id") != alert_id]
+    _save_json("alerts.json", alerts)
+    return jsonify({"ok": True})
+
+
+# ── Flood Events ────────────────────────────────────────────────────────────
+@app.route("/api/admin/events", methods=["GET"])
+@login_required
+def api_admin_events_list():
+    return jsonify(_load_json("events.json"))
+
+@app.route("/api/admin/events", methods=["POST"])
+@login_required
+def api_admin_events_create():
+    data = request.get_json(silent=True) or {}
+    events = _load_json("events.json")
+    event = {
+        "id":            str(int(time.time() * 1000)),
+        "name":          data.get("name", "Sự kiện ngập"),
+        "location":      data.get("location", ""),
+        "status":        data.get("status", "active"),
+        "max_level":     data.get("max_level", "unknown"),
+        "current_level": data.get("current_level", "unknown"),
+        "report_count":  int(data.get("report_count", 1)),
+        "notes":         data.get("notes", ""),
+        "created_at":    _now_iso(),
+        "updated_at":    _now_iso(),
+        "created_by":    session.get("email", "admin"),
+        "job_ids":       data.get("job_ids", []),
+    }
+    events.insert(0, event)
+    _save_json("events.json", events)
+    return jsonify({"ok": True, "event": event})
+
+@app.route("/api/admin/events/<event_id>", methods=["PATCH"])
+@login_required
+def api_admin_events_update(event_id: str):
+    data = request.get_json(silent=True) or {}
+    events = _load_json("events.json")
+    for e in events:
+        if e.get("id") == event_id:
+            for k, v in data.items():
+                if k not in ("id", "created_at", "created_by"):
+                    e[k] = v
+            e["updated_at"] = _now_iso()
+            _save_json("events.json", events)
+            return jsonify({"ok": True, "event": e})
+    return jsonify({"error": "Không tìm thấy"}), 404
+
+@app.route("/api/admin/events/<event_id>", methods=["DELETE"])
+@login_required
+def api_admin_events_delete(event_id: str):
+    events = [e for e in _load_json("events.json") if e.get("id") != event_id]
+    _save_json("events.json", events)
+    return jsonify({"ok": True})
+
+
+# ── Admin Copilot ───────────────────────────────────────────────────────────
+_COPILOT_SYS = (
+    "Bạn là AI Copilot hỗ trợ admin kiểm duyệt tin tức ngập lụt tại Việt Nam. "
+    "Phân tích dữ liệu AI và đưa ra đề xuất cụ thể, ngắn gọn bằng tiếng Việt. "
+    "Tối đa 3–4 câu. Không bịa thêm thông tin ngoài dữ liệu được cung cấp."
+)
+_COPILOT_FALLBACKS: Dict[str, str] = {
+    "summarize": "Báo cáo ngập tại khu vực được ghi nhận. Mức độ và độ tin cậy từ kết quả AI.",
+    "publish":   "Kiểm tra: vị trí đã xác minh, ảnh đã blur, mức ngập hợp lý, có khuyến cáo.",
+    "title":     "Ngập lụt tại khu vực — cập nhật từ hệ thống AI",
+    "alert":     "Cảnh báo ngập lụt tại khu vực. Người dân chú ý và hạn chế di chuyển.",
+    "compare":   "So sánh với báo cáo trước để xác định xu hướng ngập tăng hay giảm.",
+}
+
+@app.route("/api/admin/copilot", methods=["POST"])
+@login_required
+def api_admin_copilot():
+    data    = request.get_json(silent=True) or {}
+    action  = data.get("action", "summarize")
+    job_raw = data.get("job", {})
+    custom  = data.get("custom_prompt", "")
+
+    if not _llm_ready:
+        return jsonify({"reply": _COPILOT_FALLBACKS.get(action, "Model chưa sẵn sàng."), "fallback": True})
+
+    job_txt = json.dumps(job_raw, ensure_ascii=False)[:500]
+    prompts = {
+        "summarize": f"Tóm tắt ngắn báo cáo ngập này:\n{job_txt}",
+        "publish":   f"Có nên đăng báo cáo này lên công khai không? Giải thích:\n{job_txt}",
+        "title":     f"Viết tiêu đề báo tin (dưới 15 từ) cho báo cáo:\n{job_txt}",
+        "alert":     f"Viết nội dung cảnh báo ngắn (1–2 câu) từ báo cáo:\n{job_txt}",
+        "compare":   f"Đề xuất hành động dựa trên báo cáo này so với tình hình chung:\n{job_txt}",
+    }
+    prompt = custom if custom else prompts.get(action, f"Phân tích báo cáo:\n{job_txt}")
+
+    try:
+        reply = llm_infer([
+            {"role": "system", "content": _COPILOT_SYS},
+            {"role": "user",   "content": prompt},
+        ], max_new_tokens=200).strip()
+        return jsonify({"reply": reply})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ── Config ──────────────────────────────────────────────────────────────────
+@app.route("/api/admin/config", methods=["GET"])
+@login_required
+def api_admin_config_get():
+    try:
+        cfg_path = BASE_DIR / "config.yaml"
+        raw = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {} if cfg_path.exists() else {}
+        return jsonify(raw)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+@app.route("/api/admin/config", methods=["POST"])
+@login_required
+def api_admin_config_update():
+    data = request.get_json(silent=True) or {}
+    try:
+        cfg_path = BASE_DIR / "config.yaml"
+        current  = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {} if cfg_path.exists() else {}
+        current.update(data)
+        cfg_path.write_text(yaml.dump(current, allow_unicode=True, default_flow_style=False), encoding="utf-8")
+        log.info("[Config] Updated by %s: %s", session.get("email"), list(data.keys()))
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ── Sources ─────────────────────────────────────────────────────────────────
+@app.route("/api/admin/sources", methods=["GET"])
+@login_required
+def api_admin_sources():
+    from pipeline.job_queue import JobQueue
+    jobs = JobQueue.instance().list_recent(300)
+    sources: Dict[str, dict] = {}
+    for j in jobs:
+        src = (j.result_summary or {}).get("source") or "Hệ thống"
+        if src not in sources:
+            sources[src] = {"name": src, "total": 0, "done": 0, "failed": 0, "last_at": ""}
+        sources[src]["total"] += 1
+        if j.status == "done":   sources[src]["done"]   += 1
+        if j.status == "failed": sources[src]["failed"] += 1
+        if (j.created_at or "") > sources[src]["last_at"]:
+            sources[src]["last_at"] = j.created_at or ""
+    return jsonify(sorted(sources.values(), key=lambda x: -x["total"]))
+
+
+# ── Job review actions ───────────────────────────────────────────────────────
+_job_review_states: Dict[str, str] = {}
+
+@app.route("/api/admin/jobs/<job_id>/review", methods=["POST"])
+@login_required
+def api_admin_job_review(job_id: str):
+    data   = request.get_json(silent=True) or {}
+    action = data.get("action", "")
+    if action not in ("approve", "reject", "verify", "alert", "update"):
+        return jsonify({"error": "action không hợp lệ"}), 400
+    _job_review_states[job_id] = action
+    log.info("[Review] Job %s → %s by %s", job_id, action, session.get("email", "?"))
+    return jsonify({"ok": True, "job_id": job_id, "action": action})
+
+@app.route("/api/admin/review-states", methods=["GET"])
+@login_required
+def api_admin_review_states():
+    return jsonify(_job_review_states)
+
+
+# ── Audit log ───────────────────────────────────────────────────────────────
+@app.route("/api/admin/audit", methods=["GET"])
+@login_required
+def api_admin_audit():
+    try:
+        from auth.user_manager import UserManager
+        um = UserManager.instance() if hasattr(UserManager, "instance") else None
+        if um and hasattr(um, "get_audit_log"):
+            return jsonify(um.get_audit_log())
+    except Exception:
+        pass
+    return jsonify([])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # ADMIN PANEL (review queue, pipeline, training, active learning)
 # ══════════════════════════════════════════════════════════════════════════════
 

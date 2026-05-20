@@ -424,16 +424,41 @@ button.admin-nav-link{width:100%;text-align:left;background:none;border:none;cur
 
     <!-- ════════════════ REVIEW ════════════════ -->
     <div class="tab-panel" id="tab-review">
-      <div class="admin-page-title">Hàng chờ duyệt</div>
-      <div class="page-subtitle">Sắp xếp theo mức độ ưu tiên — tin nguy hiểm cao được hiển thị trước.</div>
-      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-        <button class="tab-btn active" onclick="filterReview('all',this)">Tất cả</button>
-        <button class="tab-btn" onclick="filterReview('critical',this)">Nguy hiểm cao</button>
-        <button class="tab-btn" onclick="filterReview('medium',this)">Cần chú ý</button>
-        <button class="tab-btn" onclick="filterReview('low',this)">Nhẹ</button>
-      </div>
-      <div id="review-list">
-        <div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div>
+      <div style="display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start">
+        <div>
+          <div class="admin-page-title">Hàng chờ duyệt</div>
+          <div class="page-subtitle">Sắp xếp theo mức độ ưu tiên — tin nguy hiểm cao được hiển thị trước.</div>
+          <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+            <button class="tab-btn active" onclick="filterReview('all',this)">Tất cả</button>
+            <button class="tab-btn" onclick="filterReview('critical',this)">Nguy hiểm cao</button>
+            <button class="tab-btn" onclick="filterReview('medium',this)">Cần chú ý</button>
+            <button class="tab-btn" onclick="filterReview('low',this)">Nhẹ</button>
+          </div>
+          <div id="review-list">
+            <div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div>
+          </div>
+        </div>
+        <!-- Copilot panel -->
+        <div id="copilot-panel" style="display:none;position:sticky;top:16px">
+          <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden">
+            <div style="background:var(--navy);color:#fff;padding:12px 14px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:center;gap:8px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+              Admin Copilot
+            </div>
+            <div style="padding:14px">
+              <div id="copilot-result" style="min-height:80px;font-size:13px;color:var(--tx2);line-height:1.7;margin-bottom:12px">Nhấn 🤖 AI trên một báo cáo để phân tích.</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                <button class="btn-sm" onclick="runCopilot()" style="font-size:11px">↻ Chạy lại</button>
+                <button class="btn-sm" onclick="document.getElementById('copilot-panel').style.display='none'" style="font-size:11px">✕ Đóng</button>
+              </div>
+            </div>
+          </div>
+          <div style="margin-top:12px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px">
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);margin-bottom:8px">Hỏi thêm</div>
+            <textarea id="copilot-custom" rows="3" style="width:100%;resize:none;padding:8px;border:1px solid var(--border);border-radius:var(--radius-md);font-family:var(--font);font-size:12px;background:var(--paper);color:var(--tx)" placeholder="Câu hỏi tùy chỉnh..."></textarea>
+            <button class="btn-sm green" style="margin-top:6px;width:100%;justify-content:center" onclick="_copilotTarget={..._copilotTarget,custom:document.getElementById('copilot-custom').value,action:'custom'};runCopilot()">Hỏi AI</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -520,16 +545,78 @@ button.admin-nav-link{width:100%;text-align:left;background:none;border:none;cur
       </div>
     </div>
 
-    <!-- ════════════════ PLACEHOLDERS ════════════════ -->
-    {% for tab_id, tab_name in [('articles','Bài viết'),('events','Sự kiện ngập'),('mappoints','Bản đồ'),('roads','Tuyến đường'),('sources','Nguồn tin'),('privacy','Ảnh & Riêng tư'),('stats','Thống kê')] %}
-    <div class="tab-panel" id="tab-{{ tab_id }}">
-      <div class="coming-soon">
-        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-        <h3>{{ tab_name }}</h3>
-        <p>Tính năng đang được phát triển.</p>
+    <!-- ════════════════ ARTICLES / CMS ════════════════ -->
+    <div class="tab-panel" id="tab-articles">
+      <div class="admin-page-title">Bài viết</div>
+      <div class="page-subtitle">Quản lý nội dung từ kết quả AI — duyệt, chỉnh, đăng.</div>
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="tab-btn active" onclick="filterArticles('all',this)">Tất cả</button>
+        <button class="tab-btn" onclick="filterArticles('approved',this)">Đã duyệt</button>
+        <button class="tab-btn" onclick="filterArticles('pending',this)">Chờ duyệt</button>
+        <button class="tab-btn" onclick="filterArticles('rejected',this)">Đã từ chối</button>
+      </div>
+      <div id="articles-list"><div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div></div>
+    </div>
+
+    <!-- ════════════════ FLOOD EVENTS ════════════════ -->
+    <div class="tab-panel" id="tab-events">
+      <div class="admin-page-title">Sự kiện ngập</div>
+      <div class="page-subtitle">Gom nhiều báo cáo thành sự kiện — theo dõi diễn biến theo thời gian.</div>
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px 18px;margin-bottom:20px">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);margin-bottom:12px">Tạo sự kiện mới</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end">
+          <div><label class="form-lbl" for="ev-name">Tên sự kiện</label><input type="text" id="ev-name" class="form-ctrl" placeholder="Ngập tại cổng trường THPT..."></div>
+          <div><label class="form-lbl" for="ev-location">Khu vực</label><input type="text" id="ev-location" class="form-ctrl" placeholder="Phường/Xã, Quận/Huyện"></div>
+          <button class="btn btn-primary" onclick="createEvent()" style="padding:9px 16px">+ Tạo sự kiện</button>
+        </div>
+      </div>
+      <div id="events-list"><div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div></div>
+    </div>
+
+    <!-- ════════════════ MAP ════════════════ -->
+    <div class="tab-panel" id="tab-mappoints">
+      <div class="admin-page-title">Bản đồ</div>
+      <div class="page-subtitle">Xem và chỉnh điểm ngập trên bản đồ.</div>
+      <div style="margin-bottom:16px;display:flex;gap:8px">
+        <a href="/map" target="_blank" class="btn btn-outline" style="font-size:13px">↗ Mở bản đồ đầy đủ</a>
+      </div>
+      <iframe src="/map" style="width:100%;height:500px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--card)" title="Flood Map"></iframe>
+      <div class="admin-section" style="margin-top:20px">
+        <div class="section-header"><span class="section-title">Điểm có tọa độ GPS gần đây</span></div>
+        <div id="map-points-list"><div style="padding:16px;text-align:center;color:var(--tx3);font-size:13px">Đang tải...</div></div>
       </div>
     </div>
-    {% endfor %}
+
+    <!-- ════════════════ ROADS ════════════════ -->
+    <div class="tab-panel" id="tab-roads">
+      <div class="admin-page-title">Tuyến đường</div>
+      <div class="page-subtitle">Tình trạng ngập theo khu vực — khuyến cáo phương tiện.</div>
+      <div id="roads-list"><div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div></div>
+    </div>
+
+    <!-- ════════════════ SOURCES ════════════════ -->
+    <div class="tab-panel" id="tab-sources">
+      <div class="admin-page-title">Nguồn tin</div>
+      <div class="page-subtitle">Thống kê theo nguồn gửi — theo dõi độ tin cậy.</div>
+      <div id="sources-list"><div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div></div>
+    </div>
+
+    <!-- ════════════════ PRIVACY ════════════════ -->
+    <div class="tab-panel" id="tab-privacy">
+      <div class="admin-page-title">Ảnh & Quyền riêng tư</div>
+      <div class="page-subtitle">Kiểm duyệt ảnh trước khi đăng công khai — blur mặt người, biển số xe.</div>
+      <div style="background:var(--blue-s);border:1px solid rgba(21,101,192,.15);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:20px;font-size:13px;color:var(--tx2)">
+        <strong style="color:var(--blue)">Chính sách:</strong> Tất cả ảnh có người hoặc biển số phải được blur trước khi đăng công khai. Pipeline tự động blur, admin xác nhận.
+      </div>
+      <div id="privacy-list"><div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div></div>
+    </div>
+
+    <!-- ════════════════ STATISTICS ════════════════ -->
+    <div class="tab-panel" id="tab-stats">
+      <div class="admin-page-title">Thống kê</div>
+      <div class="page-subtitle">Tổng quan hiệu suất hệ thống và phân bố dữ liệu.</div>
+      <div id="stats-content"><div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div></div>
+    </div>
 
   </div><!-- /.admin-main -->
 </div><!-- /.admin-layout -->
@@ -551,16 +638,18 @@ const ROLES=['reviewer','editor','alert_manager','map_manager','admin'];
 const ROLE_LABELS={reviewer:'Reviewer',editor:'Editor',alert_manager:'Alert Manager',map_manager:'Map Manager',admin:'Admin'};
 
 // ── Tab switching ──────────────────────────────────
+const _tabLoaders={
+  jobs:loadJobs, review:loadReview, submissions:loadSubmissions,
+  users:loadUsers, system:loadSystem, alerts:loadAlerts,
+  articles:loadArticles, events:loadEvents, mappoints:loadMapPoints2,
+  roads:loadRoads, sources:loadSources, privacy:loadPrivacy, stats:loadStats,
+};
 function showTab(name, linkEl){
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.admin-nav-link').forEach(l=>l.classList.remove('active'));
   document.getElementById('tab-'+name)?.classList.add('active');
   if(linkEl) linkEl.classList.add('active');
-  if(name==='jobs')        loadJobs();
-  if(name==='review')      loadReview();
-  if(name==='submissions') loadSubmissions();
-  if(name==='users')       loadUsers();
-  if(name==='system')      loadSystem();
+  if(_tabLoaders[name]) _tabLoaders[name]();
 }
 
 // ── Priority score ─────────────────────────────────
@@ -738,19 +827,22 @@ function renderReview(jobs){
   }).join('');
 }
 
-function reviewAction(id,action,btn){
-  const labels={approve:'✓ Đã duyệt',edit:'✎ Đang chỉnh...',update:'↑ Đã gửi cập nhật',
+async function reviewAction(id,action,btn){
+  const labels={approve:'✓ Đã duyệt',edit:'✎ Đang chỉnh...',update:'↑ Đã gửi',
     alert:'🚨 Đã tạo cảnh báo',verify:'⚑ Đã đánh dấu',reject:'✕ Đã từ chối'};
   btn.textContent=labels[action]||'Xong';
   btn.disabled=true;
+  await fetch(`/api/admin/jobs/${id}/review`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action})});
   if(action==='approve'||action==='reject'){
     const card=document.getElementById('rc-'+id);
     if(card) setTimeout(()=>card.style.opacity='.4',300);
   }
   if(action==='alert'){
     const j=_allJobs.find(x=>x.job_id===id);
-    if(j){document.getElementById('alert-location').value=j.result?.location||'';
-      document.getElementById('alert-level').value=j.result?.level||'knee';}
+    if(j){
+      await fetch('/api/admin/alerts',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({location:j.result?.location||'',level:j.result?.level||'knee',job_id:id})});
+    }
   }
 }
 
@@ -977,6 +1069,345 @@ async function pullDrive(){
     status.innerHTML='❌ Không thể kết nối server';
   }
   btn.disabled=false;btn.textContent='Tải & phân tích';
+}
+
+// ── ALERTS (real CRUD) ───────────────────────────
+const ALERT_LEVEL_LABELS={ankle:'🟡 Ngập nhẹ',knee:'🟠 Ngập đầu gối',waist:'🔴 Ngập nặng',chest:'🆘 Rất nguy hiểm'};
+let _alertsData=[];
+async function loadAlerts(){
+  try{
+    const r=await fetch('/api/admin/alerts'); _alertsData=await r.json();
+    renderAlerts();
+  }catch{document.getElementById('alerts-list').innerHTML='<div style="padding:24px;text-align:center;color:var(--tx3)">Không thể tải.</div>';}
+}
+function renderAlerts(){
+  const el=document.getElementById('alerts-list');
+  if(!_alertsData.length){el.innerHTML='<div style="padding:24px;text-align:center;color:var(--ok);font-size:13px">✓ Không có cảnh báo nào.</div>';return;}
+  el.innerHTML=_alertsData.map(a=>`
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap" id="al-${a.id}">
+      <div style="flex:1;min-width:200px">
+        <div style="font-size:14px;font-weight:600;color:var(--tx)">${ALERT_LEVEL_LABELS[a.level]||a.level} — ${a.location}</div>
+        <div style="font-size:12px;color:var(--tx3);margin-top:2px">${a.message||''} · ${timeAgo(a.created_at)} · ${a.created_by||'admin'}</div>
+      </div>
+      <span class="badge ${a.status==='active'?'badge-high':'badge-unknown'}">${a.status==='active'?'Active':'Hết hiệu lực'}</span>
+      <div style="display:flex;gap:6px">
+        ${a.status==='active'?`<button class="btn-sm amber" onclick="expireAlert('${a.id}')">Hết hiệu lực</button>`:''}
+        <button class="btn-sm red" onclick="deleteAlert('${a.id}')">Xóa</button>
+      </div>
+    </div>`).join('');
+}
+async function createAlert2(){
+  const loc=document.getElementById('alert2-location').value.trim();
+  const level=document.getElementById('alert2-level').value;
+  if(!loc){alert('Nhập khu vực cảnh báo.');return;}
+  await fetch('/api/admin/alerts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:loc,level})});
+  document.getElementById('alert2-location').value='';
+  await loadAlerts();
+  // Sync dashboard
+  document.getElementById('s-alerts').textContent=_alertsData.filter(a=>a.status==='active').length;
+}
+async function expireAlert(id){
+  await fetch(`/api/admin/alerts/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'expired'})});
+  loadAlerts();
+}
+async function deleteAlert(id){
+  if(!confirm('Xóa cảnh báo này?')) return;
+  await fetch(`/api/admin/alerts/${id}`,{method:'DELETE'});
+  loadAlerts();
+}
+
+// ── ARTICLES ─────────────────────────────────────
+let _articlesData=[], _articleFilter='all', _reviewStates={};
+async function loadArticles(){
+  try{
+    const [jr,sr]=await Promise.all([fetch('/api/jobs?limit=100'),fetch('/api/admin/review-states')]);
+    const jobs=await jr.json(); _reviewStates=await sr.json();
+    _articlesData=jobs.filter(j=>j.status==='done');
+    renderArticles();
+  }catch{document.getElementById('articles-list').innerHTML='<div style="padding:24px;text-align:center;color:var(--tx3)">Không thể tải.</div>';}
+}
+function filterArticles(f,btn){
+  _articleFilter=f;
+  document.querySelectorAll('#tab-articles .tab-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderArticles();
+}
+function renderArticles(){
+  const el=document.getElementById('articles-list');
+  let items=_articlesData;
+  if(_articleFilter!=='all'){
+    items=items.filter(j=>(_reviewStates[j.job_id]||'pending')===_articleFilter);
+  }
+  if(!items.length){el.innerHTML='<div style="padding:32px;text-align:center;color:var(--tx3)">Không có bài viết nào.</div>';return;}
+  el.innerHTML=items.map(j=>{
+    const lvl=j.result?.level||'unknown';
+    const info=LEVEL_META[lvl]||LEVEL_META.unknown;
+    const state=_reviewStates[j.job_id]||'pending';
+    const stateLabel={approve:'✓ Đã duyệt',reject:'✕ Đã từ chối',verify:'⚑ Chờ xác minh',pending:'Chờ duyệt'};
+    const stateBadge={approve:'badge-verified',reject:'badge-high',verify:'badge-pending',pending:'badge-unknown'};
+    return `<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">
+          <span class="badge ${info.badge}">${info.label}</span>
+          <span class="badge ${stateBadge[state]}">${stateLabel[state]}</span>
+        </div>
+        <div style="font-size:14px;font-weight:600;color:var(--tx)">${info.label} tại ${j.result?.location||'—'}</div>
+        <div style="font-size:12px;color:var(--tx3);margin-top:2px">${timeAgo(j.created_at)} · ${j.result?.confidence_label||'—'}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn-sm green" onclick="articleAction('${j.job_id}','approve')">✓ Duyệt</button>
+        <button class="btn-sm" onclick="articleAction('${j.job_id}','verify')">⚑ Xác minh</button>
+        <button class="btn-sm red" onclick="articleAction('${j.job_id}','reject')">✕ Từ chối</button>
+        <a href="/article/${j.job_id}" target="_blank" style="padding:5px 10px;font-size:12px;color:var(--blue);font-weight:500;text-decoration:none">Xem →</a>
+        <button class="btn-sm" onclick="askCopilot('publish',${JSON.stringify(j.result||{})})">🤖 AI</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+async function articleAction(id,action){
+  await fetch(`/api/admin/jobs/${id}/review`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action})});
+  _reviewStates[id]=action;
+  renderArticles();
+}
+
+// ── COPILOT ──────────────────────────────────────
+let _copilotTarget=null;
+function askCopilot(action,jobData,customPrompt){
+  _copilotTarget={action,job:jobData,custom:customPrompt||''};
+  const panel=document.getElementById('copilot-panel');
+  if(panel){
+    panel.style.display='block';
+    document.getElementById('copilot-result').innerHTML='<div style="color:var(--tx3);font-size:13px">⏳ Đang phân tích...</div>';
+    runCopilot();
+  }
+}
+async function runCopilot(){
+  if(!_copilotTarget) return;
+  try{
+    const r=await fetch('/api/admin/copilot',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(_copilotTarget)});
+    const d=await r.json();
+    const el=document.getElementById('copilot-result');
+    if(d.reply){
+      el.innerHTML=`<div style="font-size:13px;color:var(--tx);line-height:1.7;white-space:pre-wrap">${d.reply}</div>
+        ${d.fallback?'<div style="font-size:11px;color:var(--tx3);margin-top:6px">(Model chưa tải — phản hồi mặc định)</div>':''}`;
+    }else{
+      el.innerHTML=`<div style="color:var(--warn-high);font-size:13px">Lỗi: ${d.error}</div>`;
+    }
+  }catch(e){
+    document.getElementById('copilot-result').innerHTML='<div style="color:var(--warn-high);font-size:13px">Lỗi kết nối</div>';
+  }
+}
+
+// ── EVENTS ───────────────────────────────────────
+const EV_STATUS={active:'🔴 Đang diễn ra',worsening:'🆘 Đang tệ hơn',stable:'🟡 Ổn định',improving:'🟢 Đang cải thiện',resolved:'✅ Đã rút nước'};
+async function loadEvents(){
+  try{
+    const r=await fetch('/api/admin/events');
+    const events=await r.json();
+    renderEvents(events);
+  }catch{document.getElementById('events-list').innerHTML='<div style="padding:24px;text-align:center;color:var(--tx3)">Không thể tải.</div>';}
+}
+function renderEvents(events){
+  const el=document.getElementById('events-list');
+  if(!events.length){el.innerHTML='<div style="padding:32px;text-align:center;color:var(--tx3)">Chưa có sự kiện nào. Tạo sự kiện để gom báo cáo lại.</div>';return;}
+  const lvlInfo=l=>(LEVEL_META[l]||LEVEL_META.unknown);
+  el.innerHTML=events.map(e=>`
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:8px" id="ev-${e.id}">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:14px;font-weight:600;color:var(--tx)">${e.name}</div>
+          <div style="font-size:12px;color:var(--tx3);margin-top:3px">${e.location||'—'} · ${e.report_count||1} báo cáo · ${timeAgo(e.created_at)}</div>
+          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+            <span class="badge ${lvlInfo(e.current_level).badge}">${lvlInfo(e.current_level).label}</span>
+            <span style="font-size:12px;color:var(--tx2)">${EV_STATUS[e.status]||e.status}</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <select class="role-select" onchange="updateEventStatus('${e.id}',this.value)">
+            ${Object.entries(EV_STATUS).map(([k,v])=>`<option value="${k}"${k===e.status?' selected':''}>${v}</option>`).join('')}
+          </select>
+          <button class="btn-sm red" onclick="deleteEvent('${e.id}')">Xóa</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+async function createEvent(){
+  const name=document.getElementById('ev-name').value.trim();
+  const location=document.getElementById('ev-location').value.trim();
+  if(!name){alert('Nhập tên sự kiện.');return;}
+  await fetch('/api/admin/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,location})});
+  document.getElementById('ev-name').value='';
+  document.getElementById('ev-location').value='';
+  loadEvents();
+}
+async function updateEventStatus(id,status){
+  await fetch(`/api/admin/events/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});
+}
+async function deleteEvent(id){
+  if(!confirm('Xóa sự kiện này?')) return;
+  await fetch(`/api/admin/events/${id}`,{method:'DELETE'});
+  loadEvents();
+}
+
+// ── MAP POINTS ───────────────────────────────────
+async function loadMapPoints2(){
+  try{
+    const r=await fetch('/api/jobs?limit=50');
+    const jobs=await r.json();
+    const geo=jobs.filter(j=>j.status==='done'&&j.result?.lat&&j.result?.lon);
+    const el=document.getElementById('map-points-list');
+    if(!geo.length){el.innerHTML='<div style="padding:16px;text-align:center;color:var(--tx3);font-size:13px">Chưa có điểm nào có GPS.</div>';return;}
+    el.innerHTML=`<table class="job-table"><thead><tr><th>Khu vực</th><th>Tọa độ</th><th>Mức ngập</th><th>Thời gian</th></tr></thead><tbody>`+
+      geo.map(j=>`<tr>
+        <td>${j.result.location||'—'}</td>
+        <td style="font-family:monospace;font-size:11px">${(+j.result.lat).toFixed(5)}, ${(+j.result.lon).toFixed(5)}</td>
+        <td><span class="badge ${(LEVEL_META[j.result.level]||LEVEL_META.unknown).badge}">${(LEVEL_META[j.result.level]||LEVEL_META.unknown).label}</span></td>
+        <td>${timeAgo(j.created_at)}</td>
+      </tr>`).join('')+'</tbody></table>';
+  }catch{document.getElementById('map-points-list').innerHTML='<div style="padding:16px;text-align:center;color:var(--tx3);font-size:13px">Không thể tải.</div>';}
+}
+
+// ── ROADS ────────────────────────────────────────
+async function loadRoads(){
+  try{
+    const r=await fetch('/api/jobs?limit=100');
+    const jobs=await r.json();
+    const done=jobs.filter(j=>j.status==='done'&&j.result?.location);
+    const el=document.getElementById('roads-list');
+    if(!done.length){el.innerHTML='<div style="padding:32px;text-align:center;color:var(--tx3)">Chưa có dữ liệu tuyến đường.</div>';return;}
+    const REC={dry:'Bình thường',ankle:'Cẩn thận — xe máy chú ý',knee:'Hạn chế xe máy',waist:'Tránh xe máy — ô tô gầm thấp chú ý',chest:'Không nên đi qua',submerged:'Cực kỳ nguy hiểm — không đi qua'};
+    el.innerHTML=`<table class="job-table"><thead><tr><th>Khu vực</th><th>Mức ngập</th><th>Khuyến cáo</th><th>Thời gian</th></tr></thead><tbody>`+
+      done.slice(0,30).map(j=>{
+        const lvl=j.result?.level||'unknown';
+        const info=LEVEL_META[lvl]||LEVEL_META.unknown;
+        return `<tr>
+          <td style="font-weight:500">${j.result.location}</td>
+          <td><span class="badge ${info.badge}">${info.label}</span></td>
+          <td style="font-size:12px;color:var(--tx2)">${REC[lvl]||'Chờ xác minh'}</td>
+          <td>${timeAgo(j.created_at)}</td>
+        </tr>`;
+      }).join('')+'</tbody></table>';
+  }catch{document.getElementById('roads-list').innerHTML='<div style="padding:32px;text-align:center;color:var(--tx3)">Không thể tải.</div>';}
+}
+
+// ── SOURCES ──────────────────────────────────────
+async function loadSources(){
+  try{
+    const r=await fetch('/api/admin/sources');
+    const sources=await r.json();
+    const el=document.getElementById('sources-list');
+    if(!sources.length){el.innerHTML='<div style="padding:32px;text-align:center;color:var(--tx3)">Chưa có dữ liệu nguồn tin.</div>';return;}
+    el.innerHTML=`<table class="job-table"><thead><tr><th>Nguồn</th><th>Tổng</th><th>Thành công</th><th>Lỗi</th><th>Tỉ lệ OK</th><th>Lần gần nhất</th></tr></thead><tbody>`+
+      sources.map(s=>{
+        const rate=s.total>0?Math.round(s.done/s.total*100):0;
+        return `<tr>
+          <td style="font-weight:500">${s.name}</td>
+          <td>${s.total}</td>
+          <td style="color:var(--ok)">${s.done}</td>
+          <td style="color:var(--warn-high)">${s.failed}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:6px">
+              <div style="width:60px;height:5px;background:var(--border);border-radius:3px;overflow:hidden">
+                <div style="width:${rate}%;height:100%;background:${rate>=80?'var(--ok)':rate>=50?'var(--warn-med)':'var(--warn-high)'};border-radius:3px"></div>
+              </div>
+              <span style="font-size:12px">${rate}%</span>
+            </div>
+          </td>
+          <td>${timeAgo(s.last_at)}</td>
+        </tr>`;
+      }).join('')+'</tbody></table>';
+  }catch{document.getElementById('sources-list').innerHTML='<div style="padding:32px;text-align:center;color:var(--tx3)">Không thể tải.</div>';}
+}
+
+// ── PRIVACY ──────────────────────────────────────
+async function loadPrivacy(){
+  try{
+    const r=await fetch('/api/jobs?limit=50');
+    const jobs=await r.json();
+    const done=jobs.filter(j=>j.status==='done');
+    const el=document.getElementById('privacy-list');
+    if(!done.length){el.innerHTML='<div style="padding:32px;text-align:center;color:var(--tx3)">Không có ảnh nào cần kiểm duyệt.</div>';return;}
+    el.innerHTML=`<table class="job-table"><thead><tr><th>Job</th><th>Khu vực</th><th>Blur status</th><th>Người phát hiện</th><th>Hành động</th></tr></thead><tbody>`+
+      done.map(j=>{
+        const persons=j.result?.persons_detected||0;
+        const blurred=j.result?.blur_applied||false;
+        const blurStatus=blurred?'<span class="badge badge-verified">✓ Đã blur</span>':'<span class="badge badge-pending">Chưa blur</span>';
+        return `<tr>
+          <td class="job-id">${j.job_id.slice(-10)}</td>
+          <td>${j.result?.location||'—'}</td>
+          <td>${blurStatus}</td>
+          <td style="font-size:12px">${persons>0?`${persons} người`:'-'}</td>
+          <td><a href="/article/${j.job_id}" target="_blank" style="color:var(--blue);font-size:12px">Xem ảnh →</a></td>
+        </tr>`;
+      }).join('')+'</tbody></table>';
+  }catch{document.getElementById('privacy-list').innerHTML='<div style="padding:32px;text-align:center;color:var(--tx3)">Không thể tải.</div>';}
+}
+
+// ── STATS ────────────────────────────────────────
+function barHtml(val,max,color){
+  const pct=max>0?Math.min(val/max*100,100):0;
+  return `<div style="display:flex;align-items:center;gap:8px">
+    <div style="flex:1;height:8px;background:var(--border);border-radius:4px;overflow:hidden">
+      <div style="width:${pct}%;height:100%;background:${color};border-radius:4px"></div>
+    </div>
+    <span style="font-size:12px;font-weight:600;min-width:30px;text-align:right">${val}</span>
+  </div>`;
+}
+async function loadStats(){
+  try{
+    const [mr,jr]=await Promise.all([fetch('/api/metrics'),fetch('/api/jobs?limit=200')]);
+    const m=await mr.json(); const jobs=await jr.json();
+    const done=jobs.filter(j=>j.status==='done');
+    const lvlCounts={};
+    done.forEach(j=>{const l=j.result?.level||'unknown';lvlCounts[l]=(lvlCounts[l]||0)+1;});
+    const maxLvl=Math.max(...Object.values(lvlCounts),1);
+    const lvlColors={dry:'var(--ok)',ankle:'var(--warn-low)',knee:'var(--warn-med)',waist:'var(--warn-high)',chest:'#7f1d1d',submerged:'#4c0519',unknown:'var(--tx3)'};
+    const today=new Date().toDateString();
+    const todayCount=jobs.filter(j=>new Date(j.created_at||0).toDateString()===today).length;
+    document.getElementById('stats-content').innerHTML=`
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:24px">
+        <div class="health-item"><div class="health-label">Tổng báo cáo</div><div class="health-value">${m.jobs.total}</div></div>
+        <div class="health-item"><div class="health-label">Hôm nay</div><div class="health-value">${todayCount}</div></div>
+        <div class="health-item"><div class="health-label">Thành công</div><div class="health-value ok">${m.jobs.done}</div></div>
+        <div class="health-item"><div class="health-label">Lỗi</div><div class="health-value ${m.jobs.failed>0?'danger':'ok'}">${m.jobs.failed}</div></div>
+        <div class="health-item"><div class="health-label">Ảnh đã xử lý</div><div class="health-value">${m.performance.total_images_analyzed}</div></div>
+        <div class="health-item"><div class="health-label">Thời gian TB</div><div class="health-value">${m.performance.avg_processing_s.toFixed(0)}s</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px 18px">
+          <div class="section-title" style="margin-bottom:12px">Phân bố mức ngập</div>
+          ${Object.entries(LEVEL_META).filter(([k])=>k!=='unknown').map(([k,v])=>`
+            <div style="margin-bottom:8px">
+              <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--tx2);margin-bottom:3px">
+                <span>${v.label}</span>
+              </div>
+              ${barHtml(lvlCounts[k]||0,maxLvl,lvlColors[k]||'var(--blue)')}
+            </div>`).join('')}
+        </div>
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px 18px">
+          <div class="section-title" style="margin-bottom:12px">Lỗi phổ biến</div>
+          ${(m.fail_reasons||[]).length
+            ? m.fail_reasons.map(([r,c])=>`<div class="fail-row"><span class="fail-reason" title="${r}">${r}</span><span class="fail-count">${c}×</span></div>`).join('')
+            : '<div style="padding:12px;color:var(--ok);font-size:13px;text-align:center">✓ Không có lỗi</div>'}
+        </div>
+      </div>`;
+  }catch{document.getElementById('stats-content').innerHTML='<div style="padding:24px;text-align:center;color:var(--tx3)">Không thể tải thống kê.</div>';}
+}
+
+// ── COPILOT PANEL in review ───────────────────────────────────
+// (injected dynamically when user clicks AI button)
+
+// ── ALERTS sync (dashboard create) ────────────────
+function createAlert(){
+  const loc=document.getElementById('alert-location').value.trim();
+  const level=document.getElementById('alert-level').value;
+  if(!loc){alert('Nhập khu vực cảnh báo.');return;}
+  fetch('/api/admin/alerts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:loc,level})}).then(()=>{
+    document.getElementById('alert-location').value='';
+    document.getElementById('s-alerts').textContent=(parseInt(document.getElementById('s-alerts').textContent)||0)+1;
+    alert('✅ Đã tạo cảnh báo: '+loc);
+  });
 }
 
 // ── Init ──────────────────────────────────────────
