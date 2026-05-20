@@ -77,8 +77,7 @@ TRAIN_CFG = {
     "bf16":                        True,
     # ── Gradient checkpointing: đổi tốc độ lấy VRAM → cho phép seq dài hơn
     "gradient_checkpointing":      True,
-    # ── paged_adamw_8bit: optimizer tối ưu RAM/VRAM khi dùng bitsandbytes
-    "optim":                       "paged_adamw_8bit",
+    "optim":                       "adamw_torch",
     "load_best_model_at_end":      True,
     "report_to":                   "none",
 }
