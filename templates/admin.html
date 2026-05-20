@@ -3,109 +3,273 @@
 
 {% block head %}
 <style>
-.admin-layout{display:grid;grid-template-columns:200px 1fr;gap:0;min-height:calc(100vh - 140px);
+.admin-layout{display:grid;grid-template-columns:220px 1fr;gap:0;min-height:calc(100vh - 140px);
   background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden}
-@media(max-width:720px){.admin-layout{grid-template-columns:1fr}}
+@media(max-width:800px){.admin-layout{grid-template-columns:1fr}}
 
-.admin-sidebar{background:var(--navy);padding:18px 0;border-right:1px solid rgba(255,255,255,.08)}
+/* ── Sidebar ── */
+.admin-sidebar{background:var(--navy);padding:16px 0;border-right:1px solid rgba(255,255,255,.08);
+  display:flex;flex-direction:column}
 .admin-sidebar-title{font-size:10px;font-weight:700;text-transform:uppercase;
-  letter-spacing:.1em;color:rgba(255,255,255,.35);padding:0 16px;margin-bottom:8px}
-.admin-nav-link{display:flex;align-items:center;gap:9px;padding:9px 16px;
-  color:rgba(255,255,255,.65);text-decoration:none;font-size:13px;font-weight:500;
-  transition:background .15s,color .15s;border-left:3px solid transparent}
-.admin-nav-link:hover{background:rgba(255,255,255,.08);color:#fff}
-.admin-nav-link.active{background:rgba(255,255,255,.1);color:#fff;border-left-color:#4da3ff}
+  letter-spacing:.1em;color:rgba(255,255,255,.6);padding:0 16px;margin:8px 0 6px}
+.admin-nav-link{display:flex;align-items:center;gap:9px;padding:8px 16px;
+  color:rgba(255,255,255,.85);text-decoration:none;font-size:13px;font-weight:500;
+  transition:background .15s,color .15s;border-left:3px solid transparent;position:relative}
+.admin-nav-link:hover{background:#1f354f;color:#fff}
+.admin-nav-link.active{background:#243953;color:#fff;border-left-color:#4da3ff}
 .admin-nav-link svg{width:15px;height:15px;stroke:currentColor;fill:none;
   stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
-.admin-sep{height:1px;background:rgba(255,255,255,.07);margin:10px 0}
+button.admin-nav-link{width:100%;text-align:left;background:none;border:none;cursor:pointer}
+.nav-badge{margin-left:auto;background:#dc2626;color:#fff;font-size:10px;font-weight:700;
+  padding:1px 6px;border-radius:10px;min-width:18px;text-align:center}
+.admin-sep{height:1px;background:rgba(255,255,255,.07);margin:8px 0}
+.nav-section-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;
+  color:rgba(255,255,255,.25);padding:10px 16px 4px}
 
-.admin-main{padding:24px 28px;overflow-y:auto;background:var(--paper)}
-.admin-page-title{font-family:var(--font-serif);font-size:22px;font-weight:700;
-  margin-bottom:20px;color:var(--tx)}
+/* ── Main ── */
+.admin-main{padding:24px 28px;overflow-y:auto;background:var(--paper);max-height:calc(100vh - 140px)}
+.admin-page-title{font-family:var(--font-serif);font-size:21px;font-weight:700;
+  margin-bottom:6px;color:var(--tx)}
+.page-subtitle{font-size:13px;color:var(--tx3);margin-bottom:22px}
 
-.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:28px}
+/* ── Stat cards ── */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+@media(max-width:1100px){.stats-grid{grid-template-columns:repeat(2,1fr)}}
 .stat-box{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);
-  padding:16px 18px}
-.stat-num{font-family:var(--font-serif);font-size:28px;font-weight:700;color:var(--tx)}
+  padding:16px 18px;cursor:default;transition:box-shadow .15s}
+.stat-box:hover{box-shadow:0 2px 12px rgba(0,0,0,.08)}
+.stat-box-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px}
+.stat-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;
+  justify-content:center;flex-shrink:0}
+.stat-icon svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+.stat-icon.blue{background:#dbeafe;color:#1d4ed8}
+.stat-icon.green{background:#dcfce7;color:#15803d}
+.stat-icon.red{background:#fee2e2;color:#b91c1c}
+.stat-icon.amber{background:#fef3c7;color:#92400e}
+.stat-icon.purple{background:#ede9fe;color:#6d28d9}
+.stat-icon.teal{background:#ccfbf1;color:#0f766e}
+.stat-icon.gray{background:#f1f5f9;color:#334155}
+.stat-icon.navy{background:#dbeafe;color:#1e40af}
+.stat-num{font-family:var(--font-serif);font-size:28px;font-weight:700;color:var(--tx);line-height:1}
 .stat-num.ok{color:var(--ok)}
 .stat-num.warn{color:var(--warn-med)}
 .stat-num.danger{color:var(--warn-high)}
-.stat-lbl{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
-  color:var(--tx3);margin-top:3px}
+.stat-lbl{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--tx3);margin-top:4px}
+.stat-sub{font-size:11px;color:var(--tx3);margin-top:2px}
 
-.admin-section{margin-bottom:28px}
-.admin-section-title{font-size:11px;font-weight:700;text-transform:uppercase;
-  letter-spacing:.08em;color:var(--tx3);margin-bottom:12px;padding-bottom:8px;
-  border-bottom:1px solid var(--border)}
+/* ── Sections ── */
+.admin-section{margin-bottom:24px}
+.section-header{display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.section-title{font-size:11px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.08em;color:var(--tx3)}
+.section-action{font-size:12px;color:var(--blue);cursor:pointer;font-weight:500;
+  background:none;border:none;font-family:var(--font)}
+.section-action:hover{text-decoration:underline}
 
+/* ── Review cards ── */
+.review-card{background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius-md);padding:16px 18px;margin-bottom:10px;
+  border-left:3px solid var(--border)}
+.review-card.sev-high{border-left-color:var(--warn-high)}
+.review-card.sev-critical{border-left-color:#7f1d1d}
+.review-card.sev-medium{border-left-color:var(--warn-med)}
+.review-card.sev-low{border-left-color:var(--ok)}
+.rc-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px}
+.rc-title{font-size:14px;font-weight:600;color:var(--tx)}
+.rc-meta{font-size:12px;color:var(--tx3);margin-top:3px;line-height:1.5}
+.rc-badges{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+.priority-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;
+  text-transform:uppercase;letter-spacing:.04em}
+.priority-critical{background:#7f1d1d;color:#fff}
+.priority-high{background:#dc2626;color:#fff}
+.priority-medium{background:#b45309;color:#fff}
+.priority-low{background:#64748b;color:#fff}
+.rc-info{display:flex;gap:16px;font-size:12px;color:var(--tx2);margin-bottom:10px;flex-wrap:wrap}
+.rc-info-item{display:flex;align-items:center;gap:4px}
+.rc-actions{display:flex;gap:6px;flex-wrap:wrap}
+.rc-btn{padding:6px 12px;border-radius:var(--radius);border:1px solid var(--border);
+  font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;
+  transition:all .15s;background:var(--card);color:var(--tx)}
+.rc-btn:hover{filter:brightness(.95)}
+.rc-btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-approve{background:#16a34a;color:#fff;border-color:#16a34a}
+.btn-verify{background:#b45309;color:#fff;border-color:#b45309}
+.btn-alert-create{background:#dc2626;color:#fff;border-color:#dc2626}
+.btn-reject{background:var(--paper);color:var(--tx3);border-color:var(--border)}
+.btn-edit{background:var(--blue);color:#fff;border-color:var(--blue)}
+.btn-update{background:#7c3aed;color:#fff;border-color:#7c3aed}
+
+/* ── Jobs table ── */
 .job-table{width:100%;border-collapse:collapse;font-size:13px}
 .job-table th{text-align:left;padding:9px 12px;font-size:11px;font-weight:600;
   text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);
-  border-bottom:1px solid var(--border);white-space:nowrap}
+  border-bottom:1px solid var(--border);white-space:nowrap;background:var(--paper)}
 .job-table td{padding:10px 12px;border-bottom:1px solid var(--border2);color:var(--tx2);
   vertical-align:middle}
 .job-table tr:last-child td{border-bottom:none}
 .job-table tr:hover td{background:var(--paper2)}
 .job-id{font-family:monospace;font-size:11px;color:var(--tx3)}
 
-.review-card{background:var(--card);border:1px solid var(--border);
-  border-radius:var(--radius-md);padding:16px 18px;margin-bottom:12px}
-.rc-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
-.rc-title{font-size:14px;font-weight:600;color:var(--tx)}
-.rc-meta{font-size:12px;color:var(--tx3);margin-top:3px}
-.rc-actions{display:flex;gap:7px;flex-wrap:wrap}
-.rc-actions button{padding:6px 13px;border-radius:var(--radius);border:1px solid var(--border);
-  font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s}
-.btn-approve{background:var(--ok);color:#fff;border-color:var(--ok)}
-.btn-approve:hover{background:#15803d}
-.btn-review{background:var(--warn-low-s);color:var(--warn-low);border-color:var(--warn-low)}
-.btn-reject{background:var(--gray-s);color:var(--gray);border-color:var(--border)}
-.btn-alert-create{background:var(--warn-high);color:#fff;border-color:var(--warn-high)}
-
+/* ── Progress bar ── */
 .progress-bar{height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:5px}
 .progress-fill{height:100%;background:var(--blue);border-radius:3px;transition:width .5s}
 
+/* ── Tab bar ── */
 .tab-bar{display:flex;border-bottom:1px solid var(--border);margin-bottom:20px;gap:0}
-.tab-btn{padding:10px 18px;border:none;background:none;font-family:var(--font);font-size:13px;
+.tab-btn{padding:9px 16px;border:none;background:none;font-family:var(--font);font-size:13px;
   font-weight:500;color:var(--tx3);cursor:pointer;border-bottom:2px solid transparent;
   margin-bottom:-1px;transition:color .15s,border-color .15s}
 .tab-btn:hover{color:var(--tx)}
 .tab-btn.active{color:var(--blue);border-bottom-color:var(--blue)}
 .tab-panel{display:none}.tab-panel.active{display:block}
+
+/* ── User management ── */
+.user-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);
+  padding:14px 16px;margin-bottom:8px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.user-avatar{width:38px;height:38px;border-radius:50%;background:var(--navy);
+  display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;
+  font-weight:700;flex-shrink:0}
+.user-info{flex:1;min-width:160px}
+.user-name{font-size:14px;font-weight:600;color:var(--tx)}
+.user-email{font-size:12px;color:var(--tx3);margin-top:1px}
+.user-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.role-select{padding:5px 8px;border:1px solid var(--border);border-radius:var(--radius);
+  font-family:var(--font);font-size:12px;background:var(--card);color:var(--tx);cursor:pointer}
+.btn-sm{padding:5px 12px;border-radius:var(--radius);border:1px solid var(--border);
+  font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;
+  transition:all .15s;background:var(--card);color:var(--tx)}
+.btn-sm.green{background:#15803d;color:#fff;border-color:#15803d}
+.btn-sm.red{background:#b91c1c;color:#fff;border-color:#b91c1c}
+.btn-sm.amber{background:#b45309;color:#fff;border-color:#b45309}
+
+/* ── Alert form ── */
+.alert-form{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:end;flex-wrap:wrap}
+@media(max-width:700px){.alert-form{grid-template-columns:1fr}}
+.form-group-inline{display:flex;flex-direction:column;gap:4px}
+.form-lbl{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--tx3)}
+.form-ctrl{padding:9px 12px;border:1.5px solid var(--border);border-radius:var(--radius-md);
+  font-family:var(--font);font-size:13px;background:var(--card);color:var(--tx)}
+.form-ctrl:focus{outline:none;border-color:var(--blue)}
+
+/* ── System health ── */
+.health-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:16px}
+.health-item{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);
+  padding:12px 14px}
+.health-label{font-size:11px;color:var(--tx3);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.health-value{font-size:20px;font-weight:700;font-family:var(--font-serif);color:var(--tx);margin-top:4px}
+.health-value.ok{color:var(--ok)}
+.health-value.warn{color:var(--warn-med)}
+.health-value.danger{color:var(--warn-high)}
+
+/* ── Hot area ── */
+.hotspot-row{display:flex;align-items:center;gap:10px;padding:8px 0;
+  border-bottom:1px solid var(--border2);font-size:13px}
+.hotspot-row:last-child{border-bottom:none}
+.hotspot-rank{width:22px;height:22px;border-radius:50%;background:var(--navy);
+  color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;
+  justify-content:center;flex-shrink:0}
+.hotspot-name{flex:1;color:var(--tx)}
+.hotspot-count{font-weight:700;color:var(--blue)}
+
+/* ── Fail log ── */
+.fail-row{display:flex;align-items:center;gap:10px;padding:8px 0;
+  border-bottom:1px solid var(--border2);font-size:12px}
+.fail-row:last-child{border-bottom:none}
+.fail-reason{flex:1;color:var(--tx2);font-family:monospace;font-size:11px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fail-count{font-weight:700;color:var(--warn-high)}
+
+/* ── Coming soon ── */
+.coming-soon{text-align:center;padding:60px 20px;color:var(--tx3)}
+.coming-soon svg{width:40px;height:40px;stroke:currentColor;fill:none;
+  stroke-width:1.5;margin-bottom:12px;opacity:.4}
+.coming-soon h3{font-size:16px;font-weight:600;color:var(--tx2);margin-bottom:6px}
+.coming-soon p{font-size:13px}
+
+/* ── Drive form ── */
+.drive-form{display:flex;flex-direction:column;gap:10px}
+.drive-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container">
 <div class="admin-layout">
-  <!-- Sidebar -->
+
+  <!-- ── Sidebar ── -->
   <nav class="admin-sidebar">
-    <div class="admin-sidebar-title">Quản trị</div>
-    <a class="admin-nav-link active" href="#" onclick="showTab('dashboard',this)">
+    <div class="admin-sidebar-title">FloodAI Admin</div>
+
+    <div class="nav-section-label">Tổng quan</div>
+    <button class="admin-nav-link active" onclick="showTab('dashboard',this)">
       <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
       Dashboard
-    </a>
-    <a class="admin-nav-link" href="#" onclick="showTab('submissions',this)">
-      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-      Nguồn ảnh
-    </a>
-    <a class="admin-nav-link" href="#" onclick="showTab('review',this)">
+    </button>
+    <button class="admin-nav-link" onclick="showTab('review',this)" id="nav-review">
       <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-      Duyệt tin
-    </a>
-    <a class="admin-nav-link" href="#" onclick="showTab('jobs',this)">
-      <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-      Kết quả AI
-    </a>
+      Hàng chờ duyệt
+      <span class="nav-badge" id="review-badge" style="display:none">0</span>
+    </button>
+
     <div class="admin-sep"></div>
-    <a class="admin-nav-link" href="#" onclick="showTab('articles',this)">
+    <div class="nav-section-label">Nội dung</div>
+    <button class="admin-nav-link" onclick="showTab('articles',this)">
       <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
       Bài viết
-    </a>
-    <a class="admin-nav-link" href="#" onclick="showTab('mappoints',this)">
+    </button>
+    <button class="admin-nav-link" onclick="showTab('events',this)">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      Sự kiện ngập
+    </button>
+    <button class="admin-nav-link" onclick="showTab('alerts',this)">
+      <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Cảnh báo
+    </button>
+
+    <div class="admin-sep"></div>
+    <div class="nav-section-label">Dữ liệu</div>
+    <button class="admin-nav-link" onclick="showTab('mappoints',this)">
       <svg viewBox="0 0 24 24"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/></svg>
-      Điểm bản đồ
-    </a>
+      Bản đồ
+    </button>
+    <button class="admin-nav-link" onclick="showTab('roads',this)">
+      <svg viewBox="0 0 24 24"><path d="M3 17l6-12 6 12 6-12"/></svg>
+      Tuyến đường
+    </button>
+    <button class="admin-nav-link" onclick="showTab('sources',this)">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M3 12h3M18 12h3M12 3v3M12 18v3"/></svg>
+      Nguồn tin
+    </button>
+    <button class="admin-nav-link" onclick="showTab('privacy',this)">
+      <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      Ảnh & Riêng tư
+    </button>
+
+    <div class="admin-sep"></div>
+    <div class="nav-section-label">Hệ thống</div>
+    <button class="admin-nav-link" onclick="showTab('jobs',this)">
+      <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Kết quả AI
+    </button>
+    <button class="admin-nav-link" onclick="showTab('submissions',this)">
+      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Nguồn ảnh
+    </button>
+    <button class="admin-nav-link" onclick="showTab('users',this)">
+      <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      Người dùng
+    </button>
+    <button class="admin-nav-link" onclick="showTab('system',this)">
+      <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      Sức khỏe hệ thống
+    </button>
+    <button class="admin-nav-link" onclick="showTab('stats',this)">
+      <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      Thống kê
+    </button>
+
     <div class="admin-sep"></div>
     <a class="admin-nav-link" href="/logout">
       <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -113,108 +277,187 @@
     </a>
   </nav>
 
-  <!-- Main content -->
+  <!-- ── Main content ── -->
   <div class="admin-main">
 
-    <!-- DASHBOARD TAB -->
+    <!-- ════════════════ DASHBOARD ════════════════ -->
     <div class="tab-panel active" id="tab-dashboard">
       <div class="admin-page-title">Dashboard</div>
-      <div class="stats-grid" id="admin-stats">
-        <div class="stat-box"><div class="stat-num" id="s-total">—</div><div class="stat-lbl">Tổng job</div></div>
-        <div class="stat-box"><div class="stat-num ok" id="s-done">—</div><div class="stat-lbl">Đã xử lý</div></div>
-        <div class="stat-box"><div class="stat-num warn" id="s-pending">—</div><div class="stat-lbl">Đang chờ</div></div>
-        <div class="stat-box"><div class="stat-num danger" id="s-failed">—</div><div class="stat-lbl">Thất bại</div></div>
-      </div>
+      <div class="page-subtitle" id="dash-time">Đang tải dữ liệu...</div>
 
-      <div class="admin-section">
-        <div class="admin-section-title">Hoạt động gần đây</div>
-        <div id="recent-activity">
-          <div style="padding:20px;text-align:center;color:var(--tx3)">Đang tải...</div>
+      <!-- 8 stat cards (2 rows × 4) -->
+      <div class="stats-grid">
+        <div class="stat-box">
+          <div class="stat-box-top">
+            <div><div class="stat-num" id="s-today">—</div><div class="stat-lbl">Báo cáo hôm nay</div></div>
+            <div class="stat-icon blue"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+          </div>
+          <div class="stat-sub" id="s-today-sub">—</div>
+        </div>
+        <button class="stat-box" style="cursor:pointer;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px 18px;width:100%;font-family:var(--font)" onclick="showTab('review',document.getElementById('nav-review'))">
+          <div class="stat-box-top">
+            <div><div class="stat-num warn" id="s-review">—</div><div class="stat-lbl">Chờ duyệt</div></div>
+            <div class="stat-icon amber"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+          </div>
+          <div class="stat-sub">Nhấn để duyệt →</div>
+        </button>
+        <div class="stat-box">
+          <div class="stat-box-top">
+            <div><div class="stat-num danger" id="s-alerts">—</div><div class="stat-lbl">Cảnh báo active</div></div>
+            <div class="stat-icon red"><svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg></div>
+          </div>
+          <div class="stat-sub" id="s-alerts-sub">Chưa có cảnh báo</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-box-top">
+            <div><div class="stat-num danger" id="s-failed">—</div><div class="stat-lbl">Job lỗi</div></div>
+            <div class="stat-icon red"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
+          </div>
+          <div class="stat-sub" id="s-failed-sub">—</div>
+        </div>
+
+        <div class="stat-box">
+          <div class="stat-box-top">
+            <div><div class="stat-num ok" id="s-running">—</div><div class="stat-lbl">Job đang chạy</div></div>
+            <div class="stat-icon green"><svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+          </div>
+          <div class="stat-sub" id="s-done-sub">—</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-box-top">
+            <div><div class="stat-num warn" id="s-verify">—</div><div class="stat-lbl">Cần xác minh</div></div>
+            <div class="stat-icon amber"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
+          </div>
+          <div class="stat-sub">Tin cậy thấp</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-box-top">
+            <div><div class="stat-num" id="s-images">—</div><div class="stat-lbl">Ảnh đã xử lý</div></div>
+            <div class="stat-icon teal"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
+          </div>
+          <div class="stat-sub" id="s-avg-time">Thời gian tb: —</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-box-top">
+            <div><div class="stat-num" id="s-hotspot" style="font-size:16px;margin-top:6px">—</div><div class="stat-lbl">Khu vực nóng nhất</div></div>
+            <div class="stat-icon navy"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
+          </div>
+          <div class="stat-sub" id="s-hotspot-sub">—</div>
         </div>
       </div>
 
+      <!-- Priority queue preview -->
       <div class="admin-section">
-        <div class="admin-section-title">Phân tích ảnh từ Google Drive</div>
-        <div style="display:flex;flex-direction:column;gap:10px">
-          <div style="font-size:13px;color:var(--tx2);line-height:1.6">
-            Paste link folder Google Drive — hệ thống sẽ tự tải ảnh về và chạy pipeline.
-          </div>
-          <input type="text" id="drive-url"
-            placeholder="https://drive.google.com/drive/folders/..."
-            style="padding:10px 13px;border:1.5px solid var(--border);border-radius:var(--radius-md);
-            font-family:var(--font);font-size:13px;background:var(--card2);color:var(--tx);width:100%">
-          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-            <label style="font-size:13px;color:var(--tx2);display:flex;align-items:center;gap:6px">
-              <input type="number" id="drive-max" value="200" min="1" max="1000"
-                style="width:70px;padding:7px 9px;border:1px solid var(--border);
-                border-radius:var(--radius-md);font-size:13px;background:var(--card2);color:var(--tx)">
-              ảnh tối đa
-            </label>
-            <label style="font-size:13px;color:var(--tx2);display:flex;align-items:center;gap:6px;cursor:pointer">
-              <input type="checkbox" id="drive-safe" checked> Safe mode (không upload lại Drive)
-            </label>
-            <button class="btn btn-primary" onclick="pullDrive()"
-                    style="padding:9px 18px;font-size:13px" id="drive-btn">
-              <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              Tải và phân tích
-            </button>
-          </div>
-          <div id="drive-status" style="display:none;padding:11px 14px;border-radius:var(--radius-md);
-            border:1px solid var(--border);font-size:13px;line-height:1.6"></div>
+        <div class="section-header">
+          <span class="section-title">Hàng chờ ưu tiên cao</span>
+          <button class="section-action" onclick="showTab('review',document.getElementById('nav-review'))">Xem tất cả →</button>
+        </div>
+        <div id="priority-preview">
+          <div style="padding:16px;text-align:center;color:var(--tx3);font-size:13px">Đang tải...</div>
         </div>
       </div>
 
-      <div class="admin-section">
-        <div class="admin-section-title">Tạo cảnh báo khẩn cấp</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <input type="text" id="alert-location" placeholder="Khu vực..."
-            style="flex:1;padding:9px 12px;border:1px solid var(--border);
-            border-radius:var(--radius-md);font-family:var(--font);font-size:13px;
-            background:var(--card);color:var(--tx);min-width:160px">
-          <select id="alert-level" style="padding:9px 12px;border:1px solid var(--border);
-            border-radius:var(--radius-md);font-family:var(--font);font-size:13px;
-            background:var(--card);color:var(--tx)">
-            <option value="ankle">Ngập nhẹ</option>
-            <option value="knee" selected>Ngập đầu gối</option>
-            <option value="waist">Ngập ngang eo</option>
-            <option value="chest">Rất nguy hiểm</option>
-          </select>
-          <button class="btn btn-danger" onclick="createAlert()" style="padding:9px 16px">
-            <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            Tạo cảnh báo
-          </button>
+      <!-- Active alerts + fail log side by side -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
+        <div class="admin-section" style="margin-bottom:0">
+          <div class="section-header">
+            <span class="section-title">Cảnh báo đang hoạt động</span>
+            <button class="section-action" onclick="showTab('alerts',document.querySelectorAll('.admin-nav-link')[5])">Quản lý →</button>
+          </div>
+          <div id="active-alerts-list">
+            <div style="padding:16px;text-align:center;color:var(--tx3);font-size:13px">Đang tải...</div>
+          </div>
+        </div>
+        <div class="admin-section" style="margin-bottom:0">
+          <div class="section-header">
+            <span class="section-title">Lỗi hệ thống gần đây</span>
+            <button class="section-action" onclick="showTab('system',document.querySelectorAll('.admin-nav-link')[14])">Chi tiết →</button>
+          </div>
+          <div id="fail-log-list">
+            <div style="padding:16px;text-align:center;color:var(--tx3);font-size:13px">Đang tải...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Drive pull + Alert creation -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="admin-section" style="margin-bottom:0">
+          <div class="section-header"><span class="section-title">Phân tích từ Google Drive</span></div>
+          <div class="drive-form">
+            <input type="text" id="drive-url" placeholder="https://drive.google.com/drive/folders/..."
+              class="form-ctrl" style="width:100%">
+            <div class="drive-row">
+              <label style="font-size:13px;color:var(--tx2);display:flex;align-items:center;gap:6px">
+                <input type="number" id="drive-max" value="200" min="1" max="1000"
+                  style="width:65px;padding:7px 9px;border:1px solid var(--border);border-radius:var(--radius-md);font-size:13px;background:var(--card2);color:var(--tx)">
+                ảnh tối đa
+              </label>
+              <label style="font-size:13px;color:var(--tx2);display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="checkbox" id="drive-safe" checked> Safe mode
+              </label>
+              <button class="btn btn-primary" onclick="pullDrive()" style="padding:8px 16px;font-size:13px" id="drive-btn">
+                Tải & phân tích
+              </button>
+            </div>
+            <div id="drive-status" style="display:none;padding:10px 13px;border-radius:var(--radius-md);border:1px solid var(--border);font-size:13px"></div>
+          </div>
+        </div>
+        <div class="admin-section" style="margin-bottom:0">
+          <div class="section-header"><span class="section-title">Tạo cảnh báo khẩn cấp</span></div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <input type="text" id="alert-location" placeholder="Khu vực..." class="form-ctrl">
+            <div style="display:flex;gap:8px">
+              <select id="alert-level" class="form-ctrl" style="flex:1">
+                <option value="ankle">Ngập nhẹ</option>
+                <option value="knee" selected>Ngập đầu gối</option>
+                <option value="waist">Ngập ngang eo</option>
+                <option value="chest">Rất nguy hiểm</option>
+              </select>
+              <button class="btn btn-danger" onclick="createAlert()" style="padding:9px 16px;white-space:nowrap">
+                🚨 Tạo cảnh báo
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- SUBMISSIONS TAB -->
-    <div class="tab-panel" id="tab-submissions">
-      <div class="admin-page-title">Nguồn ảnh</div>
-      <div id="submissions-list">
-        <div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div>
-      </div>
-    </div>
-
-    <!-- REVIEW TAB -->
+    <!-- ════════════════ REVIEW ════════════════ -->
     <div class="tab-panel" id="tab-review">
-      <div class="admin-page-title">Duyệt tin</div>
-      <p style="font-size:13px;color:var(--tx2);margin-bottom:20px;line-height:1.65">
-        Kết quả AI đạt confidence cao được tạo bản nháp tự động. 
-        Admin duyệt trước khi hiển thị công khai.
-      </p>
+      <div class="admin-page-title">Hàng chờ duyệt</div>
+      <div class="page-subtitle">Sắp xếp theo mức độ ưu tiên — tin nguy hiểm cao được hiển thị trước.</div>
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="tab-btn active" onclick="filterReview('all',this)">Tất cả</button>
+        <button class="tab-btn" onclick="filterReview('critical',this)">Nguy hiểm cao</button>
+        <button class="tab-btn" onclick="filterReview('medium',this)">Cần chú ý</button>
+        <button class="tab-btn" onclick="filterReview('low',this)">Nhẹ</button>
+      </div>
       <div id="review-list">
         <div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div>
       </div>
     </div>
 
-    <!-- JOBS TAB -->
+    <!-- ════════════════ USERS ════════════════ -->
+    <div class="tab-panel" id="tab-users">
+      <div class="admin-page-title">Quản lý người dùng</div>
+      <div class="page-subtitle">Duyệt tài khoản mới, phân quyền và quản lý truy cập.</div>
+      <div style="display:flex;gap:0;margin-bottom:20px;border-bottom:1px solid var(--border)">
+        <button class="tab-btn active" id="utab-pending" onclick="switchUserTab('pending',this)">Chờ duyệt <span id="pending-count" class="nav-badge" style="margin-left:6px;position:static">0</span></button>
+        <button class="tab-btn" id="utab-all" onclick="switchUserTab('all',this)">Tất cả người dùng</button>
+      </div>
+      <div id="users-pending-panel">
+        <div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div>
+      </div>
+      <div id="users-all-panel" style="display:none">
+        <div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div>
+      </div>
+    </div>
+
+    <!-- ════════════════ JOBS ════════════════ -->
     <div class="tab-panel" id="tab-jobs">
       <div class="admin-page-title">Kết quả AI</div>
       <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
-        <button class="btn btn-outline" onclick="loadJobs()" style="font-size:13px">
-          <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-          Làm mới
-        </button>
+        <button class="btn btn-outline" onclick="loadJobs()" style="font-size:13px">↻ Làm mới</button>
       </div>
       <div style="overflow-x:auto">
         <table class="job-table">
@@ -229,79 +472,400 @@
       </div>
     </div>
 
-    <!-- ARTICLES TAB -->
-    <div class="tab-panel" id="tab-articles">
-      <div class="admin-page-title">Bài viết</div>
-      <div id="articles-list">
+    <!-- ════════════════ SUBMISSIONS ════════════════ -->
+    <div class="tab-panel" id="tab-submissions">
+      <div class="admin-page-title">Nguồn ảnh</div>
+      <div id="submissions-list">
         <div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div>
       </div>
     </div>
 
-    <!-- MAP POINTS TAB -->
-    <div class="tab-panel" id="tab-mappoints">
-      <div class="admin-page-title">Điểm bản đồ</div>
-      <div id="mappoints-list">
+    <!-- ════════════════ SYSTEM HEALTH ════════════════ -->
+    <div class="tab-panel" id="tab-system">
+      <div class="admin-page-title">Sức khỏe hệ thống</div>
+      <div class="page-subtitle">Tình trạng pipeline, model và hàng đợi xử lý.</div>
+      <div class="health-grid" id="health-grid">
         <div style="padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div>
+      </div>
+      <div class="admin-section">
+        <div class="section-header"><span class="section-title">Lỗi phổ biến (24h gần nhất)</span></div>
+        <div id="system-fail-reasons">
+          <div style="padding:16px;text-align:center;color:var(--tx3);font-size:13px">Đang tải...</div>
+        </div>
+      </div>
+      <div class="admin-section">
+        <div class="section-header"><span class="section-title">Trạng thái Model AI</span></div>
+        <div id="llm-status" style="padding:14px 16px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);font-size:13px;color:var(--tx2)">Đang kiểm tra...</div>
       </div>
     </div>
 
-  </div>
-</div>
-</div>
+    <!-- ════════════════ ALERTS TAB ════════════════ -->
+    <div class="tab-panel" id="tab-alerts">
+      <div class="admin-page-title">Quản lý cảnh báo</div>
+      <div class="page-subtitle">Tạo, cập nhật và theo dõi cảnh báo ngập lụt.</div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px">
+        <div style="display:grid;grid-template-columns:1fr auto auto;gap:10px">
+          <input type="text" id="alert2-location" placeholder="Khu vực cảnh báo..." class="form-ctrl">
+          <select id="alert2-level" class="form-ctrl">
+            <option value="ankle">Vàng — Ngập nhẹ</option>
+            <option value="knee">Cam — Ngập đầu gối</option>
+            <option value="waist">Cam — Ngập nặng</option>
+            <option value="chest">Đỏ — Rất nguy hiểm</option>
+          </select>
+          <button class="btn btn-danger" onclick="createAlert2()" style="white-space:nowrap">🚨 Kích hoạt cảnh báo</button>
+        </div>
+      </div>
+      <div id="alerts-list">
+        <div style="padding:24px;text-align:center;color:var(--tx3)">Chưa có cảnh báo nào đang hoạt động.</div>
+      </div>
+    </div>
+
+    <!-- ════════════════ PLACEHOLDERS ════════════════ -->
+    {% for tab_id, tab_name in [('articles','Bài viết'),('events','Sự kiện ngập'),('mappoints','Bản đồ'),('roads','Tuyến đường'),('sources','Nguồn tin'),('privacy','Ảnh & Riêng tư'),('stats','Thống kê')] %}
+    <div class="tab-panel" id="tab-{{ tab_id }}">
+      <div class="coming-soon">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+        <h3>{{ tab_name }}</h3>
+        <p>Tính năng đang được phát triển.</p>
+      </div>
+    </div>
+    {% endfor %}
+
+  </div><!-- /.admin-main -->
+</div><!-- /.admin-layout -->
+</div><!-- /.container -->
 {% endblock %}
 
 {% block scripts %}
 <script>
 const LEVEL_META={
-  dry:{label:'Không ngập',badge:'badge-ok'},
-  ankle:{label:'Ngập nhẹ',badge:'badge-low'},
-  knee:{label:'Ngập đầu gối',badge:'badge-medium'},
-  waist:{label:'Ngập nặng',badge:'badge-high'},
-  chest:{label:'Rất nguy hiểm',badge:'badge-critical'},
-  submerged:{label:'Ngập hoàn toàn',badge:'badge-critical'},
-  unknown:{label:'Chưa xác định',badge:'badge-unknown'},
+  dry:{label:'Không ngập',badge:'badge-ok',sev:'ok',score:0},
+  ankle:{label:'Ngập nhẹ',badge:'badge-low',sev:'low',score:1},
+  knee:{label:'Ngập đầu gối',badge:'badge-medium',sev:'medium',score:3},
+  waist:{label:'Ngập nặng',badge:'badge-high',sev:'high',score:4},
+  chest:{label:'Rất nguy hiểm',badge:'badge-critical',sev:'critical',score:5},
+  submerged:{label:'Ngập hoàn toàn',badge:'badge-critical',sev:'critical',score:5},
+  unknown:{label:'Chưa xác định',badge:'badge-unknown',sev:'unknown',score:2},
 };
+const ROLES=['reviewer','editor','alert_manager','map_manager','admin'];
+const ROLE_LABELS={reviewer:'Reviewer',editor:'Editor',alert_manager:'Alert Manager',map_manager:'Map Manager',admin:'Admin'};
 
+// ── Tab switching ──────────────────────────────────
 function showTab(name, linkEl){
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.admin-nav-link').forEach(l=>l.classList.remove('active'));
   document.getElementById('tab-'+name)?.classList.add('active');
-  if(linkEl)linkEl.classList.add('active');
-  if(name==='jobs')loadJobs();
-  if(name==='review')loadReview();
-  if(name==='submissions')loadSubmissions();
-  if(name==='articles')loadArticles();
-  if(name==='mappoints')loadMapPoints();
+  if(linkEl) linkEl.classList.add('active');
+  if(name==='jobs')        loadJobs();
+  if(name==='review')      loadReview();
+  if(name==='submissions') loadSubmissions();
+  if(name==='users')       loadUsers();
+  if(name==='system')      loadSystem();
 }
 
-// DASHBOARD
+// ── Priority score ─────────────────────────────────
+function confScore(c){
+  if(c==='high')   { return 0; }
+  if(c==='medium') { return 1; }
+  return 2;
+}
+function statusBadgeClass(s){
+  if(s==='done')    return 'badge-verified';
+  if(s==='failed')  return 'badge-high';
+  if(s==='running') return 'badge-ai';
+  return 'badge-unknown';
+}
+function priorityScore(j){
+  const lvl = j.result?.level||'unknown';
+  const s = (LEVEL_META[lvl]||LEVEL_META.unknown).score;
+  const age = (Date.now()-new Date(j.created_at||0).getTime())/1000/3600;
+  return s*20 + confScore(j.result?.confidence)*5 + Math.min(age*2, 20);
+}
+function priorityLabel(score){
+  if(score>=80) return {cls:'priority-critical',txt:'Khẩn cấp'};
+  if(score>=50) return {cls:'priority-high',txt:'Cao'};
+  if(score>=25) return {cls:'priority-medium',txt:'Trung bình'};
+  return {cls:'priority-low',txt:'Thấp'};
+}
+
+// ── DASHBOARD ─────────────────────────────────────
+let _allJobs=[];
 async function loadDashboard(){
   try{
-    const r=await fetch('/api/metrics');const d=await r.json();
-    document.getElementById('s-total').textContent=d.jobs?.total??'—';
-    document.getElementById('s-done').textContent=d.jobs?.done??'—';
-    document.getElementById('s-pending').textContent=d.jobs?.pending??'—';
-    document.getElementById('s-failed').textContent=d.jobs?.failed??'—';
-  }catch{}
-  try{
-    const r2=await fetch('/api/jobs?limit=8');const jobs=await r2.json();
-    const el=document.getElementById('recent-activity');
-    if(!jobs.length){el.innerHTML='<div style="padding:16px;color:var(--tx3);font-size:13px">Chưa có hoạt động nào.</div>';return;}
-    el.innerHTML=`<table class="job-table"><thead><tr>
-      <th>Job ID</th><th>Trạng thái</th><th>Tiến độ</th><th>Thời gian</th>
-    </tr></thead><tbody>`+jobs.map(j=>`<tr>
-      <td class="job-id">${j.job_id.slice(-10)}</td>
-      <td><span class="badge ${j.status==='done'?'badge-verified':j.status==='failed'?'badge-high':'badge-ai'}">${j.status}</span></td>
-      <td><div style="display:flex;align-items:center;gap:8px;min-width:120px">
-        <div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:${j.progress||0}%"></div></div>
-        <span style="font-size:11px;color:var(--tx3)">${j.progress||0}%</span>
-      </div></td>
-      <td>${timeAgo(j.created_at)}</td>
-    </tr>`).join('')+'</tbody></table>';
-  }catch{}
+    const [mr, jr] = await Promise.all([fetch('/api/metrics'), fetch('/api/jobs?limit=200')]);
+    const m = await mr.json();
+    const jobs = await jr.json();
+    _allJobs = jobs;
+
+    const today = new Date().toDateString();
+    const todayJobs = jobs.filter(j=>new Date(j.created_at||0).toDateString()===today);
+    const doneJobs  = jobs.filter(j=>j.status==='done');
+    const lowConf   = doneJobs.filter(j=>!j.result?.confidence||j.result.confidence==='low');
+
+    // Hot area
+    const locCount={};
+    doneJobs.forEach(j=>{const l=j.result?.location;if(l)locCount[l]=(locCount[l]||0)+1;});
+    const hotLoc=Object.entries(locCount).sort((a,b)=>b[1]-a[1]);
+
+    document.getElementById('s-today').textContent    = todayJobs.length;
+    document.getElementById('s-today-sub').textContent= `Tổng: ${jobs.length} báo cáo`;
+    document.getElementById('s-review').textContent   = doneJobs.length;
+    document.getElementById('s-failed').textContent   = m.jobs.failed||0;
+    document.getElementById('s-failed-sub').textContent= m.fail_reasons?.[0]?.[0]||'—';
+    document.getElementById('s-running').textContent  = m.jobs.running||0;
+    document.getElementById('s-done-sub').textContent = `Đã xong: ${m.jobs.done||0}`;
+    document.getElementById('s-verify').textContent   = lowConf.length;
+    document.getElementById('s-images').textContent   = m.performance.total_images_analyzed||0;
+    const avg=m.performance.avg_processing_s;
+    document.getElementById('s-avg-time').textContent = avg>0?`Tb: ${avg.toFixed(0)}s`:'Chưa có dữ liệu';
+    document.getElementById('s-hotspot').textContent  = hotLoc[0]?.[0]||'—';
+    document.getElementById('s-hotspot-sub').textContent= hotLoc[0]?`${hotLoc[0][1]} báo cáo`:'—';
+    document.getElementById('s-alerts').textContent   = 0; // no alerts API yet
+
+    const now=new Date();
+    document.getElementById('dash-time').textContent=`Cập nhật lúc ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')} — ${todayJobs.length} báo cáo hôm nay, ${m.jobs.running} job đang chạy.`;
+
+    // Update badge
+    const badge=document.getElementById('review-badge');
+    if(doneJobs.length>0){badge.textContent=doneJobs.length;badge.style.display='';}
+
+    renderPriorityPreview(doneJobs);
+    renderFailLog(m.fail_reasons||[]);
+    renderActiveAlerts([]);
+  }catch(e){
+    console.warn('[dashboard]', e);
+    document.getElementById('dash-time').textContent='Lỗi tải dữ liệu — thử làm mới trang.';
+  }
 }
 
-// JOBS TAB
+function renderPriorityPreview(jobs){
+  const el=document.getElementById('priority-preview');
+  const top=jobs.sort((a,b)=>priorityScore(b)-priorityScore(a)).slice(0,4);
+  if(!top.length){el.innerHTML='<div style="padding:16px;text-align:center;color:var(--tx3);font-size:13px">Không có tin cần duyệt.</div>';return;}
+  el.innerHTML=top.map(j=>{
+    const lvl=j.result?.level||'unknown';
+    const info=LEVEL_META[lvl]||LEVEL_META.unknown;
+    const p=priorityLabel(priorityScore(j));
+    const loc=j.result?.location||'Khu vực phân tích';
+    return `<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);margin-bottom:8px">
+      <span class="priority-badge ${p.cls}">${p.txt}</span>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600;color:var(--tx)">${info.label} tại ${loc}</div>
+        <div style="font-size:11px;color:var(--tx3);margin-top:2px">${timeAgo(j.created_at)} · Tin cậy: ${j.result?.confidence_label||'—'}</div>
+      </div>
+      <span class="badge ${info.badge}">${info.label}</span>
+      <a href="#" onclick="showTab('review',document.getElementById('nav-review'));return false" style="font-size:12px;color:var(--blue);font-weight:500;white-space:nowrap">Duyệt →</a>
+    </div>`;
+  }).join('');
+}
+
+function renderFailLog(reasons){
+  const el=document.getElementById('fail-log-list');
+  if(!reasons.length){el.innerHTML='<div style="padding:16px;text-align:center;color:var(--ok);font-size:13px">✓ Không có lỗi gần đây.</div>';return;}
+  el.innerHTML=reasons.map(([r,c])=>`<div class="fail-row">
+    <span class="fail-reason" title="${r}">${r}</span>
+    <span class="fail-count">${c}×</span>
+  </div>`).join('');
+}
+
+function renderActiveAlerts(alerts){
+  const el=document.getElementById('active-alerts-list');
+  if(!alerts.length){
+    el.innerHTML='<div style="padding:16px;text-align:center;color:var(--ok);font-size:13px">✓ Không có cảnh báo nào đang hoạt động.</div>';
+  }
+}
+
+// ── REVIEW ────────────────────────────────────────
+let _reviewFilter='all';
+async function loadReview(){
+  try{
+    const r=await fetch('/api/jobs?limit=100');
+    const jobs=await r.json();
+    _allJobs=jobs;
+    renderReview(jobs.filter(j=>j.status==='done'));
+  }catch{document.getElementById('review-list').innerHTML='<div style="padding:24px;text-align:center;color:var(--tx3)">Không thể tải.</div>';}
+}
+
+function filterReview(f,btn){
+  _reviewFilter=f;
+  document.querySelectorAll('#tab-review .tab-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const done=_allJobs.filter(j=>j.status==='done');
+  let filtered=done;
+  if(f==='critical') filtered=done.filter(j=>['chest','submerged','waist'].includes(j.result?.level));
+  else if(f==='medium') filtered=done.filter(j=>j.result?.level==='knee');
+  else if(f==='low') filtered=done.filter(j=>['ankle','dry'].includes(j.result?.level));
+  renderReview(filtered);
+}
+
+function renderReview(jobs){
+  const el=document.getElementById('review-list');
+  const sorted=jobs.sort((a,b)=>priorityScore(b)-priorityScore(a));
+  if(!sorted.length){el.innerHTML='<div style="padding:32px;text-align:center;color:var(--tx3)">Không có tin nào cần duyệt.</div>';return;}
+  el.innerHTML=sorted.map(j=>{
+    const lvl=j.result?.level||'unknown';
+    const info=LEVEL_META[lvl]||LEVEL_META.unknown;
+    const p=priorityLabel(priorityScore(j));
+    const loc=j.result?.location||'Khu vực phân tích';
+    const conf=j.result?.confidence_label||'—';
+    const depth=j.result?.depth_range||'';
+    return `<div class="review-card sev-${info.sev}" id="rc-${j.job_id}">
+      <div class="rc-top">
+        <div>
+          <div class="rc-badges">
+            <span class="priority-badge ${p.cls}">${p.txt}</span>
+            <span class="badge ${info.badge}">${info.label}</span>
+          </div>
+          <div class="rc-title" style="margin-top:6px">${info.label} tại ${loc}</div>
+          <div class="rc-meta">Job: ${j.job_id.slice(-10)} · ${timeAgo(j.created_at)}</div>
+        </div>
+        <a href="/article/${j.job_id}" target="_blank" style="color:var(--blue);font-size:12px;font-weight:500;white-space:nowrap">Xem bài →</a>
+      </div>
+      <div class="rc-info">
+        ${depth?`<span class="rc-info-item">📏 ${depth}</span>`:''}
+        <span class="rc-info-item">🎯 Tin cậy: <strong>${conf}</strong></span>
+        <span class="rc-info-item">⏱ ${timeAgo(j.created_at)}</span>
+      </div>
+      <div class="rc-actions">
+        <button class="rc-btn btn-approve" onclick="reviewAction('${j.job_id}','approve',this)">✓ Duyệt đăng</button>
+        <button class="rc-btn btn-edit" onclick="reviewAction('${j.job_id}','edit',this)">✎ Chỉnh rồi đăng</button>
+        <button class="rc-btn btn-update" onclick="reviewAction('${j.job_id}','update',this)">↑ Cập nhật bài cũ</button>
+        <button class="rc-btn btn-alert-create" onclick="reviewAction('${j.job_id}','alert',this)">🚨 Tạo cảnh báo</button>
+        <button class="rc-btn btn-verify" onclick="reviewAction('${j.job_id}','verify',this)">⚑ Cần xác minh</button>
+        <button class="rc-btn btn-reject" onclick="reviewAction('${j.job_id}','reject',this)">✕ Từ chối</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function reviewAction(id,action,btn){
+  const labels={approve:'✓ Đã duyệt',edit:'✎ Đang chỉnh...',update:'↑ Đã gửi cập nhật',
+    alert:'🚨 Đã tạo cảnh báo',verify:'⚑ Đã đánh dấu',reject:'✕ Đã từ chối'};
+  btn.textContent=labels[action]||'Xong';
+  btn.disabled=true;
+  if(action==='approve'||action==='reject'){
+    const card=document.getElementById('rc-'+id);
+    if(card) setTimeout(()=>card.style.opacity='.4',300);
+  }
+  if(action==='alert'){
+    const j=_allJobs.find(x=>x.job_id===id);
+    if(j){document.getElementById('alert-location').value=j.result?.location||'';
+      document.getElementById('alert-level').value=j.result?.level||'knee';}
+  }
+}
+
+// ── USERS ─────────────────────────────────────────
+let _currentUserTab='pending';
+function switchUserTab(tab,btn){
+  _currentUserTab=tab;
+  document.querySelectorAll('#tab-users .tab-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('users-pending-panel').style.display=tab==='pending'?'':'none';
+  document.getElementById('users-all-panel').style.display=tab==='all'?'':'none';
+  if(tab==='all') loadAllUsers();
+}
+
+async function loadUsers(){
+  await Promise.all([loadPendingUsers(), loadAllUsers()]);
+}
+
+async function loadPendingUsers(){
+  const el=document.getElementById('users-pending-panel');
+  try{
+    const r=await fetch('/api/users/pending');
+    if(!r.ok) throw new Error(r.status);
+    const users=await r.json();
+    const badge=document.getElementById('pending-count');
+    badge.textContent=users.length; badge.style.display=users.length?'':'none';
+    if(!users.length){el.innerHTML='<div style="padding:32px;text-align:center;color:var(--ok)">✓ Không có tài khoản nào đang chờ duyệt.</div>';return;}
+    el.innerHTML=users.map(u=>userCard(u,true)).join('');
+  }catch{el.innerHTML='<div style="padding:24px;text-align:center;color:var(--tx3)">Không thể tải danh sách.</div>';}
+}
+
+async function loadAllUsers(){
+  const el=document.getElementById('users-all-panel');
+  if(el.dataset.loaded&&_currentUserTab!=='all') return;
+  try{
+    const r=await fetch('/api/users');
+    if(!r.ok) throw new Error(r.status);
+    const users=await r.json();
+    if(!users.length){el.innerHTML='<div style="padding:32px;text-align:center;color:var(--tx3)">Chưa có người dùng nào.</div>';return;}
+    el.innerHTML=users.map(u=>userCard(u,false)).join('');
+    el.dataset.loaded='1';
+  }catch{el.innerHTML='<div style="padding:24px;text-align:center;color:var(--tx3)">Không thể tải. Kiểm tra quyền admin.</div>';}
+}
+
+function userCard(u,isPending){
+  const initials=(u.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  const roleOpts=ROLES.map(r=>`<option value="${r}"${r===u.role?' selected':''}>${ROLE_LABELS[r]||r}</option>`).join('');
+  let statusBadge;
+  if(u.active===false)      { statusBadge='<span class="badge badge-high" style="font-size:10px">Bị khóa</span>'; }
+  else if(u.approved===false){ statusBadge='<span class="badge badge-pending" style="font-size:10px">Chờ duyệt</span>'; }
+  else                       { statusBadge='<span class="badge badge-verified" style="font-size:10px">Đã duyệt</span>'; }
+  const lockCls = u.active===false ? 'green' : 'red';
+  const lockTxt = u.active===false ? '🔓 Mở khóa' : '🔒 Khóa';
+  return `<div class="user-card" id="uc-${u.email.replace(/[@.]/g,'-')}">
+    <div class="user-avatar">${initials}</div>
+    <div class="user-info">
+      <div class="user-name">${u.name||'—'} ${statusBadge}</div>
+      <div class="user-email">${u.email} · Đăng ký: ${u.created_at?timeAgo(u.created_at):'—'}</div>
+    </div>
+    <div class="user-actions">
+      <select class="role-select" id="role-${u.email.replace(/[@.]/g,'-')}" ${isPending?'':'onchange="changeRole(\''+u.email+'\',this)"'}>
+        ${roleOpts}
+      </select>
+      ${isPending
+        ? `<button class="btn-sm green" onclick="approveUser('${u.email}')">✓ Duyệt</button>
+           <button class="btn-sm red" onclick="rejectUser('${u.email}')">✕ Từ chối</button>`
+        : `<button class="btn-sm amber" onclick="changeRole('${u.email}',document.getElementById('role-${u.email.replace(/[@.]/g,'-')}'))">Đổi quyền</button>
+           <button class="btn-sm ${lockCls}" onclick="toggleLock('${u.email}',${u.active===false})">${lockTxt}</button>`}
+    </div>
+  </div>`;
+}
+
+async function approveUser(email){
+  const rid=email.replace(/[@.]/g,'-');
+  const role=document.getElementById('role-'+rid)?.value||'reviewer';
+  try{
+    const r=await fetch('/api/users/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,role})});
+    const d=await r.json();
+    if(d.ok||r.ok){
+      document.getElementById('uc-'+rid)?.remove();
+      loadPendingUsers();
+    }else alert(d.error||'Lỗi duyệt tài khoản');
+  }catch{alert('Lỗi kết nối');}
+}
+
+async function rejectUser(email){
+  if(!confirm(`Từ chối tài khoản ${email}?`)) return;
+  const rid=email.replace(/[@.]/g,'-');
+  try{
+    await fetch('/api/users/reject',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+    document.getElementById('uc-'+rid)?.remove();
+    loadPendingUsers();
+  }catch{alert('Lỗi kết nối');}
+}
+
+async function changeRole(email,sel){
+  const role=typeof sel==='string'?sel:sel.value;
+  try{
+    const r=await fetch(`/api/users/${encodeURIComponent(email)}/role`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({role})});
+    const d=await r.json();
+    if(!d.ok&&!r.ok) alert(d.error||'Lỗi đổi quyền');
+  }catch{alert('Lỗi kết nối');}
+}
+
+async function toggleLock(email,lock){
+  const rid=email.replace(/[@.]/g,'-');
+  try{
+    const r=await fetch(`/api/users/${encodeURIComponent(email)}/lock`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:!lock})});
+    const d=await r.json();
+    if(d.ok||r.ok) loadAllUsers();
+    else alert(d.error||'Lỗi');
+  }catch{alert('Lỗi kết nối');}
+}
+
+// ── JOBS ─────────────────────────────────────────
 async function loadJobs(){
   try{
     const r=await fetch('/api/jobs?limit=50');const jobs=await r.json();
@@ -322,58 +886,7 @@ async function loadJobs(){
   }catch{document.getElementById('jobs-tbody').innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--tx3)">Không thể tải.</td></tr>';}
 }
 
-// REVIEW TAB
-async function loadReview(){
-  try{
-    const r=await fetch('/api/jobs?limit=30');const jobs=await r.json();
-    const el=document.getElementById('review-list');
-    const needsReview=jobs.filter(j=>j.status==='done');
-    if(!needsReview.length){el.innerHTML='<div style="padding:24px;text-align:center;color:var(--tx3)">Không có bài nào cần duyệt.</div>';return;}
-    el.innerHTML=needsReview.map(j=>{
-      const lvl=j.result?.level||'unknown';
-      const info=LEVEL_META[lvl]||LEVEL_META.unknown;
-      const loc=j.result?.location||'Khu vực phân tích';
-      return `<div class="review-card">
-        <div class="rc-top">
-          <div>
-            <div class="rc-title">${info.label} tại ${loc}</div>
-            <div class="rc-meta">Job: ${j.job_id.slice(-10)} · ${timeAgo(j.created_at)}</div>
-          </div>
-          <span class="badge ${info.badge}">${info.label}</span>
-        </div>
-        <div style="font-size:13px;color:var(--tx2);margin-bottom:12px;line-height:1.6">
-          ${j.result?.depth_range?`Ước tính: <strong>${j.result.depth_range}</strong> · `:''}
-          Độ tin cậy: <strong>${j.result?.confidence_label||'Chưa rõ'}</strong>
-        </div>
-        <div class="rc-actions">
-          <button class="btn-approve rc-btn" onclick="approveJob('${j.job_id}',this)">✓ Duyệt đăng</button>
-          <button class="rc-btn btn-review" onclick="flagReview('${j.job_id}',this)">⚑ Cần xác minh</button>
-          <button class="rc-btn btn-reject" onclick="rejectJob('${j.job_id}',this)">✕ Từ chối</button>
-          <button class="rc-btn btn-alert-create" onclick="createAlertFromJob('${j.job_id}','${loc}','${lvl}')">🚨 Tạo cảnh báo</button>
-          <a href="/article/${j.job_id}" target="_blank" style="padding:6px 13px;font-size:12px;font-weight:600;color:var(--blue);text-decoration:none">Xem bài →</a>
-        </div>
-      </div>`;
-    }).join('');
-  }catch{document.getElementById('review-list').innerHTML='<div style="padding:24px;text-align:center;color:var(--tx3)">Không thể tải.</div>';}
-}
-
-function approveJob(id,btn){btn.textContent='✓ Đã duyệt';btn.style.opacity='.5';btn.disabled=true;}
-function flagReview(id,btn){btn.textContent='⚑ Đã đánh dấu';btn.style.opacity='.5';btn.disabled=true;}
-function rejectJob(id,btn){btn.textContent='✕ Đã từ chối';btn.style.opacity='.5';btn.disabled=true;}
-function createAlertFromJob(id,loc,lvl){
-  document.getElementById('alert-location').value=loc;
-  document.getElementById('alert-level').value=lvl||'knee';
-  showTab('dashboard',document.querySelector('.admin-nav-link'));
-  alert('Đã điền thông tin cảnh báo. Kiểm tra và nhấn "Tạo cảnh báo".');
-}
-
-function createAlert(){
-  const loc=document.getElementById('alert-location').value.trim();
-  const level=document.getElementById('alert-level').value;
-  if(!loc){alert('Nhập khu vực cảnh báo.');return;}
-  alert(`Cảnh báo đã được tạo:\n${loc} — ${level}`);
-}
-
+// ── SUBMISSIONS ───────────────────────────────────
 async function loadSubmissions(){
   try{
     const r=await fetch('/api/jobs?limit=30');const jobs=await r.json();
@@ -391,64 +904,82 @@ async function loadSubmissions(){
   }catch{}
 }
 
-async function loadArticles(){
-  document.getElementById('articles-list').innerHTML=
-    '<div style="padding:24px;text-align:center;color:var(--tx2)">Bài viết được tạo tự động từ kết quả AI sau khi admin duyệt. Chuyển sang tab <strong>Duyệt tin</strong> để xem và duyệt bài.</div>';
-}
-async function loadMapPoints(){
-  document.getElementById('mappoints-list').innerHTML=
-    '<div style="padding:24px;text-align:center;color:var(--tx2)">Điểm bản đồ được tạo tự động từ kết quả có GPS. Xem tại <a href="/map" style="color:var(--blue)">trang bản đồ</a>.</div>';
+// ── SYSTEM HEALTH ─────────────────────────────────
+async function loadSystem(){
+  try{
+    const r=await fetch('/api/metrics');const m=await r.json();
+    const llmR=await fetch('/api/llm/status').catch(()=>null);
+    const llm=llmR?await llmR.json().catch(()=>({})):{};
+
+    document.getElementById('health-grid').innerHTML=`
+      <div class="health-item"><div class="health-label">Job tổng cộng</div><div class="health-value">${m.jobs.total}</div></div>
+      <div class="health-item"><div class="health-label">Đã hoàn thành</div><div class="health-value ok">${m.jobs.done}</div></div>
+      <div class="health-item"><div class="health-label">Đang chạy</div><div class="health-value ${m.jobs.running>0?'warn':'ok'}">${m.jobs.running}</div></div>
+      <div class="health-item"><div class="health-label">Lỗi</div><div class="health-value ${m.jobs.failed>0?'danger':'ok'}">${m.jobs.failed}</div></div>
+      <div class="health-item"><div class="health-label">Hàng đợi</div><div class="health-value">${m.jobs.pending}</div></div>
+      <div class="health-item"><div class="health-label">TB xử lý</div><div class="health-value">${m.performance.avg_processing_s.toFixed(0)}s</div></div>
+      <div class="health-item"><div class="health-label">Ảnh đã xử lý</div><div class="health-value">${m.performance.total_images_analyzed}</div></div>
+    `;
+
+    const fr=m.fail_reasons||[];
+    document.getElementById('system-fail-reasons').innerHTML=fr.length
+      ? fr.map(([r,c])=>`<div class="fail-row"><span class="fail-reason" title="${r}">${r}</span><span class="fail-count">${c}×</span></div>`).join('')
+      : '<div style="padding:12px;color:var(--ok);font-size:13px">✓ Không có lỗi</div>';
+
+    const llmReady=llm.ready??llm.loaded;
+    document.getElementById('llm-status').innerHTML=
+      `<strong>${llmReady?'✅ Model đã sẵn sàng':'⏳ Model chưa sẵn sàng'}</strong><br>
+      <span style="color:var(--tx3);font-size:12px">${llm.model||'flood-agent-merged'} · ${llm.backend||'transformers'}</span>`;
+  }catch{
+    document.getElementById('health-grid').innerHTML='<div style="padding:24px;color:var(--tx3)">Không thể tải thông tin hệ thống.</div>';
+  }
 }
 
+// ── ALERTS ───────────────────────────────────────
+function createAlert(){
+  const loc=document.getElementById('alert-location').value.trim();
+  const level=document.getElementById('alert-level').value;
+  if(!loc){alert('Nhập khu vực cảnh báo.');return;}
+  alert(`Cảnh báo tạm thời:\n${loc} — ${level}\n\n(Tính năng lưu cảnh báo đang phát triển)`);
+}
+function createAlert2(){
+  const loc=document.getElementById('alert2-location').value.trim();
+  const level=document.getElementById('alert2-level').value;
+  if(!loc){alert('Nhập khu vực cảnh báo.');return;}
+  alert(`Cảnh báo tạm thời:\n${loc} — ${level}`);
+}
+
+// ── DRIVE ─────────────────────────────────────────
 async function pullDrive(){
   const url=document.getElementById('drive-url').value.trim();
   const max=parseInt(document.getElementById('drive-max').value)||200;
   const safe=document.getElementById('drive-safe').checked;
   const btn=document.getElementById('drive-btn');
   const status=document.getElementById('drive-status');
-
   if(!url){alert('Nhập link Google Drive folder.');return;}
-
   btn.disabled=true;btn.textContent='Đang kết nối...';
   status.style.display='block';
-  status.style.background='var(--blue-s)';
-  status.style.borderColor='rgba(21,101,192,.2)';
-  status.style.color='var(--blue)';
-  status.innerHTML='⏳ Đang kết nối Google Drive và tải ảnh...';
-
+  status.style.cssText='display:block;padding:10px 13px;border-radius:var(--radius-md);border:1px solid rgba(21,101,192,.2);background:var(--blue-s);color:var(--blue);font-size:13px';
+  status.innerHTML='⏳ Đang kết nối Google Drive...';
   try{
-    const r=await fetch('/api/drive/analyze',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({drive_url:url,safe,max_files:max}),
-    });
+    const r=await fetch('/api/drive/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({drive_url:url,safe,max_files:max})});
     const d=await r.json();
     if(r.ok){
-      status.style.background='var(--ok-s)';
-      status.style.borderColor='rgba(22,163,74,.2)';
-      status.style.color='var(--ok)';
-      status.innerHTML=`✅ ${d.message}<br>
-        <span style="font-size:12px;color:var(--tx3)">
-          Chuyển sang tab <strong>Kết quả AI</strong> để theo dõi tiến độ.
-        </span>`;
-      setTimeout(()=>{
-        showTab('jobs',document.querySelectorAll('.admin-nav-link')[3]);
-        loadJobs();
-      },2000);
+      status.style.cssText='display:block;padding:10px 13px;border-radius:var(--radius-md);border:1px solid rgba(22,163,74,.2);background:var(--ok-s);color:var(--ok);font-size:13px';
+      status.innerHTML=`✅ ${d.message}`;
+      setTimeout(()=>{showTab('jobs',document.querySelectorAll('.admin-nav-link')[12]);loadJobs();},2000);
     }else{
-      status.style.background='var(--warn-high-s)';
-      status.style.borderColor='rgba(220,38,38,.2)';
-      status.style.color='var(--warn-high)';
-      status.innerHTML='❌ Lỗi: '+(d.error||'Không kết nối được Drive');
+      status.style.cssText='display:block;padding:10px 13px;border-radius:var(--radius-md);border:1px solid rgba(220,38,38,.2);background:var(--warn-high-s);color:var(--warn-high);font-size:13px';
+      status.innerHTML='❌ '+(d.error||'Không kết nối được Drive');
     }
-  }catch(e){
-    status.style.background='var(--warn-high-s)';
-    status.style.color='var(--warn-high)';
+  }catch{
+    status.style.cssText='display:block;padding:10px 13px;border-radius:var(--radius-md);background:var(--warn-high-s);color:var(--warn-high);font-size:13px';
     status.innerHTML='❌ Không thể kết nối server';
   }
-  btn.disabled=false;btn.innerHTML=`<svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Tải và phân tích`;
+  btn.disabled=false;btn.textContent='Tải & phân tích';
 }
 
+// ── Init ──────────────────────────────────────────
 loadDashboard();
 </script>
 {% endblock %}
