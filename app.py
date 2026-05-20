@@ -487,17 +487,16 @@ def dashboard():
 
 @app.route("/login", methods=["GET", "POST"])
 def login_page():
-    if request.method == "POST":
-        user    = request.form.get("username", "")
-        pw_hash = hashlib.sha256(
-            request.form.get("password", "").encode()
-        ).hexdigest()
-        if user == ADMIN_USER and pw_hash == ADMIN_PASS_HASH:
-            session["logged_in"] = True
-            session["is_admin"]  = True
-            return redirect(url_for("dashboard"))
-        return render_template("login.html", error="Sai tên đăng nhập hoặc mật khẩu")
-    return render_template("login.html")
+    """
+    GET  → hiện form login (với hCaptcha site key)
+    POST → legacy fallback (form cũ), redirect về GET
+    """
+    site_key = os.environ.get("HCAPTCHA_SITE_KEY", "10000000-ffff-ffff-ffff-000000000001")
+    # Login thực tế xử lý qua POST /api/auth/login (JSON)
+    # Route này chỉ serve trang HTML
+    if session.get("logged_in"):
+        return redirect(url_for("dashboard"))
+    return render_template("login.html", hcaptcha_site_key=site_key)
 
 
 @app.route("/logout", methods=["GET"])

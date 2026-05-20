@@ -94,7 +94,9 @@ function renderPage(){
   if(!show.length){el.innerHTML='<div style="grid-column:1/-1;padding:32px;text-align:center;color:var(--tx3)">Chưa có tin mới.</div>';return;}
   el.innerHTML=show.map(a=>{
     const info=LEVEL_INFO[a.level]||LEVEL_INFO.unknown;
-    return `<a class="article-card sev-${info.sev}" href="/article/${a.id}">
+    const href=a.type==='news'?a.id:`/article/${a.id}`;
+    const target=a.type==='news'?' target="_blank" rel="noopener"':'';
+    return `<a class="article-card sev-${info.sev}" href="${href}"${target}>
       <div class="ac-body">
         <div class="ac-meta">
           <span class="badge ${info.badge}">${a.type==='news'?'Tin tức':info.label}</span>

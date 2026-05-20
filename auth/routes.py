@@ -27,16 +27,45 @@ from __future__ import annotations
 
 import os
 import logging
+import urllib.parse
+import urllib.request
+import json as _json
 from flask import Blueprint, jsonify, request, session
 
 from auth.user_manager import UserManager, require_role, ROLES, ROLE_PERMISSIONS
+from auth.mailer import send_otp, verify_otp
 
 log = logging.getLogger("auth.routes")
 
-auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
+auth_bp  = Blueprint("auth",  __name__, url_prefix="/api/auth")
 users_bp = Blueprint("users", __name__, url_prefix="/api/users")
 
 _um = UserManager(default_admin_pass=os.environ.get("ADMIN_PASS"))
+
+
+# ── hCaptcha verify ───────────────────────────────────────────────────────────
+
+def _verify_hcaptcha(token: str) -> bool:
+    """Xác minh hCaptcha token với server của hCaptcha."""
+    secret = os.environ.get("HCAPTCHA_SECRET_KEY", "")
+    if not secret or secret == "0x0000000000000000000000000000000000000000":
+        # Dev mode (test secret key) — luôn pass
+        return True
+    try:
+        data = urllib.parse.urlencode({
+            "secret":   secret,
+            "response": token,
+        }).encode()
+        req  = urllib.request.Request(
+            "https://api.hcaptcha.com/siteverify",
+            data=data, method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            result = _json.loads(resp.read())
+        return result.get("success", False)
+    except Exception as e:
+        log.warning(f"[hCaptcha] Verify lỗi: {e}")
+        return False
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -47,15 +76,18 @@ _um = UserManager(default_admin_pass=os.environ.get("ADMIN_PASS"))
 def login():
     """
     POST /api/auth/login
-    Body: { email, password }
-    Returns: { name, role, permissions }
+    Body: { email, password, hcaptcha_token }
     """
-    data = request.get_json(silent=True) or {}
+    data     = request.get_json(silent=True) or {}
     email    = (data.get("email") or "").strip().lower()
     password = data.get("password") or ""
+    captcha  = data.get("hcaptcha_token") or ""
 
     if not email or not password:
         return jsonify({"error": "Thiếu email hoặc mật khẩu"}), 400
+
+    if not _verify_hcaptcha(captcha):
+        return jsonify({"error": "Xác minh CAPTCHA thất bại — vui lòng thử lại"}), 400
 
     user = _um.authenticate(email, password)
     if not user:
@@ -68,7 +100,6 @@ def login():
     session["is_admin"]  = user["role"] == "admin"
 
     log.info(f"[Auth] Login: {email} ({user['role']})")
-
     return jsonify({
         "ok":          True,
         "name":        user["name"],
@@ -81,40 +112,104 @@ def login():
 
 @auth_bp.route("/logout", methods=["POST"])
 def logout():
-    """POST /api/auth/logout"""
     email = session.get("email", "unknown")
     session.clear()
     log.info(f"[Auth] Logout: {email}")
     return jsonify({"ok": True})
 
 
-@auth_bp.route("/register", methods=["POST"])
-def register():
+@auth_bp.route("/send-otp", methods=["POST"])
+def send_otp_route():
     """
-    POST /api/auth/register
-    Body: { email, name, password, role }
-    → Tạo tài khoản pending, chờ admin phê duyệt
+    POST /api/auth/send-otp
+    Body: { email, name, password, role, hcaptcha_token }
+
+    Bước 1 đăng ký: xác minh CAPTCHA → lưu thông tin tạm → gửi OTP về email.
     """
-    data  = request.get_json(silent=True) or {}
-    email = (data.get("email") or "").strip().lower()
-    name  = (data.get("name") or "").strip()
-    pw    = data.get("password") or ""
-    role  = data.get("role", "reviewer")
+    data    = request.get_json(silent=True) or {}
+    email   = (data.get("email") or "").strip().lower()
+    name    = (data.get("name") or "").strip()
+    pw      = data.get("password") or ""
+    role    = data.get("role", "reviewer")
+    captcha = data.get("hcaptcha_token") or ""
 
     if not email or not name or not pw:
         return jsonify({"error": "Thiếu thông tin bắt buộc"}), 400
     if len(pw) < 6:
         return jsonify({"error": "Mật khẩu tối thiểu 6 ký tự"}), 400
 
-    result = _um.register(email, name, pw, role)
+    if not _verify_hcaptcha(captcha):
+        return jsonify({"error": "Xác minh CAPTCHA thất bại — vui lòng thử lại"}), 400
+
+    # Kiểm tra email đã tồn tại chưa
+    if _um.get_user(email):
+        return jsonify({"error": "Email này đã được đăng ký"}), 409
+
+    # Lưu thông tin đăng ký tạm vào session (chưa tạo DB)
+    session["pending_reg"] = {
+        "email": email, "name": name,
+        "password": pw, "role": role,
+    }
+
+    ok, msg = send_otp(email)
+    if not ok:
+        return jsonify({"error": msg}), 500
+
+    return jsonify({"ok": True, "message": msg})
+
+
+@auth_bp.route("/verify-otp", methods=["POST"])
+def verify_otp_route():
+    """
+    POST /api/auth/verify-otp
+    Body: { email, code }
+
+    Bước 2 đăng ký: nhập OTP → tạo tài khoản pending trong DB.
+    """
+    data  = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    code  = (data.get("code") or "").strip()
+
+    if not email or not code:
+        return jsonify({"error": "Thiếu email hoặc mã OTP"}), 400
+
+    valid, msg = verify_otp(email, code)
+    if not valid:
+        return jsonify({"error": msg}), 400
+
+    # Lấy thông tin đăng ký từ session
+    pending = session.pop("pending_reg", None)
+    if not pending or pending.get("email") != email:
+        return jsonify({"error": "Phiên đăng ký đã hết hạn — vui lòng thử lại"}), 400
+
+    result = _um.register(
+        email    = pending["email"],
+        name     = pending["name"],
+        password = pending["password"],
+        requested_role = pending.get("role", "reviewer"),
+    )
     if "error" in result:
         return jsonify(result), 409
-    return jsonify(result), 201
+
+    return jsonify({
+        "ok":      True,
+        "message": "Email đã được xác nhận. Tài khoản đang chờ admin phê duyệt.",
+    })
+
+
+@auth_bp.route("/register", methods=["POST"])
+def register():
+    """
+    POST /api/auth/register — deprecated, dùng send-otp + verify-otp thay thế.
+    Giữ lại để tương thích ngược.
+    """
+    return jsonify({
+        "error": "Vui lòng dùng /api/auth/send-otp và /api/auth/verify-otp"
+    }), 410
 
 
 @auth_bp.route("/me", methods=["GET"])
 def me():
-    """GET /api/auth/me — trả về info user đang đăng nhập"""
     if not session.get("logged_in"):
         return jsonify({"logged_in": False}), 401
     return jsonify({
@@ -124,6 +219,17 @@ def me():
         "role":        session.get("role"),
         "is_admin":    session.get("is_admin", False),
         "permissions": ROLE_PERMISSIONS.get(session.get("role", ""), []),
+    })
+
+
+@auth_bp.route("/hcaptcha-key", methods=["GET"])
+def hcaptcha_key():
+    """GET /api/auth/hcaptcha-key — trả về site key cho frontend."""
+    return jsonify({
+        "site_key": os.environ.get(
+            "HCAPTCHA_SITE_KEY",
+            "10000000-ffff-ffff-ffff-000000000001"  # test key
+        )
     })
 
 
