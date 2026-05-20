@@ -1,23 +1,24 @@
 # configs/gpu.yaml
-# GPU: model lớn nhất, batch lớn, DINO bật, torch.inference_mode
+# GPU mạnh (≥ 40GB VRAM, A100/H100 80GB): model lớn nhất, batch cực lớn
 # Dùng: python main.py --config configs/gpu.yaml --input ./images
 
 depth:
   model: "depth-anything/Depth-Anything-V2-Large-hf"
   yolo_model: "yolov8x.pt"
-  yolo_conf: 0.40
+  yolo_conf: 0.35          # thấp hơn → detect được vật thể khó hơn
   use_dino: true
-  dino_model: "facebook/dinov2-large"
+  dino_model: "facebook/dinov2-giant"   # nâng từ dinov2-large → dinov2-giant
 
 pipeline:
   parallel:
-    workers: 8
-  batch_size: 16
+    workers: 16             # nâng từ 8 → 16 (CPU workers cho dataloader)
+  batch_size: 64            # nâng từ 16 → 64 (80GB VRAM đủ sức)
   device: "cuda"
   torch_inference_mode: true
   skip_drive: false
   use_output_cache: true
   predict_routes: true
+  amp_dtype: "bfloat16"    # Automatic Mixed Precision — bfloat16 ổn định hơn float16
 
 output:
   base_dir: "output/gpu"

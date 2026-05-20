@@ -47,7 +47,10 @@ ROOT_DIR   = BASE_DIR.parent
 MODEL_0_5B = "Qwen/Qwen2.5-0.5B-Instruct"   # < 6GB VRAM hoặc CPU
 MODEL_1_5B = "Qwen/Qwen2.5-1.5B-Instruct"   # 6–10GB VRAM  (RTX 5050 8GB → chọn đây)
 MODEL_3B   = "Qwen/Qwen2.5-3B-Instruct"     # 10–20GB VRAM
-MODEL_7B   = "Qwen/Qwen2.5-7B-Instruct"     # 20GB+ VRAM
+MODEL_7B   = "Qwen/Qwen2.5-7B-Instruct"     # 20–35GB VRAM
+MODEL_14B  = "Qwen/Qwen2.5-14B-Instruct"    # 35–55GB VRAM  (bf16 full, không cần QLoRA)
+MODEL_32B  = "Qwen/Qwen2.5-32B-Instruct"    # 55GB+ VRAM    (QLoRA 4-bit ≈ 20GB, còn 60GB cho batch lớn)
+MODEL_72B  = "Qwen/Qwen2.5-72B-Instruct"    # 80GB+ VRAM    (QLoRA 4-bit ≈ 40GB, cần A100/H100)
 BASE_MODEL = MODEL_0_5B                      # default, ghi đè khi detect GPU
 
 TRAIN_FILE = BASE_DIR / "training_data" / "flood_conversations.jsonl"
@@ -56,9 +59,9 @@ OUTPUT_DIR = ROOT_DIR / "models" / "flood-agent-lora"
 
 TRAIN_CFG = {
     "num_train_epochs":            5,
-    "per_device_train_batch_size": 1,
-    "per_device_eval_batch_size":  1,
-    "gradient_accumulation_steps": 8,
+    "per_device_train_batch_size": 16,
+    "per_device_eval_batch_size":  16,
+    "gradient_accumulation_steps": 2,
     "learning_rate":               1.5e-4,
     "warmup_ratio":                0.06,
     "lr_scheduler_type":           "cosine",
@@ -66,17 +69,21 @@ TRAIN_CFG = {
     "eval_steps":                  20,
     "save_steps":                  40,
     "save_total_limit":            3,
-    "max_seq_length":              512,
+    "max_seq_length":              2048,
     "fp16":                        False,
     "bf16":                        True,
-    "gradient_checkpointing":      True,
+    "gradient_checkpointing":      False,
     "optim":                       "adamw_torch",
     "load_best_model_at_end":      True,
     "report_to":                   "none",
 }
 
+# Flag toàn cục: True → dùng bf16 thuần (không QLoRA), False → dùng QLoRA 4-bit
+# Sẽ được set lại trong _detect_device() dựa trên VRAM thực tế
+_USE_BF16_FULL = False
+
 LORA_CFG = {
-    # r=32: rank cao → học được pattern phức tạp hơn (phù hợp 1.5B model)
+    # r=32: rank mặc định; _detect_device() sẽ nâng lên 64/128 nếu đủ VRAM
     "r":              32,
     "lora_alpha":     64,   # = 2×r là chuẩn → scale đúng gradient
     "lora_dropout":   0.05,
@@ -190,6 +197,8 @@ def _pick_best_gpu() -> int:
 
 def _detect_device(torch) -> tuple[bool, str, float]:
     """Phát hiện GPU/CPU và chọn model. CUDA_VISIBLE_DEVICES đã được set trước khi torch init."""
+    global _USE_BF16_FULL, LORA_CFG
+
     if not torch.cuda.is_available():
         log.warning("=" * 60)
         log.warning("Không có GPU — chạy trên CPU (chậm, mất 1-4 giờ).")
@@ -209,55 +218,139 @@ def _detect_device(torch) -> tuple[bool, str, float]:
     disk_free_gb = shutil.disk_usage(cache_dir if cache_dir.exists() else Path.home()).free / 1e9
     log.info(f"Disk free: {disk_free_gb:.1f} GB")
 
-    MODEL_DISK_REQ = {MODEL_7B: 15, MODEL_3B: 7, MODEL_1_5B: 3, MODEL_0_5B: 1}
+    # Dung lượng disk tối thiểu để download (bf16 weights, chưa tính overhead)
+    # QLoRA 4-bit chiếm khoảng 50% so với bf16
+    MODEL_DISK_REQ = {
+        MODEL_72B: 150, MODEL_32B: 65, MODEL_14B: 30,
+        MODEL_7B: 15,   MODEL_3B: 7,   MODEL_1_5B: 3, MODEL_0_5B: 1,
+    }
 
-    if free_gb < 4:
-        model_name = MODEL_0_5B
-    elif free_gb < 7:
-        model_name = MODEL_1_5B
-    elif free_gb < 13:
-        model_name = MODEL_3B
-    else:
+    # ── Chọn model theo free VRAM ─────────────────────────────────────────────
+    # QLoRA 4-bit: VRAM ≈ params × 0.5 bytes + LoRA overhead + activations
+    # bf16 full  : VRAM ≈ params × 2 bytes  (không dùng BitsAndBytesConfig)
+    #
+    # VRAM thresholds (dư thoải mái cho batch lớn + activations):
+    #   ≥ 70 GB → 72B QLoRA  (~40GB weights + 30GB activations/batch)
+    #   ≥ 50 GB → 32B QLoRA  (~20GB weights + 30GB cho batch lớn)
+    #   ≥ 30 GB → 14B bf16   (~28GB weights, không cần QLoRA)
+    #   ≥ 16 GB → 14B QLoRA  (~7GB  weights + overhead)
+    #   ≥ 13 GB → 7B  bf16   (~14GB weights)
+    #   ≥ 7 GB  → 3B  (QLoRA hoặc bf16)
+    #   ≥ 4 GB  → 1.5B
+    #   < 4 GB  → 0.5B
+    if free_gb >= 70:
+        model_name = MODEL_72B
+        _USE_BF16_FULL = False          # QLoRA 4-bit (bf16 thuần cần >140GB)
+        LORA_CFG["r"]          = 128
+        LORA_CFG["lora_alpha"] = 256
+        log.info(f"[Config] {free_gb:.0f}GB free → 72B QLoRA | LoRA r=128")
+    elif free_gb >= 50:
+        model_name = MODEL_32B
+        _USE_BF16_FULL = False          # QLoRA 4-bit (~20GB weights, dư 30GB cho batch)
+        LORA_CFG["r"]          = 128
+        LORA_CFG["lora_alpha"] = 256
+        log.info(f"[Config] {free_gb:.0f}GB free → 32B QLoRA | LoRA r=128")
+    elif free_gb >= 30:
+        model_name = MODEL_14B
+        _USE_BF16_FULL = True           # bf16 thuần (~28GB), không cần QLoRA
+        LORA_CFG["r"]          = 64
+        LORA_CFG["lora_alpha"] = 128
+        log.info(f"[Config] {free_gb:.0f}GB free → 14B bf16-full | LoRA r=64")
+    elif free_gb >= 16:
+        model_name = MODEL_14B
+        _USE_BF16_FULL = False          # QLoRA 4-bit (~7GB weights)
+        LORA_CFG["r"]          = 64
+        LORA_CFG["lora_alpha"] = 128
+        log.info(f"[Config] {free_gb:.0f}GB free → 14B QLoRA | LoRA r=64")
+    elif free_gb >= 13:
         model_name = MODEL_7B
+        _USE_BF16_FULL = True           # bf16 thuần (~14GB)
+        LORA_CFG["r"]          = 64
+        LORA_CFG["lora_alpha"] = 128
+        log.info(f"[Config] {free_gb:.0f}GB free → 7B bf16-full | LoRA r=64")
+    elif free_gb >= 7:
+        model_name = MODEL_3B
+        _USE_BF16_FULL = False
+        log.info(f"[Config] {free_gb:.0f}GB free → 3B QLoRA | LoRA r=32")
+    elif free_gb >= 4:
+        model_name = MODEL_1_5B
+        _USE_BF16_FULL = False
+        log.info(f"[Config] {free_gb:.0f}GB free → 1.5B QLoRA | LoRA r=32")
+    else:
+        model_name = MODEL_0_5B
+        _USE_BF16_FULL = False
+        log.info(f"[Config] {free_gb:.0f}GB free → 0.5B QLoRA | LoRA r=32")
 
-    for candidate in [model_name, MODEL_3B, MODEL_1_5B, MODEL_0_5B]:
+    # ── Kiểm tra disk và fallback ─────────────────────────────────────────────
+    fallback_order = [model_name, MODEL_32B, MODEL_14B, MODEL_7B,
+                      MODEL_3B, MODEL_1_5B, MODEL_0_5B]
+    for candidate in fallback_order:
         cached = cache_dir / f"models--{candidate.replace('/', '--')}"
         if cached.exists():
-            log.info(f"Model đã có trong cache: {candidate}")
-            model_name = candidate
+            if candidate != model_name:
+                log.info(f"Model {model_name} chưa cache, dùng {candidate} (đã có sẵn)")
+                model_name = candidate
             break
-        if disk_free_gb >= MODEL_DISK_REQ[candidate] + 2:
-            model_name = candidate
+        if disk_free_gb >= MODEL_DISK_REQ[candidate] + 5:
+            if candidate != model_name:
+                log.warning(f"Disk không đủ cho {model_name} → fallback {candidate}")
+                model_name = candidate
             break
-        log.warning(f"Disk không đủ cho {candidate} → thử model nhỏ hơn")
+        log.warning(f"Disk không đủ cho {candidate} ({MODEL_DISK_REQ[candidate]}GB cần) → thử nhỏ hơn")
 
-    log.info(f"Tự động chọn model: {model_name} (VRAM {free_gb:.1f}GB, Disk {disk_free_gb:.1f}GB free)")
+    log.info(
+        f"✓ Model cuối cùng: {model_name} "
+        f"(VRAM {free_gb:.1f}GB, Disk {disk_free_gb:.1f}GB free, "
+        f"bf16_full={_USE_BF16_FULL}, LoRA r={LORA_CFG['r']})"
+    )
     return True, model_name, free_gb
 
 
 def _load_model(torch, model_cls, model_name: str, use_gpu: bool):
-    """Load model với QLoRA (GPU) hoặc float32 (CPU). CUDA_VISIBLE_DEVICES đã pin 1 GPU."""
-    log.info(f"Loading model: {model_name}")
+    """Load model với bf16-full / QLoRA 4-bit (GPU) hoặc float32 (CPU).
+    
+    _USE_BF16_FULL=True  → load bf16 thuần, không dùng BitsAndBytes (tốt hơn khi đủ VRAM)
+    _USE_BF16_FULL=False → load QLoRA 4-bit NF4 + double quant (tiết kiệm VRAM)
+    """
+    log.info(f"Loading model: {model_name} | bf16_full={_USE_BF16_FULL}")
     if not use_gpu:
         return model_cls.from_pretrained(
             model_name, device_map="cpu",
             torch_dtype=torch.float32, trust_remote_code=True,
         )
-    # CUDA_VISIBLE_DEVICES đã được set → chỉ 1 GPU visible → device_map="cuda:0" là đủ
+
+    # CUDA_VISIBLE_DEVICES đã được set → chỉ 1 GPU visible
+    if _USE_BF16_FULL:
+        # bf16 thuần — chất lượng gradient tốt hơn QLoRA, không cần bitsandbytes
+        log.info("Dùng bf16 full precision (không QLoRA)")
+        return model_cls.from_pretrained(
+            model_name,
+            device_map="cuda:0",
+            torch_dtype=torch.bfloat16,
+            trust_remote_code=True,
+        )
+
+    # QLoRA 4-bit NF4 + double quantization — tiết kiệm VRAM tối đa
     try:
         from transformers import BitsAndBytesConfig
         bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True, bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.float16, bnb_4bit_use_double_quant=True,
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16,   # bfloat16 > float16 cho stability
+            bnb_4bit_use_double_quant=True,           # double quant tiết kiệm thêm ~0.4 bits/param
         )
+        log.info("Dùng QLoRA 4-bit NF4 + double quant")
         return model_cls.from_pretrained(
-            model_name, quantization_config=bnb_config,
-            device_map="cuda:0", trust_remote_code=True,
+            model_name,
+            quantization_config=bnb_config,
+            device_map="cuda:0",
+            trust_remote_code=True,
         )
-    except Exception:
+    except Exception as e:
+        log.warning(f"QLoRA thất bại ({e}), fallback bf16")
         return model_cls.from_pretrained(
             model_name, device_map="cuda:0",
-            torch_dtype=torch.float16, trust_remote_code=True,
+            torch_dtype=torch.bfloat16, trust_remote_code=True,
         )
 
 
@@ -341,30 +434,60 @@ def train():
 
     # Override config theo FREE VRAM thực tế (quan trọng trên server dùng chung)
     if use_gpu:
-        if vram_gb >= 13:          # 13GB+ free → 3B model thoải mái
-            TRAIN_CFG["max_seq_length"]             = 2048
-            TRAIN_CFG["gradient_checkpointing"]     = False
-            TRAIN_CFG["num_train_epochs"]           = 7
+        if vram_gb >= 70:          # A100/H100 80GB → 72B/32B QLoRA, batch cực lớn
+            TRAIN_CFG["max_seq_length"]              = 8192
+            TRAIN_CFG["gradient_checkpointing"]      = False
+            TRAIN_CFG["num_train_epochs"]            = 10
+            TRAIN_CFG["per_device_train_batch_size"] = 32
+            TRAIN_CFG["per_device_eval_batch_size"]  = 32
+            TRAIN_CFG["gradient_accumulation_steps"] = 1
+            TRAIN_CFG["learning_rate"]               = 8e-5  # thấp hơn cho model lớn
+            TRAIN_CFG["optim"]                       = "paged_adamw_8bit"  # tiết kiệm optimizer memory
+            log.info(f"[Config] {vram_gb:.0f}GB free → seq=8192, epochs=10, batch=32 (A100/H100 mode)")
+        elif vram_gb >= 50:        # 50–70GB → 32B QLoRA, batch lớn
+            TRAIN_CFG["max_seq_length"]              = 4096
+            TRAIN_CFG["gradient_checkpointing"]      = False
+            TRAIN_CFG["num_train_epochs"]            = 10
+            TRAIN_CFG["per_device_train_batch_size"] = 16
+            TRAIN_CFG["per_device_eval_batch_size"]  = 16
+            TRAIN_CFG["gradient_accumulation_steps"] = 1
+            TRAIN_CFG["learning_rate"]               = 8e-5
+            TRAIN_CFG["optim"]                       = "paged_adamw_8bit"
+            log.info(f"[Config] {vram_gb:.0f}GB free → seq=4096, epochs=10, batch=16 (32B QLoRA mode)")
+        elif vram_gb >= 30:        # 30–50GB → 14B bf16, batch vừa
+            TRAIN_CFG["max_seq_length"]              = 4096
+            TRAIN_CFG["gradient_checkpointing"]      = False
+            TRAIN_CFG["num_train_epochs"]            = 8
             TRAIN_CFG["per_device_train_batch_size"] = 8
-            log.info(f"[Config] {vram_gb:.1f}GB free → seq=2048, epochs=7, no grad_ckpt")
+            TRAIN_CFG["per_device_eval_batch_size"]  = 8
+            TRAIN_CFG["gradient_accumulation_steps"] = 2
+            TRAIN_CFG["learning_rate"]               = 1e-4
+            log.info(f"[Config] {vram_gb:.0f}GB free → seq=4096, epochs=8, batch=8 (14B bf16 mode)")
+        elif vram_gb >= 13:        # 13–30GB → 7B/14B, seq dài
+            TRAIN_CFG["max_seq_length"]              = 2048
+            TRAIN_CFG["gradient_checkpointing"]      = False
+            TRAIN_CFG["num_train_epochs"]            = 7
+            TRAIN_CFG["per_device_train_batch_size"] = 8
+            TRAIN_CFG["learning_rate"]               = 1.2e-4
+            log.info(f"[Config] {vram_gb:.0f}GB free → seq=2048, epochs=7, no grad_ckpt")
         elif vram_gb >= 7:         # 7–13GB free → 3B/1.5B model với grad_ckpt
-            TRAIN_CFG["max_seq_length"]             = 1024
-            TRAIN_CFG["gradient_checkpointing"]     = True
-            TRAIN_CFG["num_train_epochs"]           = 5
+            TRAIN_CFG["max_seq_length"]              = 1024
+            TRAIN_CFG["gradient_checkpointing"]      = True
+            TRAIN_CFG["num_train_epochs"]            = 5
             TRAIN_CFG["per_device_train_batch_size"] = 4
-            log.info(f"[Config] {vram_gb:.1f}GB free → seq=1024, epochs=5, grad_ckpt=on")
+            log.info(f"[Config] {vram_gb:.0f}GB free → seq=1024, epochs=5, grad_ckpt=on")
         elif vram_gb >= 4:         # 4–7GB free → 1.5B/0.5B, batch nhỏ
-            TRAIN_CFG["max_seq_length"]             = 512
-            TRAIN_CFG["gradient_checkpointing"]     = True
-            TRAIN_CFG["num_train_epochs"]           = 3
+            TRAIN_CFG["max_seq_length"]              = 512
+            TRAIN_CFG["gradient_checkpointing"]      = True
+            TRAIN_CFG["num_train_epochs"]            = 3
             TRAIN_CFG["per_device_train_batch_size"] = 2
-            log.info(f"[Config] {vram_gb:.1f}GB free → seq=512, epochs=3, batch=2")
+            log.info(f"[Config] {vram_gb:.0f}GB free → seq=512, epochs=3, batch=2")
         else:                      # <4GB free → tối thiểu
-            TRAIN_CFG["max_seq_length"]             = 256
-            TRAIN_CFG["gradient_checkpointing"]     = True
-            TRAIN_CFG["num_train_epochs"]           = 2
+            TRAIN_CFG["max_seq_length"]              = 256
+            TRAIN_CFG["gradient_checkpointing"]      = True
+            TRAIN_CFG["num_train_epochs"]            = 2
             TRAIN_CFG["per_device_train_batch_size"] = 1
-            log.info(f"[Config] {vram_gb:.1f}GB free → seq=256, epochs=2 (minimal)")
+            log.info(f"[Config] {vram_gb:.0f}GB free → seq=256, epochs=2 (minimal)")
 
     cpu_overrides = {} if use_gpu else {
         "per_device_train_batch_size": 1,
