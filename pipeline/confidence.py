@@ -151,7 +151,7 @@ class ConfidenceScorer:
         return "LOW"
 
     def needs_review(self, confidence: float) -> bool:
-        return confidence < self.low_threshold
+        return confidence < self.high_threshold
 
     # ── Component 1: Water Detection Confidence ────────────────────────────────
 
