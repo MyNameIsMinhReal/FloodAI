@@ -484,8 +484,14 @@ def chat():
 @app.route("/admin", methods=["GET"])
 @login_required
 def dashboard():
-    return render_template("admin.html", active="admin",
-                           logged_in=True)
+    role = session.get("role", "")
+    # Nếu chưa có role (tài khoản cũ chưa phân quyền) → về login
+    if not role:
+        return redirect(url_for("login_page"))
+    return render_template("admin.html", active="admin", logged_in=True,
+                           user_role=role,
+                           user_email=session.get("email", ""),
+                           user_name=session.get("name", ""))
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -1214,6 +1220,13 @@ def legacy_live():
 # ══════════════════════════════════════════════════════════════════════════════
 _DATA_DIR = BASE_DIR / "data"
 
+def _has_role(*roles: str) -> bool:
+    r = session.get("role", "")
+    return r == "admin" or r in roles
+
+def _forbid():
+    return jsonify({"error": "Không đủ quyền"}), 403
+
 def _load_json(filename: str, default=None):
     path = _DATA_DIR / filename
     if not path.exists():
@@ -1243,6 +1256,8 @@ def api_admin_alerts_list():
 @app.route("/api/admin/alerts", methods=["POST"])
 @login_required
 def api_admin_alerts_create():
+    if not _has_role("alert_mgr", "editor"):
+        return _forbid()
     data = request.get_json(silent=True) or {}
     alerts = _load_json("alerts.json")
     alert = {
@@ -1265,6 +1280,8 @@ def api_admin_alerts_create():
 @app.route("/api/admin/alerts/<alert_id>", methods=["PATCH"])
 @login_required
 def api_admin_alerts_update(alert_id: str):
+    if not _has_role("alert_mgr", "editor"):
+        return _forbid()
     data = request.get_json(silent=True) or {}
     alerts = _load_json("alerts.json")
     for a in alerts:
@@ -1280,6 +1297,8 @@ def api_admin_alerts_update(alert_id: str):
 @app.route("/api/admin/alerts/<alert_id>", methods=["DELETE"])
 @login_required
 def api_admin_alerts_delete(alert_id: str):
+    if not _has_role("alert_mgr"):
+        return _forbid()
     alerts = [a for a in _load_json("alerts.json") if a.get("id") != alert_id]
     _save_json("alerts.json", alerts)
     return jsonify({"ok": True})
@@ -1294,6 +1313,8 @@ def api_admin_events_list():
 @app.route("/api/admin/events", methods=["POST"])
 @login_required
 def api_admin_events_create():
+    if not _has_role("editor", "alert_mgr"):
+        return _forbid()
     data = request.get_json(silent=True) or {}
     events = _load_json("events.json")
     event = {
@@ -1317,6 +1338,8 @@ def api_admin_events_create():
 @app.route("/api/admin/events/<event_id>", methods=["PATCH"])
 @login_required
 def api_admin_events_update(event_id: str):
+    if not _has_role("editor", "alert_mgr"):
+        return _forbid()
     data = request.get_json(silent=True) or {}
     events = _load_json("events.json")
     for e in events:
@@ -1396,6 +1419,8 @@ def api_admin_config_get():
 @app.route("/api/admin/config", methods=["POST"])
 @login_required
 def api_admin_config_update():
+    if not _has_role():  # admin only
+        return _forbid()
     data = request.get_json(silent=True) or {}
     try:
         cfg_path = BASE_DIR / "config.yaml"
@@ -1412,6 +1437,8 @@ def api_admin_config_update():
 @app.route("/api/admin/sources", methods=["GET"])
 @login_required
 def api_admin_sources():
+    if not _has_role("editor", "alert_mgr"):
+        return _forbid()
     from pipeline.job_queue import JobQueue
     jobs = JobQueue.instance().list_recent(300)
     sources: Dict[str, dict] = {}

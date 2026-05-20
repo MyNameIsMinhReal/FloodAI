@@ -199,8 +199,14 @@ button.admin-nav-link{width:100%;text-align:left;background:none;border:none;cur
 <div class="admin-layout">
 
   <!-- ── Sidebar ── -->
+  {% set role = user_role|default('') %}
+  {% set is_admin    = role == 'admin' %}
+  {% set can_edit    = role in ['admin','editor','alert_mgr'] %}
+  {% set can_alert   = role in ['admin','alert_mgr'] %}
+  {% set can_review  = role in ['admin','editor','alert_mgr','reviewer'] %}
   <nav class="admin-sidebar">
     <div class="admin-sidebar-title">FloodAI Admin</div>
+    <div style="padding:6px 16px 10px;font-size:11px;color:rgba(255,255,255,.45)">{{ user_name|default(user_email) }} · <strong style="color:rgba(255,255,255,.7)">{{ role }}</strong></div>
 
     <div class="nav-section-label">Tổng quan</div>
     <button class="admin-nav-link active" onclick="showTab('dashboard',this)">
@@ -213,6 +219,7 @@ button.admin-nav-link{width:100%;text-align:left;background:none;border:none;cur
       <span class="nav-badge" id="review-badge" style="display:none">0</span>
     </button>
 
+    {% if can_edit %}
     <div class="admin-sep"></div>
     <div class="nav-section-label">Nội dung</div>
     <button class="admin-nav-link" onclick="showTab('articles',this)">
@@ -223,10 +230,13 @@ button.admin-nav-link{width:100%;text-align:left;background:none;border:none;cur
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       Sự kiện ngập
     </button>
+    {% endif %}
+    {% if can_alert %}
     <button class="admin-nav-link" onclick="showTab('alerts',this)">
       <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
       Cảnh báo
     </button>
+    {% endif %}
 
     <div class="admin-sep"></div>
     <div class="nav-section-label">Dữ liệu</div>
@@ -238,6 +248,7 @@ button.admin-nav-link{width:100%;text-align:left;background:none;border:none;cur
       <svg viewBox="0 0 24 24"><path d="M3 17l6-12 6 12 6-12"/></svg>
       Tuyến đường
     </button>
+    {% if can_edit %}
     <button class="admin-nav-link" onclick="showTab('sources',this)">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M3 12h3M18 12h3M12 3v3M12 18v3"/></svg>
       Nguồn tin
@@ -246,9 +257,11 @@ button.admin-nav-link{width:100%;text-align:left;background:none;border:none;cur
       <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
       Ảnh & Riêng tư
     </button>
+    {% endif %}
 
     <div class="admin-sep"></div>
     <div class="nav-section-label">Hệ thống</div>
+    {% if can_edit %}
     <button class="admin-nav-link" onclick="showTab('jobs',this)">
       <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
       Kết quả AI
@@ -257,6 +270,8 @@ button.admin-nav-link{width:100%;text-align:left;background:none;border:none;cur
       <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
       Nguồn ảnh
     </button>
+    {% endif %}
+    {% if is_admin %}
     <button class="admin-nav-link" onclick="showTab('users',this)">
       <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
       Người dùng
@@ -265,10 +280,13 @@ button.admin-nav-link{width:100%;text-align:left;background:none;border:none;cur
       <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
       Sức khỏe hệ thống
     </button>
+    {% endif %}
+    {% if can_edit %}
     <button class="admin-nav-link" onclick="showTab('stats',this)">
       <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
       Thống kê
     </button>
+    {% endif %}
 
     <div class="admin-sep"></div>
     <a class="admin-nav-link" href="/logout">
@@ -625,6 +643,32 @@ button.admin-nav-link{width:100%;text-align:left;background:none;border:none;cur
 
 {% block scripts %}
 <script>
+const USER_ROLE   = "{{ user_role|default('') }}";
+const IS_ADMIN    = USER_ROLE === 'admin';
+const CAN_EDIT    = ['admin','editor','alert_mgr'].includes(USER_ROLE);
+const CAN_ALERT   = ['admin','alert_mgr'].includes(USER_ROLE);
+const CAN_REVIEW  = ['admin','editor','alert_mgr','reviewer'].includes(USER_ROLE);
+const TAB_ROLES   = {
+  users:'admin', system:'admin',
+  articles:'editor', events:'editor', sources:'editor', privacy:'editor',
+  alerts:'alert_mgr', jobs:'editor', submissions:'editor', stats:'editor',
+};
+function _canAccess(tab){
+  const need=TAB_ROLES[tab];
+  if(!need) return true;
+  if(need==='admin') return IS_ADMIN;
+  if(need==='editor') return CAN_EDIT;
+  if(need==='alert_mgr') return CAN_ALERT;
+  return CAN_REVIEW;
+}
+function _denyHtml(tab){
+  return `<div style="padding:60px 20px;text-align:center;color:var(--tx3)">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:.4;margin-bottom:12px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+    <div style="font-size:16px;font-weight:600;color:var(--tx2);margin-bottom:6px">Không đủ quyền</div>
+    <div style="font-size:13px">Role <strong>${USER_ROLE}</strong> không có quyền truy cập trang này.</div>
+  </div>`;
+}
+
 const LEVEL_META={
   dry:{label:'Không ngập',badge:'badge-ok',sev:'ok',score:0},
   ankle:{label:'Ngập nhẹ',badge:'badge-low',sev:'low',score:1},
@@ -647,8 +691,14 @@ const _tabLoaders={
 function showTab(name, linkEl){
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.admin-nav-link').forEach(l=>l.classList.remove('active'));
-  document.getElementById('tab-'+name)?.classList.add('active');
+  const panel=document.getElementById('tab-'+name);
+  if(!panel) return;
+  panel.classList.add('active');
   if(linkEl) linkEl.classList.add('active');
+  if(!_canAccess(name)){
+    panel.innerHTML=_denyHtml(name);
+    return;
+  }
   if(_tabLoaders[name]) _tabLoaders[name]();
 }
 
