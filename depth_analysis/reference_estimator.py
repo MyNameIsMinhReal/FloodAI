@@ -29,6 +29,15 @@ from PIL import Image
 from depth_analysis.pose_analyzer import PoseType
 from utils.constants import DEFAULT_YOLO_MODEL, DEFAULT_DEPTH_MODEL, DEFAULT_DINO_MODEL, DEFAULT_POSE_MODEL
 
+# [IMPROVE] Unified camera analyzer — thay the _detect_camera_angle rieng le
+_cam_analyzer = None
+def _get_cam_analyzer():
+    global _cam_analyzer
+    if _cam_analyzer is None:
+        from depth_analysis.perspective_analyzer import PerspectiveAnalyzer
+        _cam_analyzer = PerspectiveAnalyzer()
+    return _cam_analyzer
+
 log = logging.getLogger(__name__)
 
 # Shoulder width estimator (lazy import to avoid circular)
@@ -370,6 +379,16 @@ class ReferenceEstimator:
         except Exception as e:
             log.warning(f"  {image_path.name}: {e}"); return None
 
+        # [IMPROVE] Wide-angle undistortion truoc khi analyze:
+        # Doc EXIF de lay FOV, neu > 85° thi undistort
+        from utils.constants import undistort_wide_angle
+        fov_deg = _get_cam_analyzer()._estimate_fov(img_rgb, w, h)
+        if fov_deg > 85.0:
+            img_bgr = undistort_wide_angle(img_bgr, fov_deg)
+            img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+            pil_img = Image.fromarray(img_rgb)
+            log.debug(f"  Undistort: FOV={fov_deg:.0f}°")
+
         # 1. Water color + surface water check
         wmask     = _water_mask(img_rgb)
         water_pct = float(wmask.sum()/255) / (h*w) * 100
@@ -392,14 +411,15 @@ class ReferenceEstimator:
         # 3. Pose filter
         valid_dets = self._filter_riding(img_rgb, raw_dets)
 
-        # 4. Phat hien goc nhin camera
-        cam_info  = self._detect_camera_angle(img_rgb, valid_dets, h, w)
+        # 4. [IMPROVE] Phat hien goc nhin camera — UNIFIED
+        cam_info  = _get_cam_analyzer().detect_camera_angle(img_rgb, valid_dets, h, w)
         is_aerial     = cam_info["is_aerial"]
         angle_factor  = cam_info["angle_factor"]
 
-        # Phat hien goc thap (lens gan mat nuoc) → car bi cat khong phai do ngap sau
-        low_angle_info = self._detect_low_angle_shot(img_rgb, h, w)
-        is_low_angle   = low_angle_info["is_low_angle"]
+        # Low-angle unified
+        is_low_angle   = cam_info["is_low_angle"]
+        fov_deg        = cam_info.get("fov_deg", 65.0)
+        camera_height_m = cam_info.get("camera_height_m", 1.5)
 
         # Phat hien nguoi tren thuyen → khong dung person measurements
         on_boat = self._detect_boat_context(img_rgb, valid_dets, h, w)
@@ -413,7 +433,7 @@ class ReferenceEstimator:
             log.info(f"  Aerial view: angle_factor={angle_factor:.2f}")
 
         if is_low_angle:
-            log.info(f"  Low-angle shot detected: score={low_angle_info['score']:.2f}")
+            log.info(f"  Low-angle shot detected: unified")
 
         # 5. Kiem tra kho hoan toan
         # Neu TAT CA objects đều 100% visible + khong co nuoc be mat → NO_FLOOD
@@ -500,11 +520,12 @@ class ReferenceEstimator:
             is_aerial=is_aerial, angle_factor=angle_factor,
             is_low_angle=is_low_angle)
 
-        # 11. Synthesize
+        # 11. Synthesize — [IMPROVE] them fov_deg
         water_cm, conf, level, desc = self._synthesize(
             measured, wl_y, wl_conf, water_pct, lower_pct,
             has_flood, depth_r, h, flood_prob,
-            is_aerial=is_aerial, angle_factor=angle_factor)
+            is_aerial=is_aerial, angle_factor=angle_factor,
+            fov_deg=fov_deg)
 
         # 12. Vehicle detection (ô tô + xe máy, bỏ qua xe đạp)
         vehicles = []
@@ -1835,7 +1856,7 @@ class ReferenceEstimator:
 
     def _synthesize(self, measured, wl_y, wl_conf, water_pct, lower_pct,
                     has_flood, depth_r, img_h, flood_prob,
-                    is_aerial=False, angle_factor=1.0):
+                    is_aerial=False, angle_factor=1.0, fov_deg=65.0):
         """
         Tong hop ket qua cuoi cung tu nhieu nguon.
 
@@ -1965,10 +1986,27 @@ class ReferenceEstimator:
         #     anh ≈ 25-35cm (khong phai 61cm).
         #   - Camera nhin xuong (elevated): water line o giua ≈ 15-20cm.
         #   - Khong biet goc camera → dung non-linear S-curve + cap conservative.
+        #
+        # [IMPROVE] FOV compensation:
+        #   FOV anh huong den muc do "compressed" cua water line position.
+        #   - Wide-angle (FOV>90): cung 1 water_line position → nuoc ngan hon
+        #     vi objects o bien bi "keo dai" → water line bi "day xuong".
+        #   - Tele (FOV<40): cung 1 water_line position → nuoc sau hon
+        #     vi objects bi "nén" → water line bi "day len".
+        #   → Dieu chinh max_depth theo FOV:
+        #     FOV=65 (phone) → max=80cm (baseline)
+        #     FOV=100 (wide) → max=60cm (ngan hon)
+        #     FOV=35 (tele)  → max=110cm (sau hon)
         water_ratio = max(0.0, (img_h - wl_y) / img_h)  # 0..1
+
+        # FOV-adjusted max depth
+        fov_factor = np.clip(1.3 - (fov_deg - 35.0) / 100.0, 0.5, 1.5)
+        # FOV=35 → 1.30, FOV=65 → 1.0, FOV=100 → 0.65
+        wl_max = 80.0 * fov_factor  # adjusted cap
+
         # S-curve: 0.5*(1 - cos(pi*x)) — compressed ở 2 đầu (an toan hon)
-        wl_cm = 80.0 * 0.5 * (1.0 - np.cos(np.pi * water_ratio))
-        wl_cm = float(np.clip(wl_cm, 0.0, 80.0))  # cap 80cm — khong co object tham chieu
+        wl_cm = wl_max * 0.5 * (1.0 - np.cos(np.pi * water_ratio))
+        wl_cm = float(np.clip(wl_cm, 0.0, wl_max))
 
         # ── Nguon 3: Color area ──────────────────────────────────────
         area_cm = lower_pct * 1.6

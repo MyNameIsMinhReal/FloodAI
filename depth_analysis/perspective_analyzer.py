@@ -33,6 +33,12 @@ class PerspectiveResult:
     horizon_confidence: float
     scale_factor:       float    # he so scale theo chieu sau
     measure_method:     str      # "height" hoac "width" hoac "shadow"
+    # [IMPROVE] Thêm fields tu object-based + low-angle detection
+    is_aerial:          bool     = False    # object-size based confirmation
+    angle_factor:       float    = 1.0      # aerial correction factor
+    is_low_angle:       bool     = False    # near water surface
+    fov_deg:            float    = 65.0     # estimated FOV (degrees)
+    camera_height_m:    float    = 1.5      # estimated camera height
 
 
 class PerspectiveAnalyzer:
@@ -68,7 +74,219 @@ class PerspectiveAnalyzer:
             horizon_confidence = horizon_conf,
             scale_factor       = scale_factor,
             measure_method     = measure_method,
+            is_aerial          = view_angle == "aerial",
+            angle_factor       = 1.0,
+            is_low_angle       = False,
+            fov_deg            = self._estimate_fov(img_rgb, w, h),
+            camera_height_m    = self._estimate_camera_height(view_angle, tilt_deg),
         )
+
+    # ------------------------------------------------------------------
+    # [IMPROVE] Unified aerial detection — horizon + object-size + low-angle
+    # Cu: reference_estimator.py co `_detect_camera_angle()` (object-size)
+    #     rieng, PerspectiveAnalyzer co horizon-based rieng → mâu thuẫn.
+    # Moi: hop nhat vao PerspectiveAnalyzer, dung ca 2 signal.
+    # ------------------------------------------------------------------
+    def detect_camera_angle(self, img_rgb: np.ndarray, dets: list,
+                             h: int, w: int) -> dict:
+        """
+        Phat hien goc camera UNIFIED — ket hop:
+          1. Horizon-based (tu analyze())
+          2. Object-size-based (tu _detect_camera_angle cu)
+          3. Low-angle detection
+
+        Returns: { is_aerial, angle_factor, is_low_angle, confidence }
+        """
+        # Signal 1: horizon-based (tu analyze())
+        perspective = self.analyze(img_rgb)
+
+        # Signal 2: object-size-based
+        aerial_score_obj = 0.0
+        if dets:
+            obj_heights = [d["bbox"][3] - d["bbox"][1] for d in dets]
+            avg_h_ratio = float(np.mean(obj_heights)) / h
+            if avg_h_ratio < 0.18:
+                aerial_score_obj = 0.8
+            elif avg_h_ratio < 0.25:
+                aerial_score_obj = 0.5
+            else:
+                aerial_score_obj = 0.1
+
+            centers_y = [(d["bbox"][1] + d["bbox"][3]) / 2 / h for d in dets]
+            avg_cy = float(np.mean(centers_y))
+            if 0.35 < avg_cy < 0.65 and aerial_score_obj > 0.4:
+                aerial_score_obj = min(1.0, aerial_score_obj + 0.2)
+
+            # Signal 3: line angle analysis
+            gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+            edges = cv2.Canny(gray, 50, 150)
+            lines = cv2.HoughLinesP(edges, 1, np.pi/180, 80,
+                                    minLineLength=w//6, maxLineGap=20)
+            if lines is not None:
+                angles = []
+                for l in lines[:30]:
+                    x1, y1, x2, y2 = l[0]
+                    if abs(x2-x1) > 10:
+                        angles.append(abs(np.degrees(np.arctan2(y2-y1, x2-x1))))
+                if angles:
+                    near_horizontal = sum(1 for a in angles if a < 20 or a > 160)
+                    h_ratio = near_horizontal / len(angles)
+                    if h_ratio > 0.6:
+                        aerial_score_obj = min(1.0, aerial_score_obj + 0.15)
+
+        # Signal 4: low-angle detection
+        low_angle_score = self._detect_low_angle_score(img_rgb, h, w)
+
+        # --- MERGE scores ---
+        # Horizon-based: view_angle → aerial_score
+        horizon_aerial = 1.0 if perspective.view_angle == "aerial" else (
+            0.5 if perspective.view_angle == "elevated" else 0.0)
+
+        # Final aerial = max(horizon, object-size) — ca 2 deu quan trong
+        final_aerial_score = max(horizon_aerial, aerial_score_obj)
+        is_aerial = final_aerial_score > 0.55
+
+        if is_aerial:
+            angle_factor = max(0.2, 1.0 - final_aerial_score * 0.8)
+        else:
+            angle_factor = 1.0
+
+        is_low_angle = low_angle_score > 0.55
+
+        log.debug(f"  CameraUnified: aerial={is_aerial} score_h={horizon_aerial:.2f} "
+                  f"score_obj={aerial_score_obj:.2f} low_angle={is_low_angle}")
+
+        return {
+            "is_aerial":    is_aerial,
+            "angle_factor": round(angle_factor, 2),
+            "is_low_angle": is_low_angle,
+            "confidence":   round(min(1.0, final_aerial_score), 2),
+            "view_angle":   perspective.view_angle,
+            "tilt_deg":     perspective.tilt_deg,
+            "fov_deg":      perspective.fov_deg,
+            "camera_height_m": perspective.camera_height_m,
+        }
+
+    def _detect_low_angle_score(self, img_rgb: np.ndarray,
+                                 h: int, w: int) -> float:
+        """
+        Phat hien anh chup goc thap (lens gan mat nuoc).
+        Tra ve score 0-1 (0.55 = nguong is_low_angle).
+        """
+        gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY).astype(np.float32)
+        dai_h = h // 10
+        row_vars = []
+        for i in range(10):
+            dai = gray[i*dai_h:(i+1)*dai_h, :]
+            row_vars.append(float(dai.var()))
+
+        bottom3 = np.mean(row_vars[7:])
+        top4    = np.mean(row_vars[:4])
+        mid3    = np.mean(row_vars[3:7])
+
+        score = 0.0
+        if bottom3 < mid3 * 0.4:
+            score += 0.4
+        if bottom3 < top4 * 0.3:
+            score += 0.3
+
+        grad_y = np.abs(cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3))
+        horizon_zone = grad_y[int(h*0.30):int(h*0.60), :]
+        horizon_score_val = float(horizon_zone.mean())
+        full_score_val    = float(grad_y.mean())
+        if horizon_score_val > full_score_val * 1.5:
+            score += 0.3
+
+        return score
+
+    # ------------------------------------------------------------------
+    # [IMPROVE] FOV estimation — estimat FOV tu image features
+    # ------------------------------------------------------------------
+    def _estimate_fov(self, img_rgb: np.ndarray, w: int, h: int) -> float:
+        """
+        Uoc tinh FOV (field of view) tu image:
+          1. EXIF focal length (neu co)
+          2. Heuristic tu perspective features
+
+        Tra ve FOV trong degrees (typical: 55-75 cho phone, 90-120 cho wide-angle).
+        """
+        # Try EXIF first
+        fov = self._fov_from_exif(img_rgb)
+        if fov is not None:
+            return fov
+
+        # Heuristic: camera height + horizon position → FOV estimate
+        # Wide-angle (FOV>90): horizon very low, objects distorted at edges
+        # Normal (FOV 55-75): standard phone camera
+        # Tele (FOV<40): horizon high, objects compressed
+        gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+        edges = cv2.Canny(gray, 50, 150)
+        lines = cv2.HoughLinesP(edges, 1, np.pi/180, 80,
+                                minLineLength=w//6, maxLineGap=20)
+
+        distortion_score = 0.0
+        if lines is not None:
+            # Wide-angle: nhieu duong cong/cheo o bien anh
+            edge_lines = 0
+            center_lines = 0
+            for l in lines[:40]:
+                x1, y1, x2, y2 = l[0]
+                cx = (x1 + x2) / 2
+                if abs(cx - w/2) > w * 0.3:
+                    edge_lines += 1
+                else:
+                    center_lines += 1
+            if edge_lines > center_lines * 0.5:
+                distortion_score = 0.3
+
+        # Default: 65 deg (typical phone)
+        return 65.0 + distortion_score * 30.0
+
+    def _fov_from_exif(self, img_rgb: np.ndarray) -> Optional[float]:
+        """
+        Extract FOV tu EXIF focal length + sensor width.
+        Dung PIL.ExifTags de doc EXIF, tinh FOV = 2*atan(sensor_width/(2*focal_length)).
+        """
+        try:
+            from PIL import Image
+            import io
+            buf = io.BytesIO()
+            Image.fromarray(img_rgb).save(buf, format='JPEG')
+            buf.seek(0)
+            img = Image.open(buf)
+            exif_data = img.getexif()
+            if exif_data is None:
+                return None
+
+            # Focal length in 35mm equivalent
+            focal_35mm = exif_data.get(37386)  # FocalLengthIn35mmFilm
+            if focal_35mm and focal_35mm > 0:
+                # FOV = 2 * atan(36 / (2 * focal_35mm)) * 180/pi
+                # 36mm = sensor width for 35mm film
+                fov_rad = 2 * np.arctan(36.0 / (2.0 * focal_35mm))
+                return float(fov_rad * 180.0 / np.pi)
+
+            # Actual focal length
+            focal_rational = exif_data.get(37386)  # FocalLength
+            if focal_rational:
+                focal_mm = float(focal_rational)
+                # Assume typical phone sensor width ~6.2mm
+                sensor_width_mm = 6.2
+                fov_rad = 2 * np.arctan(sensor_width_mm / (2.0 * focal_mm))
+                return float(fov_rad * 180.0 / np.pi)
+
+        except Exception:
+            pass
+        return None
+
+    def _estimate_camera_height(self, view_angle: str, tilt_deg: float) -> float:
+        """Uoc tinh chieu cao camera tu view angle + tilt."""
+        if view_angle == "aerial":
+            return 50.0  # drone typical
+        elif view_angle == "elevated":
+            return 3.0 + tilt_deg * 0.05  # 2nd floor ~3-7m
+        else:
+            return 1.5  # eye level
 
     # ------------------------------------------------------------------
     def _find_horizon(self, gray: np.ndarray, h: int, w: int) -> Tuple[int, float]:

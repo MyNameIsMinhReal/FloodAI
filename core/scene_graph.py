@@ -340,9 +340,37 @@ class SceneGraph:
                 g.vehicles.append(vehicle)
 
         # --- Context ---
+        # [IMPROVE] Populate camera fields tu PerspectiveAnalyzer neu co
+        perspective_str = "ground"
+        camera_height_m = 1.5
+        camera_angle_deg = 0.0
+        try:
+            from depth_analysis.perspective_analyzer import PerspectiveAnalyzer
+            import numpy as np
+            # Neu co anh → phan tich camera
+            img = get(result, "image_rgb")
+            if img is not None:
+                pa = PerspectiveAnalyzer()
+                pr = pa.analyze(np.array(img))
+                perspective_str = pr.view_angle
+                camera_height_m = pr.camera_height_m
+                camera_angle_deg = pr.tilt_deg
+        except Exception:
+            pass
+
+        # Fallback: su dung perspective tu result neu co
+        p_val = get(result, "perspective")
+        if p_val and isinstance(p_val, str):
+            perspective_str = p_val
+
         g.context = SceneContext(
             image_quality=float(get(result, "image_quality") or 0.6),
+            perspective=perspective_str,
+            camera_height_m=camera_height_m,
         )
+
+        # [IMPROVE] Populate RoadNode.camera_angle_deg
+        g.road.camera_angle_deg = camera_angle_deg
 
         return g
 

@@ -100,3 +100,66 @@ REPORT_CSV = "flood_analysis_report.csv"
 REPORT_HTML = "flood_analysis_report.html"
 REPORT_XLSX = "flood_analysis_report.xlsx"
 PIPELINE_SUMMARY_JSON = "pipeline_summary.json"
+
+# ── [IMPROVE] Wide-angle lens undistortion ──────────────────────────────────────
+# Smartphone wide-angle (FOV > 85°) co barrel distortion → object size bi meo
+# o bien anh → water height estimate sai.
+# Utility nay undistort anh truoc khi measure.
+# Chi can thuc hien khi FOV > 85° (smartphone ultra-wide).
+
+import cv2
+import numpy as np
+
+# Default distortion coefficients cho smartphone wide-angle
+# (estimation — can calibrate cho tung dong dien thoai)
+DEFAULT_CAMERA_MATRIX = np.array([
+    [600.0,   0.0, 320.0],
+    [  0.0, 600.0, 240.0],
+    [  0.0,   0.0,   1.0],
+], dtype=np.float32)
+
+DEFAULT_DIST_COEFFS = np.array([-0.25, 0.05, 0.0, 0.0], dtype=np.float32)
+
+def undistort_wide_angle(img_bgr: np.ndarray, fov_deg: float = 65.0,
+                          focal_length_px: float = 600.0) -> np.ndarray:
+    """
+    Undistort anh wide-angle neu FOV > 85°.
+
+    Args:
+        img_bgr:          anh BGR
+        fov_deg:          FOV estimate (degrees)
+        focal_length_px:  focal length in pixels (uoc luong tu FOV)
+
+    Returns:
+        anh da undistort (neu FOV > 85), nguoc lai tra ve goc.
+    """
+    if fov_deg <= 85.0:
+        return img_bgr  # khong can undistort
+
+    h, w = img_bgr.shape[:2]
+
+    # Tinh camera matrix tu FOV + kich thuoc anh
+    # focal_length_px = w / (2 * tan(fov/2))
+    if focal_length_px <= 0:
+        focal_length_px = w / (2.0 * np.tan(np.radians(fov_deg) / 2.0))
+
+    camera_matrix = np.array([
+        [focal_length_px, 0.0, w / 2.0],
+        [0.0, focal_length_px, h / 2.0],
+        [0.0, 0.0, 1.0],
+    ], dtype=np.float32)
+
+    # Distortion coefficient — estimation tu FOV
+    # Wider FOV → larger negative k1 (barrel distortion)
+    k1 = -0.3 * (fov_deg - 85.0) / 40.0  # FOV=125 → k1=-0.3
+    dist_coeffs = np.array([k1, 0.02, 0.0, 0.0], dtype=np.float32)
+
+    # Undistort
+    new_camera_matrix, roi = cv2.getOptimalNewCameraMatrix(
+        camera_matrix, dist_coeffs, (w, h), 1, (w, h)
+    )
+    undistorted = cv2.undistort(
+        img_bgr, camera_matrix, dist_coeffs, None, new_camera_matrix
+    )
+
+    return undistorted

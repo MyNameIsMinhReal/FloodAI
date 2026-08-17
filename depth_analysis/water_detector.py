@@ -89,6 +89,7 @@ class WaterDetector:
         use_lab:        bool  = True,
         use_ycbcr:      bool  = True,
         use_norm_rgb:   bool  = True,
+        use_segmentation: bool = False,  # [IMPROVE] Semantic segmentation refinement
     ):
         self.min_water_area = min_water_area
         self.use_reflection = use_reflection
@@ -96,6 +97,9 @@ class WaterDetector:
         self.use_lab        = use_lab
         self.use_ycbcr      = use_ycbcr
         self.use_norm_rgb   = use_norm_rgb
+        self.use_segmentation = use_segmentation
+        # [IMPROVE] Temporal smoothing state
+        self._prev_mask: Optional[np.ndarray] = None
 
     def detect(self, img_rgb: np.ndarray) -> WaterDetectionResult:
         h, w    = img_rgb.shape[:2]
@@ -192,6 +196,40 @@ class WaterDetector:
         water_scale_large = float(scales[1.5].sum() / 255) / (h * w)
         # Neu large-scale water gap 2x small-scale → vung nuoc bi rach
         scale_consistency = 1.0 - min(1.0, abs(water_scale_large - water_area_pct) / max(water_area_pct, 0.01))
+
+        # [IMPROVE] Semantic segmentation refinement (optional, GPU-powered):
+        # Su dung WaterSegmentor de refine mask → giam false positives cho
+        # scene khong co nuoc (cay, nha, duong khong ngap).
+        seg_conf = 0.0
+        if self.use_segmentation:
+            try:
+                from depth_analysis.water_segmentor import WaterSegmentor
+                _seg = WaterSegmentor.get_instance()
+                seg_result = _seg.segment(img_bgr, color_mask=filtered)
+                if seg_result is not None and seg_result.water_area_pct > 0.01:
+                    # Chi giu seg_mask nam trong color_mask (intersection)
+                    refined = cv2.bitwise_and(filtered, seg_result.water_mask)
+                    # Neu seg_toi uu: dung seg_mask, nguoc lai giu filtered
+                    if refined.sum() > 0:
+                        filtered = refined
+                        seg_conf = seg_result.confidence
+                        ch["segmentation"] = seg_conf
+                    log.debug(f"  Seg refinement: {water_area_pct:.1f}% → "
+                              f"{float(refined.sum()/255)/(h*w):.1f}%")
+            except Exception as e:
+                log.debug(f"  Seg skip: {e}")
+
+        # [IMPROVE] Temporal consistency (cho video sequence):
+        # Lissant mask voi frame truoc de giam jitter.
+        if self._prev_mask is not None and self._prev_mask.shape == filtered.shape:
+            # EMA: 70% current + 30% previous
+            curr = filtered.astype(np.float32) / 255.0
+            prev = self._prev_mask.astype(np.float32) / 255.0
+            smoothed = curr * 0.7 + prev * 0.3
+            filtered = (smoothed > 0.4).astype(np.uint8) * 255
+            ch["temporal_smooth"] = 1.0
+
+        self._prev_mask = filtered.copy()
 
         water_area_pct = float(filtered.sum() / 255) / (h * w)
 
@@ -477,7 +515,10 @@ class WaterDetector:
           Bóng : tối (value thấp) + saturation thấp + CÓ texture (gradient cao)
           Nước  : tối HOẶC trong + saturation thấp-vừa + SMOOTH (gradient thấp)
 
-        Returns: mask (255 = vùng CẦN LOẠI — là shadow, không phải nước)
+        [IMPROVE] Thêm color temperature check:
+        - Shadow thường có màu xám/xanh (cool bias)
+        - Water thường có màu nâu/xám (neutral bias)
+        - Dùng B-R ratio để phân biệt
         """
         hsv  = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
         gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY).astype(np.float32)
@@ -492,11 +533,15 @@ class WaterDetector:
         gx   = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
         gy   = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
         grad = np.sqrt(gx ** 2 + gy ** 2)
-        # Normalize
         grad_norm = grad / (grad.max() + 1e-6)
         high_grad = (grad_norm > 0.12).astype(np.uint8)
 
         shadow = (dark_desat & high_grad).astype(np.uint8) * 255
+
+        # [IMPROVE] Color temperature check: shadow có B > R (cool bias)
+        b, _, r = cv2.split(img_bgr.astype(np.float32))
+        cool_bias = (b - r > 15).astype(np.uint8)  # shadow tends to be bluish
+        shadow = cv2.bitwise_and(shadow, cool_bias * 255)
 
         # Dilate nhẹ để loại vùng biên shadow
         k = np.ones((5, 5), np.uint8)
@@ -510,28 +555,48 @@ class WaterDetector:
         Muddy water  : NDWI_muddy = (B−R)/(B+R) > 0.02  (nước bùn có blue > red)
         Flood turbid : ratio_gb = G/(B+1) ∈ [0.6, 1.4] AND value không quá sáng
 
-        Chỉ áp dụng từ 20% ảnh trở xuống để tránh nhầm bầu trời.
+        [IMPROVE] Edge-aware refinement:
+        - Su dung gradient de xac dinh bien nuoc chinh xac hon
+        - Adapt multi-lighting: nguong thay doi theo bien sang ambient
         """
-        h    = img_rgb.shape[0]
-        img  = img_rgb.astype(np.float32)
+        h, w = img_rgb.shape[:2]
+        img = img_rgb.astype(np.float32)
         r, g, b = img[:, :, 0], img[:, :, 1], img[:, :, 2]
 
         ndwi_clear = (g - r) / (g + r + 1e-6)
         ndwi_muddy = (b - r) / (b + r + 1e-6)
 
-        # Turbid flood: nước bùn nâu-vàng — range hẹp hơn để tránh match nhà/cây
-        # ndwi_clear nhỏ âm (R hơi > G) + ndwi_muddy hơi âm (R hơi > B) = màu bùn
+        # [IMPROVE] Multi-lighting adaptation:
+        # Ngoài trời sáng → ambient cao → bright > 200 → threshold cao
+        # Ngoài trời âm u → ambient thap → bright 30-150 → threshold thap
         bright = (r + g + b) / 3.0
+        max_bright = float(np.percentile(bright, 95)) + 1e-6
+        lighting_factor = max(0.7, min(1.3, max_bright / 128.0))
+
+        # Turbid flood: nước bùn nâu-vàng — range hẹp hơn để tránh match nhà/cây
         turbid_flood = (
             (ndwi_clear > -0.22) & (ndwi_clear < 0.12) &
             (ndwi_muddy > -0.28) & (ndwi_muddy < 0.06) &
-            (bright > 35) & (bright < 195)
+            (bright > 35 / lighting_factor) & (bright < 195 * lighting_factor)
         ).astype(np.uint8) * 255
 
-        water_clear = (ndwi_clear > 0.04).astype(np.uint8) * 255
-        water_muddy = (ndwi_muddy > 0.02).astype(np.uint8) * 255
+        water_clear = (ndwi_clear > 0.04 / lighting_factor).astype(np.uint8) * 255
+        water_muddy = (ndwi_muddy > 0.02 / lighting_factor).astype(np.uint8) * 255
 
         combined = cv2.bitwise_or(cv2.bitwise_or(water_clear, water_muddy), turbid_flood)
+
+        # [IMPROVE] Edge-aware refinement:
+        # Gradient thap o bien nuoc (phẳng) → giu lai
+        # Gradient cao o bien vat the (tuong, nha) → loai bo
+        gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+        grad_x = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+        grad_y = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+        grad_mag = np.sqrt(grad_x**2 + grad_y**2)
+        grad_norm = grad_mag / (grad_mag.max() + 1e-6)
+
+        # Water regions thuong co gradient thap (< 0.15) ở bien
+        low_edge = (grad_norm < 0.15).astype(np.uint8) * 255
+        combined = cv2.bitwise_and(combined, low_edge)
 
         # Giới hạn vùng áp dụng: từ 20% ảnh trở xuống
         region = np.zeros(img_rgb.shape[:2], np.uint8)
@@ -543,8 +608,8 @@ class WaterDetector:
 
         # Loại blob quá nhỏ — giảm ngưỡng để bắt vũng nước nhỏ
         min_area = int(img_rgb.shape[0] * img_rgb.shape[1] * 0.002)
-        cnts, _  = cv2.findContours(combined, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        result   = np.zeros_like(combined)
+        cnts, _ = cv2.findContours(combined, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        result = np.zeros_like(combined)
         for cnt in cnts:
             if cv2.contourArea(cnt) >= min_area:
                 cv2.drawContours(result, [cnt], -1, 255, -1)
