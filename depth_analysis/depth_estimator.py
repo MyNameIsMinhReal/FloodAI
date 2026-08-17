@@ -25,6 +25,7 @@ class FloodDepthResult:
     water_region_area: float      # % dien tich duoc phan loai la nuoc
     confidence:        float      # 0-1, do tin cay phan loai
     notes:             str        # ghi chu them
+    mc_uncertainty:    float = 0.0  # [IMPROVE] MC Dropout uncertainty (0=noise, 1=khong chac chan)
 
 
 class DepthEstimator:
@@ -165,9 +166,21 @@ class DepthEstimator:
 
         # -- Multi-model FUSION ------------------------------------
         w = self.FUSION_WEIGHTS
+        mc_uncertainty = 0.0  # [IMPROVE] MC Dropout uncertainty
         if self.use_fusion:
             # Depth model flood pct
             dm_flood, water_area, dm_conf = self._estimate_flood_level(depth_norm, pil_img)
+
+            # [IMPROVE] MC Dropout uncertainty estimation:
+            # Chay N forward passes voi dropout → tinh std.
+            # Std cao → model khong chac chan → giam confidence.
+            mc_result = self._mc_dropout_depth(pil_img)
+            if mc_result is not None:
+                mc_depth, mc_uncertainty = mc_result
+                # Giam confidence theo uncertainty: mc_unc=0 → giu nguyen, mc_unc=0.3 → giam 0.15
+                mc_penalty = min(0.20, mc_uncertainty * 0.5)
+                dm_conf = max(0.1, dm_conf - mc_penalty)
+                log.debug(f"  MC Dropout: uncertainty={mc_uncertainty:.4f} penalty={mc_penalty:.3f}")
 
             # Weighted fusion
             flood_pct = (
@@ -209,6 +222,7 @@ class DepthEstimator:
             water_region_area= round(water_area * 100 if self.use_fusion else 0, 1),
             confidence       = round(float(confidence), 3),
             notes            = self._generate_notes(flood_level, flood_pct),
+            mc_uncertainty   = round(float(mc_uncertainty), 4),  # [IMPROVE]
         )
 
         meta_path = self.output_dir / f"{image_path.stem}_meta.json"
@@ -216,7 +230,8 @@ class DepthEstimator:
 
         log.info(
             f"  {image_path.name}: {flood_level} ({flood_pct*100:.1f}% "
-            f"flooded, conf={confidence:.2f}, backend={self._loaded_backend})"
+            f"flooded, conf={confidence:.2f}, mc_unc={mc_uncertainty:.3f}, "
+            f"backend={self._loaded_backend})"
         )
         return result
 
@@ -371,6 +386,75 @@ class DepthEstimator:
         return float(np.clip(weighted_pct, 0, 1))
 
     # -------------------------------------------------------------
+    # [IMPROVE] MC Dropout Uncertainty Quantification
+    # Chay N forward passes voi dropout enabled → tinh variance.
+    # Variance cao → model khong chac chan → confidence giam.
+    # Chi hoat dong voi PyTorch models (midas, zoedepth).
+    # Depth Anything V2 dung diffusers pipeline → khong ho tro MC Dropout.
+    # -------------------------------------------------------------
+    _MC_DROPOUT_RUNS = 5  # so forward passes
+
+    def _mc_dropout_depth(self, pil_img: Image.Image) -> Optional[tuple]:
+        """
+        MC Dropout: chay N forward passes voi dropout enabled,
+        tra ve (mean_depth, uncertainty).
+        uncertainty = std Across N runs → cao = model khong chac chan.
+        """
+        try:
+            import torch
+        except ImportError:
+            return None
+
+        if self._loaded_backend not in ("midas", "zoedepth") or self._torch_device is None:
+            return None
+
+        # Bat dropout trong inference
+        self._enable_dropout()
+
+        runs = []
+        for _ in range(self._MC_DROPOUT_RUNS):
+            d = self._run_depth_inference(pil_img)
+            if d is not None:
+                runs.append(d)
+
+        # Tat dropout
+        self._disable_dropout()
+
+        if len(runs) < 3:
+            return None
+
+        stack = np.stack(runs, axis=0)   # (N, H, W)
+        mean_depth = stack.mean(axis=0)
+        uncertainty = float(stack.std(axis=0).mean())  # avg pixel-level std
+        return mean_depth, uncertainty
+
+    def _enable_dropout(self):
+        """Bat dropout trong tất cả modules (de MC Dropout hoat dong)."""
+        try:
+            import torch
+            if self._loaded_backend == "midas" and self._midas_model is not None:
+                for m in self._midas_model.modules():
+                    if isinstance(m, torch.nn.Dropout):
+                        m.train()   # keep dropout active
+            elif self._loaded_backend == "zoedepth" and self._midas_model is not None:
+                for m in self._midas_model.modules():
+                    if isinstance(m, torch.nn.Dropout):
+                        m.train()
+        except Exception:
+            pass
+
+    def _disable_dropout(self):
+        """Tat dropout (back to eval mode)."""
+        try:
+            import torch
+            if self._loaded_backend == "midas" and self._midas_model is not None:
+                self._midas_model.eval()
+            elif self._loaded_backend == "zoedepth" and self._midas_model is not None:
+                self._midas_model.eval()
+        except Exception:
+            pass
+
+    # -------------------------------------------------------------
     def analyze_batch(self, image_paths: List[Path]) -> List[FloodDepthResult]:
         """Phân tích batch anh, bo qua anh loi."""
         results = []
@@ -397,7 +481,9 @@ class DepthEstimator:
         h, w = depth_norm.shape
         lower_half = depth_norm[h // 2:, :]
 
-        # Depth threshold: vung co depth > 60th percentile = co the la nuoc
+        # [FIX] Depth threshold tinh tu lower_half nhung ap dung len TOAN ANH
+        # → nua tren (xa camera, depth THAP) luon < threshold → khong detect nuoc.
+        # Fix: chi ap dung water_mask_depth o vung nua duoi (lower_mask).
         depth_thresh = np.percentile(lower_half, 60)
         water_mask_depth = depth_norm > depth_thresh
 
@@ -416,7 +502,9 @@ class DepthEstimator:
         water_area = float(water_mask_color.sum()) / water_mask_color.size
 
         # Confidence: cao neu ca depth lan mau deu nhat quan
-        agreement = (water_mask_depth == water_mask_color).mean()
+        # [FIX] Chi tinh agreement o vung nua duoi (lower_mask) vi nua tren
+        # depth luon thap → false disagreement voi color mask.
+        agreement = float((water_mask_depth[lower_mask] == water_mask_color[lower_mask]).mean())
         confidence = float(0.5 + 0.5 * agreement)
 
         return flood_pct, water_area, confidence

@@ -61,13 +61,16 @@ class ConfidenceScorer:
         low_threshold:       float = LOW_THRESHOLD,
         high_threshold:      float = HIGH_THRESHOLD,
     ):
-        total = (w_water_detection + w_depth_consistency +
-                 w_reference_match + w_image_quality + w_raincoat)
-        self.w_water    = w_water_detection  / total
-        self.w_depth    = w_depth_consistency / total
-        self.w_ref      = w_reference_match   / total
-        self.w_quality  = w_image_quality     / total
-        self.w_raincoat = w_raincoat          / total
+        # [FIX] Tong 5 weights = 0.28+0.28+0.18+0.18+0.08 = 1.00
+        # Cu: normalize lai → self.w_* > 1.0, nhung compute() dung weights cuc (0.30, 0.20...)
+        # → co 2 he weight khac nhau, instance weights KHONG BAO GIO duoc dung.
+        # Moi: dung weights cuc trong compute() (da on dinh), chi luu instance
+        # weights de backward-compat, khong normalize nua.
+        self.w_water    = w_water_detection
+        self.w_depth    = w_depth_consistency
+        self.w_ref      = w_reference_match
+        self.w_quality  = w_image_quality
+        self.w_raincoat = w_raincoat
         self.low_threshold  = low_threshold
         self.high_threshold = high_threshold
 

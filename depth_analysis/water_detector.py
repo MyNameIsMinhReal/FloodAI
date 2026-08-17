@@ -141,8 +141,21 @@ class WaterDetector:
         # NDWI cũng có độ tin cậy cao → count double
         vote_map += (ndwi_mask > 0).astype(np.int32)
 
+        # [IMPROVE] Multi-scale water detection:
+        # Phat hien nuoc tai nhieu scale (goc, 50%, 25%) de bat
+        # ca vung nuoc lon (dong song) va nho (vuong nuoc).
+        # Scale 50%: dilate mask 15px → ket noi vung nuoc rach
+        # Scale 25%: erode mask 9px → loai vung nho qua (noise)
+        scales = {}
+        k_dilate = np.ones((15, 15), np.uint8)
+        k_erode  = np.ones((9, 9),  np.uint8)
+        base_voted = (vote_map >= 2).astype(np.uint8) * 255
+        scales[1.0] = base_voted                                      # scale goc
+        scales[0.5] = cv2.erode(base_voted, k_erode, iterations=1)    # scale nho (loai noise)
+        scales[1.5] = cv2.dilate(base_voted, k_dilate, iterations=1)  # scale lon (noi vung)
+
         # Threshold: ≥ 2 votes = water (trong 8 total votes kể cả double)
-        voted = (vote_map >= 2).astype(np.uint8) * 255
+        voted = base_voted
 
         # Áp dụng shadow exclusion
         not_shadow = cv2.bitwise_not(shadow_excl)
@@ -171,6 +184,15 @@ class WaterDetector:
             puddle_new = cv2.bitwise_and(puddle_mask, cv2.bitwise_not(filtered))
             filtered   = cv2.bitwise_or(filtered, puddle_new)
 
+        # [IMPROVE] Multi-scale refinement:
+        # Scale 1.5 (dilated): noi vung nuoc bi rach → dung cho water_line detection
+        # Scale 0.5 (eroded):  loai vung nho qua → dung de validate
+        # Neu scale 0.5 co nhieu water hon scale 1.0 → co the la noise → giam conf
+        water_scale_small = float(scales[0.5].sum() / 255) / (h * w)
+        water_scale_large = float(scales[1.5].sum() / 255) / (h * w)
+        # Neu large-scale water gap 2x small-scale → vung nuoc bi rach
+        scale_consistency = 1.0 - min(1.0, abs(water_scale_large - water_area_pct) / max(water_area_pct, 0.01))
+
         water_area_pct = float(filtered.sum() / 255) / (h * w)
 
         has_reflection = False
@@ -187,6 +209,7 @@ class WaterDetector:
         # [MỚI v4] Tính fragmentation để dùng trong confidence
         frag_score = self._compute_fragmentation(filtered, h, w)
         ch["fragmentation"] = frag_score
+        ch["scale_consistency"] = scale_consistency  # [IMPROVE] multi-scale
 
         cp = WaterColorProfile(
             dominant_type    = dom.get("type", "none"),
@@ -260,9 +283,12 @@ class WaterDetector:
         gray_w = ((r>0.27)&(r<0.39)&(g>0.27)&(g<0.39)&(b>0.27)&(b<0.39)).astype(np.uint8)*255
         combined = cv2.bitwise_or(cv2.bitwise_or(clear, muddy), gray_w)
         h = combined.shape[0]
-        mask = np.zeros_like(combined)
-        mask[h//3:, :] = 255
-        return cv2.bitwise_and(combined, mask)
+        # [FIX] Chi loai vung troi (top 15%) de tranh false positive tu mau xanh troi
+        # Cu h//3 (33%) bi nheo: nuoc lu co the nam o 1/3 tren anh (anh chup tu tren cao,
+        # nuoc ngap nha, nuoc tran be...). Chi can loai sky zone ~15% la du.
+        sky_mask = np.zeros_like(combined)
+        sky_mask[int(h * 0.15):, :] = 255
+        return cv2.bitwise_and(combined, sky_mask)
 
     def _detect_by_texture(self, img_bgr):
         """
@@ -591,7 +617,10 @@ class WaterDetector:
         wl  = max(int(h*0.05), min(min(col_top, row_top), h-5))
         std = np.std(col_top_y)/max(h,1) if col_top_y else 0.5
         conf = float(np.clip(1.0 - std*2.5, 0.25, 0.96))
-        if wl < h*0.15: wl = int(h*0.18); conf *= 0.6
+        # [FIX] Neu WL qua cao (tren 15% anh), KHONG forced len 18%.
+        # Anh lu that su ngap sau (CHEST/SUBMERGED) co water line o tren →
+        # forced nay se giam do ngap sai. Chi giam confidence thoi.
+        if wl < h*0.15: conf *= 0.5
         if abs(row_top-col_top) > h*0.12: conf *= 0.75
         return wl, float(np.clip(conf, 0, 1))
 
@@ -612,6 +641,7 @@ class WaterDetector:
           - Thêm fragmentation penalty: mask phân mảnh → confidence giảm
           - Thêm NDWI agreement bonus: NDWI đồng ý → rất chắc là nước
           - Điều chỉnh trọng số agreeing channels
+        [IMPROVE]: them scale_consistency bonus
         """
         c = min(0.35, water_area_pct * 3.5)
         if water_area_pct > 0.4: c += 0.10
@@ -620,12 +650,17 @@ class WaterDetector:
 
         # [CẢI TIẾN] Đếm channels đồng ý với ngưỡng cao hơn (0.03 thay vì 0.02)
         agreeing = sum(1 for k, v in ch.items()
-                       if k not in ("fragmentation", "reflection") and v > 0.03)
+                       if k not in ("fragmentation", "reflection", "scale_consistency") and v > 0.03)
         c += min(0.15, agreeing * 0.025)
 
         # [MỚI] NDWI agreement bonus
         if ch.get("ndwi", 0) > 0.03:
             c += 0.08
+
+        # [IMPROVE] Multi-scale consistency bonus:
+        # scale_consistency cao → vung nuoc on dinh qua cac scale → tin cay hon
+        sc = ch.get("scale_consistency", 0.5)
+        c += max(0.0, (sc - 0.5) * 0.12)  # sc=1.0 → +0.06, sc=0.5 → +0.0
 
         if water_type not in ("none", ""): c += 0.05
 

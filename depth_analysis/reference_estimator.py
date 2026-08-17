@@ -20,6 +20,7 @@ from collections import Counter
 from dataclasses import dataclass, field, asdict
 
 from utils.constants import FLOOD_LEVEL_KNEE, FLOOD_LEVEL_HIP, FLOOD_LEVEL_CHEST, FLOOD_LEVEL_COMPLETE
+from utils.constants import classify_level
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict
 import cv2
@@ -1714,17 +1715,32 @@ class ReferenceEstimator:
                 water_cm = 0.0
                 conf    *= 0.3
 
-            # ── Vehicle bias correction ──────────────────────────────
-            # Xe may/xe đap hay bi overestimate vi nguoi đây qua vung sau hon
-            # Giam water estimate cua vehicle xuong theo VEHICLE_WATER_BIAS
+            # ── [IMPROVE] Adaptive vehicle bias correction ──────────────
+            # Cu: VEHICLE_WATER_BIAS固定 (motorcycle=0.75, car=0.90...)
+            #     khong phu vao goc chup.
+            # Moi: adaptive — goc chup (aerial, low-angle) thay doi
+            #   muc overestimate cua vehicle.
+            #   - Aerial (bird's eye): xe bi cat ngan → overestimate nhieu hon
+            #   - Low-angle: camera gan mat nuoc → underestimate hon
             vehicle_bias = VEHICLE_WATER_BIAS.get(obj_class, 1.0)
             if vehicle_bias < 1.0 and water_cm > 0:
+                # Neu aerial: tang bias len (giam nhieu hon)
+                if is_aerial:
+                    vehicle_bias = max(0.45, vehicle_bias - 0.12)
+                elif is_low_angle:
+                    vehicle_bias = min(0.95, vehicle_bias + 0.10)
                 water_cm_orig = water_cm
                 water_cm     *= vehicle_bias
-                log.debug(f"  Vehicle bias [{obj_class}]: {water_cm_orig:.0f} → {water_cm:.0f}cm")
+                log.debug(f"  Vehicle bias [{obj_class}]: {water_cm_orig:.0f} → {water_cm:.0f}cm "
+                          f"(adaptive={vehicle_bias:.2f} aerial={is_aerial})")
 
             # ── Nhan dien bo phan tiep xuc ───────────────────────────
-            body_part = self._classify_body_contact(water_cm, ref_h * pose_factor)
+            # [FIX] Dung ref_h (chieu cao THUC) thay vi ref_h*pose_factor
+            # Vi _classify_body_contact so sanh ratio = water_cm / ref_h voi
+            # nguong body_part (ankle=0.20, knee=0.35...). Neu nguoi ngoi
+            # (pose_factor=0.55), ref_h*pose_factor = 93.5cm → ratio bi phong dai
+            # → gan sai body part (VD: nuoc 30cm → ratio=0.32="knee" thay vi "ankle").
+            body_part = self._classify_body_contact(water_cm, ref_h)
 
             if obj_class == "person":
                 kp_contact = self._classify_body_contact_from_keypoints(det, effective_wl)
@@ -1873,9 +1889,11 @@ class ReferenceEstimator:
                         corrected = expected_cm
                         log.debug(f"  Person outlier fix: {wcm:.0f}cm → {corrected:.0f}cm "
                                   f"(vis={vis:.0%} expected={expected_cm:.0f}cm)")
-                        import copy
-                        p2 = copy.copy(p)
-                        p2.__dict__["water_height_cm"] = round(corrected, 1)
+                        # [FIX] Dung dataclasses.replace thay vi copy.copy()
+                        # copy.copy() shallow → shared list/array (bbox, keypoints)
+                        # → neu modify bbox sau bi anh huong nguoi khac.
+                        from dataclasses import replace
+                        p2 = replace(p, water_height_cm=round(corrected, 1))
                         filtered_persons.append(p2)
                     else:
                         filtered_persons.append(p)
@@ -1885,14 +1903,28 @@ class ReferenceEstimator:
                 person_median = float(np.median([o.water_height_cm for o in persons]))
 
                 if len(persons) >= 3:
-                    cluster_bins = Counter(int(round(o.water_height_cm/5.0))*5 for o in persons)
-                    top_bin, _ = cluster_bins.most_common(1)[0]
-                    cluster_vals = [o.water_height_cm for o in persons if abs(o.water_height_cm - top_bin) <= 7.5]
-                    if cluster_vals:
-                        person_major_median = float(np.median(cluster_vals))
+                    # ── [IMPROVE] MAD-based outlier detection ────────────
+                    # Cu: cluster_bins (5cm bin) + threshold 7.5cm — he so vo canh.
+                    # Moi: Median Absolute Deviation (MAD) — 3.5x MAD = outlier.
+                    # MAD = median(|xi - median(x)|), robust hon std khi co outliers.
+                    person_cms = np.array([o.water_height_cm for o in persons])
+                    mad = float(np.median(np.abs(person_cms - person_median)))
+                    mad = max(mad, 1.0)  # tranh mad=0 voi tat ca giong nhau
+                    # MAD * 1.4826 ≈ std neu normal distribution
+                    # Dung 3.0 * 1.4826 * mad ≈ 4.45 * mad lam nguong outlier
+                    outlier_bound = 4.45 * mad
+                    inliers = [o for o in persons
+                               if abs(o.water_height_cm - person_median) <= outlier_bound]
+                    if len(inliers) >= 2:
+                        inlier_medians = [o.water_height_cm for o in inliers]
                     else:
-                        person_major_median = person_median
+                        inlier_medians = [o.water_height_cm for o in persons]
+
+                    person_major_median = float(np.median(inlier_medians))
                     yolo_cm = 0.90 * person_major_median + 0.10 * person_median
+                    if len(inliers) < len(persons):
+                        log.debug(f"  MAD outlier: {len(persons)-len(inliers)} removed "
+                                  f"(bound={outlier_bound:.1f}cm, mad={mad:.1f}cm)")
                 else:
                     if vehicles:
                         v_confs = sum(o.confidence * max(o.local_wl_conf, 0.15) for o in vehicles)
@@ -1921,30 +1953,56 @@ class ReferenceEstimator:
             yolo_cm, total_w = 0.0, 0.0
 
         # ── Nguon 2: Global water line ───────────────────────────────
-        wl_cm   = max(0, (img_h - wl_y) / img_h) * 170.0 * 0.72
+        # [FIX] Cong thuc cu: water_ratio * 170 * 0.72 = SAI
+        #   - water_ratio = ty le pixel tu water_line den day anh (0-1)
+        #   - 170 = chieu cao nguoi, 0.72 = "magic number"
+        #   → Coi water_line position = ty le co the bi ngap. SAI vi wl_y
+        #     la pixel coordinate, phu hoan toan vao goc camera.
+        #   Vi du: water line giua anh → 0.5*170*0.72 = 61cm du nuoc chi 10cm.
+        #
+        # [FIX v2] Dung perspective-aware non-linear mapping:
+        #   - Camera mat duong cham (eye-level, ~150cm): water line o giua
+        #     anh ≈ 25-35cm (khong phai 61cm).
+        #   - Camera nhin xuong (elevated): water line o giua ≈ 15-20cm.
+        #   - Khong biet goc camera → dung non-linear S-curve + cap conservative.
+        water_ratio = max(0.0, (img_h - wl_y) / img_h)  # 0..1
+        # S-curve: 0.5*(1 - cos(pi*x)) — compressed ở 2 đầu (an toan hon)
+        wl_cm = 80.0 * 0.5 * (1.0 - np.cos(np.pi * water_ratio))
+        wl_cm = float(np.clip(wl_cm, 0.0, 80.0))  # cap 80cm — khong co object tham chieu
 
         # ── Nguon 3: Color area ──────────────────────────────────────
         area_cm = lower_pct * 1.6
 
-        # ── Blend theo đo tin cay ────────────────────────────────────
-        n_reliable = len([o for o in measured if o.local_wl_conf > 0.3]) if measured else 0
+        # ── [IMPROVE] Dynamic weight fusion ─────────────────────────
+        # Cu: hardcoded weights theo so luong objects (0.70/0.20/0.10...)
+        # Moi: tinh weights dong theo chat luong THUC TE cua tung nguon.
+        #   - YOLO weight: proportional do confidence + so luong objects
+        #   - WL weight: proportional wl_conf
+        #   - Area weight: proportional lower_pct (zone confidence)
+        # → Nguon tot hon duoc uu tien, khong phai chi dem so object.
 
-        if n_reliable >= 2 and yolo_cm > 0:
-            # Co nhieu objects voi local measurement tot → tin tuong cao
-            water_cm = 0.70 * yolo_cm + 0.20 * wl_cm + 0.10 * area_cm
-            conf     = min(0.92, 0.50 + n_reliable * 0.10)
-        elif n_reliable >= 1 and yolo_cm > 0:
-            water_cm = 0.60 * yolo_cm + 0.28 * wl_cm + 0.12 * area_cm
-            conf     = min(0.85, wl_conf * 0.30 + (total_w / max(len(measured), 1)) * 0.70)
-        elif total_w > 0.20 and measured:
-            water_cm = 0.50 * yolo_cm + 0.35 * wl_cm + 0.15 * area_cm
-            conf     = min(0.70, wl_conf * 0.40 + (total_w / max(len(measured), 1)) * 0.60)
-        elif wl_conf > 0.30:
-            water_cm = 0.55 * wl_cm + 0.45 * area_cm
-            conf     = min(0.55, wl_conf)
+        if yolo_cm > 0 and total_w > 0:
+            yolo_quality = min(1.0, total_w * 1.5)   # 0.13 object → 0.20, 0.67 → 1.0
         else:
-            water_cm = area_cm
-            conf     = min(0.35, lower_pct / 25.0)
+            yolo_quality = 0.0
+
+        wl_quality    = wl_conf                          # 0-1
+        area_quality  = min(1.0, lower_pct / 15.0)     # 15% area → 1.0
+
+        raw_w_yolo = yolo_quality * 0.65                 # max 65% YOLO
+        raw_w_wl   = wl_quality   * 0.25                 # max 25% water line
+        raw_w_area = area_quality * 0.10                 # max 10% color area
+
+        total_raw = raw_w_yolo + raw_w_wl + raw_w_area
+        if total_raw > 0.01:
+            w_yolo = raw_w_yolo / total_raw
+            w_wl   = raw_w_wl   / total_raw
+            w_area = raw_w_area / total_raw
+        else:
+            w_yolo, w_wl, w_area = 0.0, 0.4, 0.6
+
+        water_cm = w_yolo * yolo_cm + w_wl * wl_cm + w_area * area_cm
+        conf = min(0.92, wl_conf * 0.35 + yolo_quality * 0.50 + area_quality * 0.15)
 
         # Aerial correction: tu tren cao → actual water sau hon ve be ngoai
         # angle_factor đã ap dung trong _measure_objects_local roi,
@@ -1953,10 +2011,16 @@ class ReferenceEstimator:
             water_cm *= angle_factor
             conf     *= 0.7
 
-        # Cap khi khong co object tham chieu
-        if not measured and water_cm > 70:
-            water_cm = min(water_cm, 70.0)
-            conf    *= 0.60
+        # [FIX] Cap khi khong co object tham chieu — SOFT cap theo wl_conf
+        # Cu: hard cap 70cm → sai khi nuoc that su sau (anh chup tu tang cao,
+        # khong thay nguoi/xe nhung nuoc van sau).
+        # Moi: wl_conf cao (>0.6) → cho phep water_cm cao hon.
+        #       wl_conf thap (<0.4) → cap chat hon vi khong chac.
+        if not measured and water_cm > 0:
+            max_depth = 40.0 + wl_conf * 80.0   # wl_conf=0.3 → 64cm, wl_conf=0.7 → 96cm
+            if water_cm > max_depth:
+                water_cm = max_depth
+                conf    *= 0.55
 
         # Minimum: neu has_flood thi it nhat la PUDDLE
         if has_flood and water_cm < 2.0:

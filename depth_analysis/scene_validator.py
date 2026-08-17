@@ -177,10 +177,9 @@ class SceneValidator:
             score = min(score + 0.08, 1.0)
 
         # ── Rule 6: Texture variance (nước thật có texture) ────────────────
+        # [FIX] Khong copy ca anh (24MB voi 4K) — dung bitwise_and inplace
         if img_bgr is not None and water_px > 100:
-            water_region = img_bgr.copy()
-            water_region[water_mask == 0] = 0
-            gray_water = cv2.cvtColor(water_region, cv2.COLOR_BGR2GRAY)
+            gray_water = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
             masked_pixels = gray_water[water_mask > 0]
             if len(masked_pixels) > 50:
                 texture_var = float(np.var(masked_pixels.astype(np.float32)))

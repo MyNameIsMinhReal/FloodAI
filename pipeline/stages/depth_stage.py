@@ -49,10 +49,12 @@ class DepthStage:
         tmp_dir = overlay_dir.parent / "_tmp_depth"
         tmp_dir.mkdir(exist_ok=True)
 
+        # [BUG FIX v2] Initialize results before try block to prevent NameError in finally
+        results = []
         try:
             results = self._run_estimator(images, models, tmp_dir)
         finally:
-            self._move_outputs(results if "results" in dir() else [], tmp_dir, overlay_dir, depthmap_dir)
+            self._move_outputs(results, tmp_dir, overlay_dir, depthmap_dir)
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
         log.info(f"  [Depth] {len(results)}/{len(images)} ảnh thành công")

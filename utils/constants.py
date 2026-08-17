@@ -28,6 +28,42 @@ FLOOD_LEVEL_HIP = "Ngập ngang hông (70-120cm)"
 FLOOD_LEVEL_CHEST = "Ngập ngang ngực (120-200cm)"
 FLOOD_LEVEL_COMPLETE = "Ngập hoàn toàn (>200cm)"
 
+# ── Flood level classification (dung chung) ───────────────────────────────────
+# Truoc day: classify_level() duoc dinh nghia TRUNG LAP o ca
+# reference_estimator.py va measurement_engine.py → maintenance hazard.
+# Moi: dinh nghia 1 lan o constants.py, import tu ca 2 noi.
+
+FLOOD_LEVEL_THRESHOLDS = [
+    (0,    0,   "NO_FLOOD",  "Không có lũ"),
+    (0,   15,   "PUDDLE",    "Vũng nước nhỏ (<15cm)"),
+    (15,  40,   "ANKLE",     "Ngập mắt cá chân (15-40cm)"),
+    (40,  70,   "KNEE",      FLOOD_LEVEL_KNEE),
+    (70, 120,   "WAIST",     FLOOD_LEVEL_HIP),
+    (120, 200,  "CHEST",     FLOOD_LEVEL_CHEST),
+    (200, 9999, "SUBMERGED", FLOOD_LEVEL_COMPLETE),
+]
+
+FLOOD_LEVEL_RANGES = {
+    "NO_FLOOD": "0 cm",
+    "PUDDLE":   "0-15 cm",
+    "ANKLE":    "15-40 cm",
+    "KNEE":     "40-70 cm",
+    "WAIST":    "70-120 cm",
+    "CHEST":    "120-200 cm",
+    "SUBMERGED": ">200 cm",
+}
+
+def classify_level(water_cm: float) -> tuple:
+    """Phan loai muc nuoc theo cm. Tra ve (level, description)."""
+    for lo, hi, lvl, desc in FLOOD_LEVEL_THRESHOLDS:
+        if lo <= water_cm < hi:
+            return lvl, desc
+    return "SUBMERGED", "Ngập hoàn toàn (>200cm)"
+
+def level_range(level: str) -> str:
+    """Tra ve chuoi khoang cm cho muc lu."""
+    return FLOOD_LEVEL_RANGES.get(level, "N/A")
+
 DEFAULT_QUERY = "flood disaster 2024"
 
 # Logging messages

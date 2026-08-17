@@ -249,10 +249,14 @@ class FloodPipeline:
 
     def _stage_analyze(self, state: "PipelineState") -> "PipelineState":
         if self.cfg.get("detect_location", True):
-            location_map = self.analyzer.run(state.input_images)
+            location_map = self.analyzer.run(state.input_images) or {}
             state.location_map = location_map
-            located = sum(1 for v in location_map.values() if v.get("method") != "none")
-            log.info(f"  Location: {located}/{len(state.input_images)} ảnh được định vị")
+            # [BUG FIX v2] Add null check before calling .values()
+            if location_map:
+                located = sum(1 for v in location_map.values() if v.get("method") != "none")
+                log.info(f"  Location: {located}/{len(state.input_images)} ảnh được định vị")
+            else:
+                log.warning("  Location: analyzer returned None/empty")
 
         state.analyzed_images = state.input_images
         state.log_stage("analyze", state.timings.get("analyze", 0), len(state.analyzed_images))

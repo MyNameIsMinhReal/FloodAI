@@ -58,6 +58,7 @@ class TrackState:
     raincoat_vote: Optional[bool]  = None    # majority vote
     raincoat_conf: float           = 0.0
     smoothed_keypoints: Optional[np.ndarray] = None
+    ema_depth: Optional[float]     = None    # [IMPROVE] EMA smoothed depth
 
 
 @dataclass
@@ -71,6 +72,7 @@ class TrackResult:
     raincoat_conf: float
     pose_vote:     Optional[str]
     depth_median:  Optional[float]
+    depth_ema:     Optional[float]     # [IMPROVE] EMA smoothed depth
     is_new_track:  bool
 
 
@@ -179,6 +181,15 @@ class PersonTracker:
                 t.depth_history.append(dp)
                 if len(t.depth_history) > self.history_len:
                     t.depth_history.pop(0)
+                # [IMPROVE] EMA smoothing cho depth:
+                # Cu: chi dung median (robust nhung lag 1 frame)
+                # Moi: EMA (Exponential Moving Average) smooth hon,
+                #   alpha=0.3 → 70% frame cu, 30% frame moi → giam jitter.
+                alpha = 0.3
+                if t.ema_depth is None:
+                    t.ema_depth = dp
+                else:
+                    t.ema_depth = alpha * dp + (1.0 - alpha) * t.ema_depth
 
             # Compute votes
             t.raincoat_vote, t.raincoat_conf = self._majority_vote_bool(t.raincoat_history)
@@ -228,6 +239,7 @@ class PersonTracker:
                     raincoat_conf=t.raincoat_conf,
                     pose_vote=pose_vote,
                     depth_median=depth_med,
+                    depth_ema=t.ema_depth,  # [IMPROVE] EMA smoothed depth
                     is_new_track=(tid in new_ids),
                 ))
 

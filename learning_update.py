@@ -90,8 +90,20 @@ class SelfLearningPipeline:
                  f"error_rate={trend.get('current_error_rate',0):.1%})")
 
     def _extract_features(self, result, image_path: Path) -> dict:
-
-        features = {}
+        # [BUG FIX v2] Initialize all feature keys with default values BEFORE try block
+        # This prevents KeyError when exception occurs during image processing
+        features = {
+            "brightness": 0.0,
+            "aspect_ratio": 1.0,
+            "blur_score": 0.0,
+            "is_night": False,
+            "num_reference_objects": 0,
+            "num_people": 0,
+            "has_pose": False,
+            "depth_estimates": [],
+            "reference_objects": [],
+            "water_level_pct": 0.0,
+        }
 
         try:
             import cv2
@@ -114,7 +126,7 @@ class SelfLearningPipeline:
             features["is_night"] = bool(brightness < 60)
 
         except Exception as e:
-            log.warning(f"[SelfLearning v2] Feature extraction failed: {e}")
+            log.warning(f"[SelfLearning v2] Feature extraction failed for {image_path}: {e}")
 
         # [BUG FIX] Đọc từ detected_objects (list of dict) thay vì attr không tồn tại
         detected_objects = getattr(result, "detected_objects", []) or []

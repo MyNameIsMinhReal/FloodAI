@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 
 from utils.constants import FLOOD_LEVEL_KNEE, FLOOD_LEVEL_HIP, FLOOD_LEVEL_CHEST, FLOOD_LEVEL_COMPLETE
+from utils.constants import classify_level
 import numpy as np
 
 log = logging.getLogger(__name__)

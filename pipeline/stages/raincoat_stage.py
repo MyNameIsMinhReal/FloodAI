@@ -62,6 +62,9 @@ class RaincoatStage:
         self._detector = None
         self._tracker  = None
         self._pose_analyzer = None
+        # [BUG FIX v2] Thread-safe initialization lock for lazy-loaded components
+        from threading import Lock
+        self._init_lock = Lock()
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -300,30 +303,32 @@ class RaincoatStage:
     # ── Lazy init ─────────────────────────────────────────────────────────────
 
     def _init_components(self) -> None:
-        if self._detector is None:
-            from depth_analysis.raincoat_detector import RaincoatDetector
-            self._detector = RaincoatDetector(
-                use_clip=self.use_clip,
-                bbox_pad=self.bbox_pad,
-                final_thresh=self.final_thresh,
-            )
-            log.info(f"  [Raincoat] Detector ready (CLIP={'on' if self.use_clip else 'off'})")
-
-        if self._tracker is None:
-            from depth_analysis.person_tracker import PersonTracker
-            self._tracker = PersonTracker(
-                max_age=self.max_age,
-                history_len=self.history_len,
-            )
-            log.info("  [Raincoat] Tracker ready")
-
-        if self._pose_analyzer is None:
-            try:
-                from depth_analysis.pose_analyzer import PoseAnalyzer
-                self._pose_analyzer = PoseAnalyzer(
-                    pose_model=self.pose_model,
-                    conf_thresh=self.pose_conf,
+        # [BUG FIX v2] Use lock to ensure thread-safe lazy initialization
+        with self._init_lock:
+            if self._detector is None:
+                from depth_analysis.raincoat_detector import RaincoatDetector
+                self._detector = RaincoatDetector(
+                    use_clip=self.use_clip,
+                    bbox_pad=self.bbox_pad,
+                    final_thresh=self.final_thresh,
                 )
-                log.info("  [Raincoat] PoseAnalyzer fallback ready")
-            except Exception as e:
-                log.debug(f"  [Raincoat] PoseAnalyzer not loaded: {e}")
+                log.info(f"  [Raincoat] Detector ready (CLIP={'on' if self.use_clip else 'off'})")
+
+            if self._tracker is None:
+                from depth_analysis.person_tracker import PersonTracker
+                self._tracker = PersonTracker(
+                    max_age=self.max_age,
+                    history_len=self.history_len,
+                )
+                log.info("  [Raincoat] Tracker ready")
+
+            if self._pose_analyzer is None:
+                try:
+                    from depth_analysis.pose_analyzer import PoseAnalyzer
+                    self._pose_analyzer = PoseAnalyzer(
+                        pose_model=self.pose_model,
+                        conf_thresh=self.pose_conf,
+                    )
+                    log.info("  [Raincoat] PoseAnalyzer fallback ready")
+                except Exception as e:
+                    log.debug(f"  [Raincoat] PoseAnalyzer not loaded: {e}")
