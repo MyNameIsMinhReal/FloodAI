@@ -312,7 +312,7 @@ def _run_pipeline(cfg: dict):
             try:
                 from learning_update import SelfLearningPipeline
                 sl = SelfLearningPipeline()
-                sl.process_results(depth_results=depth_results, cfg=cfg, image_paths=images)
+                sl.process_results(depth_results=depth_results, _cfg=cfg, image_paths=images)
                 sl.close()
                 _plog("🧠 Self-learning: dữ liệu đã được xếp hàng review.", "SUCCESS")
             except Exception as e:
