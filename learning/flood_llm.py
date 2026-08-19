@@ -24,11 +24,17 @@ from __future__ import annotations
 
 import logging
 import re
+import numpy as np
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 log = logging.getLogger("flood_llm")
+
+# Global cache for RAG DINO model
+_RAG_DINO_MODEL = None
+_RAG_DINO_TRANSFORM = None
+_RAG_DINO_DEVICE = None
 
 
 def _best_gpu_index() -> int:
@@ -242,6 +248,15 @@ class LLMEnhancer:
         self._model: Any    = None
         self._tokenizer: Any = None
         self._gpu_id: Any   = None
+        # Optional loading features.  Keep these attributes initialized so
+        # backends that do not expose their configuration in __init__ remain
+        # type-safe and use the existing non-quantized/non-speculative path.
+        self._use_quantization: bool = False
+        self._quantization_bits: int = 4
+        self._quantization_config: Any = None
+        self._use_speculative: bool = False
+        self._draft_model_path: Optional[str] = None
+        self._speculative_draft_model: Any = None
 
         self._load()
 
@@ -257,7 +272,7 @@ class LLMEnhancer:
 
     def _load_llama_cpp(self):
         try:
-            from llama_cpp import Llama
+            from llama_cpp import Llama  # type: ignore[import-not-found]
         except ImportError:
             raise ImportError(
                 "Cần cài llama-cpp-python:\n"
@@ -357,8 +372,9 @@ class LLMEnhancer:
             log.info(f"[LLM] Loading draft model for speculative decoding: {self._draft_model_path}")
             try:
                 if use_gpu:
+                    draft_device_map = {"": self._gpu_id}
                     self._speculative_draft_model = AutoModelForCausalLM.from_pretrained(
-                        self._draft_model_path, device_map=device_map, trust_remote_code=True
+                        self._draft_model_path, device_map=draft_device_map, trust_remote_code=True
                     )
                 else:
                     self._speculative_draft_model = AutoModelForCausalLM.from_pretrained(
@@ -640,7 +656,12 @@ class RAGRetriever:
             global _RAG_DINO_MODEL, _RAG_DINO_TRANSFORM, _RAG_DINO_DEVICE
             if '_RAG_DINO_MODEL' not in globals() or _RAG_DINO_MODEL is None:
                 _RAG_DINO_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-                _RAG_DINO_MODEL = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14', pretrained=True).to(_RAG_DINO_DEVICE).eval()
+                # ``torch.hub.load`` is typed as returning ``object`` by some
+                # torch stubs, although the DINOv2 hub entry returns a module.
+                model: Any = torch.hub.load(
+                    'facebookresearch/dinov2', 'dinov2_vits14', pretrained=True
+                )
+                _RAG_DINO_MODEL = model.to(_RAG_DINO_DEVICE).eval()
                 _RAG_DINO_TRANSFORM = T.Compose([
                     T.Resize((224, 224)),
                     T.ToTensor(),
@@ -648,7 +669,11 @@ class RAGRetriever:
                 ])
             
             img = Image.open(image_path).convert("RGB")
-            tensor = _RAG_DINO_TRANSFORM(img).unsqueeze(0).to(_RAG_DINO_DEVICE)
+            assert _RAG_DINO_TRANSFORM is not None
+            # The transform returns a tensor at runtime; some torchvision stubs
+            # incorrectly infer the composed transform as returning an Image.
+            tensor: torch.Tensor = _RAG_DINO_TRANSFORM(img)  # type: ignore[assignment]
+            tensor = tensor.unsqueeze(0).to(_RAG_DINO_DEVICE)
             
             with torch.no_grad():
                 emb = _RAG_DINO_MODEL(tensor).cpu().numpy().squeeze()
