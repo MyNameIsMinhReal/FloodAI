@@ -336,10 +336,10 @@ def _loader_resnet18(config: dict) -> Any:
     # Checkpoint dùng fc.1.weight → fc là Sequential([layer0_no_params, Linear])
     # Dùng Dropout(0.0) ở index 0 để khớp index mà không ảnh hưởng inference
     model = tv_models.resnet18(weights=None)
-    model.fc = torch.nn.Sequential(
+    setattr(model, "fc", torch.nn.Sequential(
         torch.nn.Dropout(p=0.0),        # index 0 — không có weight, khớp checkpoint
         torch.nn.Linear(512, num_classes)  # index 1 — fc.1.weight / fc.1.bias
-    )
+    ))
 
     state_dict = torch.load(model_path, map_location=device, weights_only=True)
 

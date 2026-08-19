@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # test_confidence.py
 # ══════════════════════════════════════════════════════════════════════
 
-import pytest
+import pytest  # type: ignore[import-not-found]
 from pipeline.confidence import ConfidenceScorer
 
 

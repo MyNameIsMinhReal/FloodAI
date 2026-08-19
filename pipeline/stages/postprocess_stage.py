@@ -42,7 +42,9 @@ class PostprocessStage:
                 log.warning("  [Route] Không có GPS → bỏ qua route prediction")
                 return
 
-            predictor = FloodRoutePredictor(output_dir=str(state.output_dir / "routes"))
+            output_dir = getattr(state, "output_dir", None)
+            routes_dir = output_dir / "routes" if output_dir is not None else "routes"
+            predictor = FloodRoutePredictor(output_dir=str(routes_dir))
             map_path = predictor.build_flood_map(flood_points, output_name="flood_overview")
             if map_path:
                 log.info(f"  [Route] Flood map: {map_path}")

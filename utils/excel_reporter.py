@@ -65,6 +65,8 @@ class ExcelReporter:
         dest = self.output_dir / REPORT_XLSX
 
         ws1 = wb.active
+        if ws1 is None:
+            raise RuntimeError("Workbook không có worksheet mặc định")
         ws1.title = "Summary"
         self._build_summary(ws1, results, openpyxl)
 
@@ -362,7 +364,7 @@ class ExcelReporter:
             from PIL.ExifTags import TAGS, GPSTAGS
 
             img  = PILImg.open(image_path)
-            exif = img._getexif()
+            exif = img.getexif()
             if not exif:
                 return None, None, "no_exif"
 
@@ -397,7 +399,7 @@ class ExcelReporter:
     # ──────────────────────────────────────────────────────────────────
     def _thumb(self, path: str, w: int, h: int) -> io.BytesIO:
         img = PILImage.open(path)
-        img.thumbnail((w, h), PILImage.LANCZOS)
+        img.thumbnail((w, h), PILImage.Resampling.LANCZOS)
         buf = io.BytesIO()
         img.save(buf, "JPEG", quality=72)
         buf.seek(0)

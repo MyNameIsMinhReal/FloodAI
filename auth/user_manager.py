@@ -31,7 +31,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from flask import jsonify, session
+from flask import jsonify, request, session
 from functools import wraps
 
 log = logging.getLogger("auth")
@@ -330,7 +330,7 @@ def require_role(*roles):
                     "alert_mgr": "Alert Manager",
                     "reviewer": "Reviewer",
                 }
-                needed = " hoặc ".join(role_names.get(r, r) for r in roles)
+                needed = " hoặc ".join(str(role_names.get(r, r)) for r in roles)
                 return jsonify({
                     "error": f"Không đủ quyền. Cần: {needed}"
                 }), 403

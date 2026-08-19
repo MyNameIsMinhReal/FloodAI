@@ -16,6 +16,7 @@ Cách dùng:
     creds   = load_google_credentials()
 """
 import json
+import importlib
 import logging
 import os
 from pathlib import Path
@@ -40,8 +41,8 @@ def _ensure_loaded():
         return
 
     try:
-        from dotenv import load_dotenv
-        load_dotenv(env_file, override=False)  # override=False: env var hệ thống có ưu tiên cao hơn
+        dotenv = importlib.import_module("dotenv")
+        dotenv.load_dotenv(env_file, override=False)  # override=False: env var hệ thống có ưu tiên cao hơn
         log.debug(f"  [Env] Nạp từ {env_file}")
     except ImportError:
         # Parse thủ công nếu không có python-dotenv

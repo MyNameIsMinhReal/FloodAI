@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import ClassVar, Dict, List, Optional
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -57,6 +57,28 @@ class Persona:
     preferred_phrases:  List[str]
     greeting:           str
     max_response_length: int = 0   # 0 = không giới hạn
+    _registry: ClassVar[Dict[PersonaType, "Persona"]] = {}
+
+    @classmethod
+    def register(cls, persona: "Persona") -> None:
+        cls._registry[persona.type] = persona
+
+    @classmethod
+    def get(cls, persona_type: PersonaType) -> "Persona":
+        if persona_type not in cls._registry:
+            raise KeyError(f"Persona '{persona_type.value}' chưa được đăng ký.")
+        return cls._registry[persona_type]
+
+    @classmethod
+    def from_mode(cls, mode: str) -> "Persona":
+        mode_map = {
+            "public_user": PersonaType.PUBLIC_ASSISTANT,
+            "admin_review": PersonaType.ADMIN_COPILOT,
+            "news_writer": PersonaType.NEWS_EDITOR,
+            "alert_message": PersonaType.PUBLIC_ASSISTANT,
+            "debug": PersonaType.ADMIN_COPILOT,
+        }
+        return cls.get(mode_map.get(mode, PersonaType.PUBLIC_ASSISTANT))
 
     def to_dict(self) -> Dict:
         return {
@@ -66,36 +88,6 @@ class Persona:
             "rules":              self.rules,
             "greeting":           self.greeting,
         }
-
-
-# Registry là class variable — khai báo ngoài @dataclass
-Persona._registry: Dict[PersonaType, "Persona"] = {}
-
-
-# ── Registry methods gắn thêm sau khi class tạo xong ────────────
-
-def _persona_register(cls_self: "Persona") -> None:
-    Persona._registry[cls_self.type] = cls_self
-
-def _persona_get(persona_type: PersonaType) -> "Persona":
-    if persona_type not in Persona._registry:
-        raise KeyError(f"Persona '{persona_type.value}' chưa được đăng ký.")
-    return Persona._registry[persona_type]
-
-def _persona_from_mode(mode: str) -> "Persona":
-    _MODE_MAP = {
-        "public_user":    PersonaType.PUBLIC_ASSISTANT,
-        "admin_review":   PersonaType.ADMIN_COPILOT,
-        "news_writer":    PersonaType.NEWS_EDITOR,
-        "alert_message":  PersonaType.PUBLIC_ASSISTANT,
-        "debug":          PersonaType.ADMIN_COPILOT,
-    }
-    ptype = _MODE_MAP.get(mode, PersonaType.PUBLIC_ASSISTANT)
-    return _persona_get(ptype)
-
-Persona.register     = staticmethod(_persona_register)  # type: ignore[method-assign]
-Persona.get          = classmethod(lambda cls, pt: _persona_get(pt))  # type: ignore[method-assign]
-Persona.from_mode    = classmethod(lambda cls, m: _persona_from_mode(m))  # type: ignore[method-assign]
 
 
 # ─────────────────────────────────────────────────────────────────────────────

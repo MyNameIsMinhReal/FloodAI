@@ -31,9 +31,13 @@ class StoreStage:
         from uploader.drive_uploader import DriveUploader
         from utils.constants import DRIVE_UPLOAD_EXTENSIONS
         try:
+            output_dir = state.output_dir
+            if output_dir is None:
+                log.error("  [Drive] Không thể upload: chưa có thư mục output")
+                return None
             folder_name = f"{self.cfg.get('drive_folder', 'FloodAnalysis')}/{state.run_id}"
             fid = DriveUploader().upload_folder(
-                local_dir=state.output_dir,
+                local_dir=output_dir,
                 folder_name=folder_name,
                 extensions=DRIVE_UPLOAD_EXTENSIONS,
             )
@@ -44,10 +48,14 @@ class StoreStage:
             return None
 
     def _generate_reports(self, state: "PipelineState") -> None:
+        output_dir = state.output_dir
+        if output_dir is None:
+            log.warning("  [Store] Không thể tạo báo cáo: chưa có thư mục output")
+            return
         results_dict = state.to_dict()
         try:
             from utils.report_generator import ReportGeneratorV2
-            csv_p, html_p = ReportGeneratorV2(output_dir=state.output_dir).generate(results_dict)
+            csv_p, html_p = ReportGeneratorV2(output_dir=output_dir).generate(results_dict)
             log.info(f"  [Store] HTML → {html_p}")
             log.info(f"  [Store] CSV  → {csv_p}")
         except Exception as exc:
@@ -55,7 +63,7 @@ class StoreStage:
 
         try:
             from utils.excel_reporter import ExcelReporter
-            xlsx_p = ExcelReporter(output_dir=state.output_dir).generate(results_dict)
+            xlsx_p = ExcelReporter(output_dir=output_dir).generate(results_dict)
             if xlsx_p:
                 log.info(f"  [Store] XLSX → {xlsx_p}")
         except Exception as exc:
@@ -82,7 +90,11 @@ class StoreStage:
             "errors":          state.errors,
         }
         try:
-            out = state.output_dir / PIPELINE_SUMMARY_JSON
+            output_dir = state.output_dir
+            if output_dir is None:
+                log.warning("  [Store] Không ghi được summary: chưa có thư mục output")
+                return
+            out = output_dir / PIPELINE_SUMMARY_JSON
             out.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
             log.info(f"  [Store] Summary → {out}")
         except Exception as exc:

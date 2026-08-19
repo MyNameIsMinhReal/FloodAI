@@ -23,7 +23,11 @@ import urllib.request
 import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Tuple, List
+from typing import TYPE_CHECKING, Optional, Tuple, List
+
+if TYPE_CHECKING:
+    from paddleocr import PaddleOCR  # noqa: F401
+    import easyocr  # noqa: F401
 
 log = logging.getLogger("utils.geo_localizer")
 
@@ -147,7 +151,9 @@ class GeoLocalizer:
 
     def _from_exif(self, image_path: Path) -> GeoEstimate:
         try:
-            import exifread
+            # Load the optional dependency dynamically so static analysis does
+            # not require it to be installed in every environment.
+            exifread = __import__("exifread")
             with open(image_path, "rb") as f:
                 tags = exifread.process_file(f, details=False, stop_tag="GPS GPSLongitude")
             lat = _parse_gps_tag(tags.get("GPS GPSLatitude"), tags.get("GPS GPSLatitudeRef"))

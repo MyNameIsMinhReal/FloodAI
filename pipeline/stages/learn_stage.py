@@ -42,11 +42,7 @@ class LearnStage:
             from learning_update import SelfLearningPipeline
             sl  = SelfLearningPipeline()
             cfg = sl.get_adaptive_config(cfg)
-            sl.process_results(
-                depth_results=depth_results,
-                cfg=cfg,
-                image_paths=image_paths,
-            )
+            sl.process_results(depth_results, cfg, image_paths)
 
             # Kiểm tra error rate và auto-retrain
             error_rate = self._get_error_rate(sl)

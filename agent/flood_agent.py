@@ -41,7 +41,7 @@ import threading
 import time
 from collections import Counter
 from dataclasses import dataclass, field, asdict, fields
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -2569,8 +2569,19 @@ class FloodAgent:
                 "level_hint": parsed.level_hint,
             })
 
-        action = self.engine.decide(parsed, self.memory, self.config)
-        return self._execute_action(action, parsed)
+        # PolicyEngine works with the parser's concrete type.  LLM parsing
+        # returns a compatible object with a different static type, so copy
+        # the shared feedback fields into the engine input explicitly.
+        engine_parsed = ParsedFeedback(
+            intent=parsed.intent,
+            depth_hint=parsed.depth_hint,
+            level_hint=parsed.level_hint,
+            magnitude=parsed.magnitude,
+            raw=parsed.raw,
+            image_id=parsed.image_id,
+        )
+        action = self.engine.decide(engine_parsed, self.memory, self.config)
+        return self._execute_action(action, engine_parsed)
 
     def _handle_save_response(self) -> AgentResponse:
         """

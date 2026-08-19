@@ -114,6 +114,13 @@ class RaincoatStage:
 
     def _process_one(self, result: Any, overlay_dir: Optional[Path]) -> None:
         """Xử lý 1 ảnh: detect person → raincoat → track → attach."""
+        # `_init_components()` khởi tạo lazy, nhưng type checker không thể
+        # suy luận trạng thái của các thuộc tính sau lời gọi đó.
+        detector = self._detector
+        tracker = self._tracker
+        if detector is None or tracker is None:
+            raise RuntimeError("Raincoat components chưa được khởi tạo")
+
         img_path = self._get_path(result)
         if img_path is None or not Path(img_path).exists():
             self._attach_empty(result)
@@ -136,7 +143,7 @@ class RaincoatStage:
         from depth_analysis.raincoat_detector import RaincoatResult
         rc_results = []
         for p in persons:
-            rc = self._detector.detect(
+            rc = detector.detect(
                 img_rgb=img_rgb,
                 bbox=p["bbox"],
                 keypoints=p.get("keypoints"),
@@ -144,7 +151,7 @@ class RaincoatStage:
             rc_results.append(rc)
 
         # Update tracker
-        track_outputs = self._tracker.update(
+        track_outputs = tracker.update(
             bboxes=[p["bbox"] for p in persons],
             scores=[p.get("score", 1.0) for p in persons],
             keypoints=[p.get("keypoints") for p in persons],
@@ -171,7 +178,7 @@ class RaincoatStage:
         # Debug overlay
         if self.debug_overlay and overlay_dir is not None:
             bboxes = [p["bbox"] for p in persons]
-            debug_img = self._detector.draw_overlay(img_bgr, bboxes, rc_results)
+            debug_img = detector.draw_overlay(img_bgr, bboxes, rc_results)
             stem     = Path(img_path).stem
             out_path = Path(overlay_dir) / f"{stem}_raincoat.jpg"
             cv2.imwrite(str(out_path), debug_img)

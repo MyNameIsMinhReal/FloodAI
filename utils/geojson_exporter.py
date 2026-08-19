@@ -14,7 +14,7 @@ Output: FeatureCollection với mỗi ảnh có GPS là 1 Feature (Point).
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from pipeline.orchestrator import PipelineState
@@ -190,4 +190,6 @@ def export_danger_zones(
             self.location_map = orig.location_map
             self.depth_results = results
 
-    return export_geojson(_FakeState(state, filtered), output_dir, filename)
+    return export_geojson(
+        cast("PipelineState", _FakeState(state, filtered)), output_dir, filename
+    )

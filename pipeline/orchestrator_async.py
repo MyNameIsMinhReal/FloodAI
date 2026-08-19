@@ -217,27 +217,17 @@ class AsyncFloodPipeline:
 
     def run(self, images: List[Path]) -> PipelineState:
         """Sync wrapper — backward-compatible với FloodPipeline.run()."""
-        # [BUG FIX v2] Proper handling of nested event loops (Jupyter/IPython)
+        # Avoid the optional nest_asyncio dependency. In an already-running
+        # event loop, use a worker thread with its own event loop.
         try:
-            import nest_asyncio
-            nest_asyncio.apply()
+            asyncio.get_running_loop()
+        except RuntimeError:
             return asyncio.run(self.run_async(images))
-        except ImportError:
-            # Fallback if nest_asyncio not available
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # Trong Jupyter hay async context
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as pool:
-                        future = pool.submit(asyncio.run, self.run_async(images))
-                        return future.result()
-                return loop.run_until_complete(self.run_async(images))
-            except RuntimeError:
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    future = pool.submit(asyncio.run, self.run_async(images))
-                    return future.result()
+
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(asyncio.run, self.run_async(images))
+            return future.result()
 
     def run_from_dir(self, folder: "str | Path") -> PipelineState:
         """Quét folder và chạy pipeline."""
@@ -478,6 +468,7 @@ class AsyncFloodPipeline:
             # [BUG FIX v2] Make learner class configurable instead of hardcoded
             learner_class_name = self.cfg.get("learner_class", "ActiveLearnerV2")
             from learning import active_learner
+            from learning.active_learner import ReviewCase
             learner_class = getattr(active_learner, learner_class_name)
             learner = learner_class()
             r = decision.result
