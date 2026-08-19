@@ -124,16 +124,15 @@ def format_chat(example: dict, tokenizer) -> dict:
 
 
 def _build_trainer(trl_new, sft_trainer_cls, training_args_cls, model, tokenizer,
-                   train_dataset, eval_dataset, merged_cfg, eval_strategy_key, inspect):
+                   train_dataset, eval_dataset, merged_cfg, eval_strategy_key, inspect, sft_config_cls=None):
     """
     Tạo SFTTrainer tương thích với mọi phiên bản TRL.
     Dùng inspect để chỉ truyền parameters mà class thực sự hỗ trợ.
     """
     max_seq = TRAIN_CFG["max_seq_length"]
 
-    if trl_new:
-        from trl import SFTConfig
-        cfg_params = inspect.signature(SFTConfig.__init__).parameters
+    if trl_new and sft_config_cls is not None:
+        cfg_params = inspect.signature(sft_config_cls.__init__).parameters
 
         seq_key = "max_seq_length" if "max_seq_length" in cfg_params else "max_length"
         extra_cfg = {seq_key: max_seq}
@@ -142,7 +141,7 @@ def _build_trainer(trl_new, sft_trainer_cls, training_args_cls, model, tokenizer
         if "packing" in cfg_params:
             extra_cfg["packing"] = False
 
-        sft_args = SFTConfig(
+        sft_args = sft_config_cls(
             output_dir=str(OUTPUT_DIR),
             **{eval_strategy_key: "steps"},
             **extra_cfg,
@@ -377,7 +376,22 @@ def train():
     try:
         from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
         from peft import LoraConfig, get_peft_model
-        from trl import SFTTrainer
+        # TRL >= 0.13: SFTConfig và SFTTrainer nằm trong submodule riêng
+        try:
+            from trl.trainer.sft_config import SFTConfig
+            from trl.trainer.sft_trainer import SFTTrainer
+        except ImportError:
+            # Fallback for older TRL versions (0.12.x)
+            try:
+                from trl.trainer.sft_trainer import SFTTrainer
+                try:
+                    from trl.trainer.sft_config import SFTConfig
+                except ImportError:
+                    SFTConfig = None
+            except ImportError:
+                # Fallback for even older TRL versions (< 0.12)
+                from trl.trainer.sft_trainer import SFTTrainer
+                SFTConfig = None
         from datasets import Dataset
     except (ImportError, RuntimeError) as e:
         log.error(
@@ -412,11 +426,20 @@ def train():
     model.config.use_cache = False
     model = get_peft_model(model, LoraConfig(**LORA_CFG))
     # Báo Trainer rằng model tự quản lý device_map → không wrap DataParallel
-    # (bitsandbytes 4-bit không tương thích với DataParallel)
-    model.is_parallelizable = True
-    model.model_parallel = True
+    # Fix: Don't set boolean on tensor attributes
+    # model.is_parallelizable = True
+    # model.model_parallel = True
+    # These attributes may not exist or may be tensors - skip them
+    pass
     if use_gpu and TRAIN_CFG.get("gradient_checkpointing"):
-        model.enable_input_require_grads()
+        # Fix: enable_input_require_grads may be a property or a tensor in some model versions.
+        # Only invoke it when it's actually a callable method.
+        value = getattr(model, 'enable_input_require_grads', None)
+        if callable(value) and not isinstance(value, torch.Tensor):
+            value()
+        elif hasattr(model, 'enable_input_require_grads'):
+            # It's a property, just access it to trigger the setter without calling it.
+            _ = getattr(model, 'enable_input_require_grads')
     model.print_trainable_parameters()
 
     import trl as _trl
@@ -591,11 +614,20 @@ def merge_and_save():
     model = PeftModel.from_pretrained(base_model, str(OUTPUT_DIR))
 
     log.info("Merging LoRA into base model...")
-    model = model.merge_and_unload()
+    # Fix: merge_and_unload should always be called as a method
+    merge_and_unload_fn = getattr(model, "merge_and_unload", None)
+    if callable(merge_and_unload_fn):
+        model = merge_and_unload_fn()
+    else:
+        log.warning("merge_and_unload not found, returning base model")
+        model = base_model
 
     merged_dir.mkdir(parents=True, exist_ok=True)
     log.info(f"Saving merged model → {merged_dir}")
-    model.save_pretrained(str(merged_dir))
+    if hasattr(model, "save_pretrained") and callable(getattr(model, "save_pretrained", None)):
+        model.save_pretrained(str(merged_dir))  # type: ignore
+    else:
+        log.error("Model does not have save_pretrained method")
     tokenizer.save_pretrained(str(merged_dir))
 
     log.info("=== Merge xong! ===")

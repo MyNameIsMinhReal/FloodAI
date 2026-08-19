@@ -53,9 +53,12 @@ import time
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 import numpy as np
+
+if TYPE_CHECKING:
+    import torch
 
 log = logging.getLogger("learning.hard_example_mining")
 
@@ -173,13 +176,15 @@ class BALDEstimator:
                     logits = outputs['logits']
                 else:
                     logits = outputs[0] if isinstance(outputs, tuple) else outputs
-                logits_list.append(logits.cpu().numpy())
+                logits_list.append(torch.as_tensor(logits).detach().cpu().numpy())
         
         # Stack: (T, B, C) where T=num_passes, B=batch, C=num_classes
         logits_stack = np.stack(logits_list, axis=0)  # (T, B, C)
         
-        # Softmax
-        probs = scipy.special.softmax(logits_stack, axis=-1)  # (T, B, C)
+        # Softmax (implemented locally to avoid optional scipy typing issues)
+        shifted_logits = logits_stack - np.max(logits_stack, axis=-1, keepdims=True)
+        exp_logits = np.exp(shifted_logits)
+        probs = exp_logits / np.sum(exp_logits, axis=-1, keepdims=True)  # (T, B, C)
         
         # BALD = H(E[p]) - E[H(p)]
         # Mean prob across passes: (B, C)
@@ -202,68 +207,16 @@ class BALDEstimator:
 
 # Fallback nếu không có scipy
 try:
-    import scipy.special
+    import scipy.special as scipy_special
 except ImportError:
     # Simple softmax implementation
     def softmax(x, axis=-1):
         x_max = np.max(x, axis=axis, keepdims=True)
         e_x = np.exp(x - x_max)
         return e_x / e_x.sum(axis=axis, keepdims=True)
-    scipy.special = type('scipy_special', (), {'softmax': softmax})()
+    # Bind a local fallback namespace when scipy is unavailable.
+    scipy_special = type('scipy_special', (), {'softmax': softmax})()
 
-
-# ── Hardness score (Enhanced with BALD) ───────────────────────────────────────
-
-@dataclass
-class HardnessScore:
-    """Điểm "độ khó" của một prediction."""
-    total: float = 0.0           # 0..100, cao = khó hơn = ưu tiên review
-
-    low_confidence: float = 0.0  # component: confidence thấp
-    rare_level:     float = 0.0  # component: level hiếm gặp
-    error_pattern:  float = 0.0  # component: khớp pattern lỗi đã biết
-    uncertainty:    float = 0.0  # component: model uncertainty (generic)
-    bald_score:     float = 0.0  # [IMPROVE] BALD score
-
-    @property
-    def is_hard(self) -> bool:
-        return self.total >= 30.0
-
-    @property
-    def priority(self) -> str:
-        if self.total >= 70: return "critical"
-        if self.total >= 50: return "high"
-        if self.total >= 30: return "medium"
-        return "low"
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-
-# ── Hard Example ───────────────────────────────────────────────────────────────
-
-@dataclass
-class HardExample:
-    """Một hard example trong queue."""
-    id:              Optional[int]
-    image_path:      str
-    predicted_level: str
-    predicted_depth: Optional[float]
-    confidence:      float
-    hardness_score:  float
-    priority:        str
-    features:        str    # JSON
-    status:          str    # pending | reviewed | confirmed_error | false_alarm
-    created_at:      str
-    actual_level:    Optional[str] = None
-    actual_depth:    Optional[float] = None
-    review_notes:    str = ""
-
-    def is_error(self) -> bool:
-        """True nếu confirmed là prediction sai."""
-        return (self.status == "confirmed_error" and
-                self.actual_level is not None and
-                self.actual_level != self.predicted_level)
 
 
 # ── [IMPROVE] Core-set Selector ────────────────────────────────────────────────
@@ -305,15 +258,17 @@ class CoreSetSelector:
         
         # Initialize centers
         if initial_idx is None:
-            initial_idx = np.random.randint(M)
-        selected = [initial_idx]
+            center_idx = int(np.random.randint(M))
+        else:
+            center_idx = initial_idx
+        selected: List[int] = [center_idx]
         
         # Precompute distances to first center
-        dists = np.linalg.norm(embeddings - embeddings[initial_idx], axis=1)
+        dists = np.linalg.norm(embeddings - embeddings[center_idx], axis=1)
         
         for _ in range(n_select - 1):
             # Chọn point xa nhất so với centers đã chọn
-            next_idx = np.argmax(dists)
+            next_idx = int(np.argmax(dists))
             selected.append(next_idx)
             
             # Update distances: min distance to any center
@@ -416,42 +371,6 @@ class HardExampleMiner:
 
         # [IMPROVE] Core-set selector
         self.core_set_selector = CoreSetSelector()
-
-    def _init_db(self) -> None:
-        with self._lock:
-            conn = sqlite3.connect(str(self.db_path), timeout=10)
-            conn.row_factory = sqlite3.Row
-            try:
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS hard_examples (
-                        id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                        image_path      TEXT NOT NULL,
-                        predicted_level TEXT,
-                        predicted_depth REAL,
-                        confidence      REAL,
-                        hardness_score  REAL,
-                        priority        TEXT,
-                        features        TEXT,
-                        status          TEXT DEFAULT 'pending',
-                        created_at      TEXT,
-                        actual_level    TEXT,
-                        actual_depth    REAL,
-                        review_notes    TEXT DEFAULT '',
-                        bald_score      REAL DEFAULT 0.0  -- [IMPROVE] BALD score
-                    )
-                """)
-                conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_status ON hard_examples(status)"
-                )
-                conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_score ON hard_examples(hardness_score)"
-                )
-                conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_bald ON hard_examples(bald_score)"
-                )
-                conn.commit()
-            finally:
-                conn.close()
 
     # ── Scoring (Enhanced with BALD) ────────────────────────────────────────
 
