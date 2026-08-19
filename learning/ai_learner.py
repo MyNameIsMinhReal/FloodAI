@@ -39,7 +39,7 @@ import sqlite3
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import numpy as np
 
@@ -134,9 +134,14 @@ def extract_dino_embedding(img_rgb: np.ndarray, model_name: str = "dinov2_vits14
         
         # Load model (cache globally)
         global _DINO_MODEL, _DINO_TRANSFORM, _DINO_DEVICE
-        if '_DINO_MODEL' not in globals() or _DINO_MODEL is None:
+        if globals().get('_DINO_MODEL') is None:
             _DINO_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-            _DINO_MODEL = torch.hub.load('facebookresearch/dinov2', model_name, pretrained=True).to(_DINO_DEVICE).eval()
+            # torch.hub.load is typed as returning object, but DINOv2 exposes
+            # the standard torch.nn.Module API at runtime.
+            dino_model = cast(Any, torch.hub.load(
+                'facebookresearch/dinov2', model_name, pretrained=True
+            ))
+            _DINO_MODEL = dino_model.to(_DINO_DEVICE).eval()
             _DINO_TRANSFORM = T.Compose([
                 T.Resize((224, 224)),
                 T.ToTensor(),
@@ -144,7 +149,9 @@ def extract_dino_embedding(img_rgb: np.ndarray, model_name: str = "dinov2_vits14
             ])
         
         pil_img = Image.fromarray(img_rgb).convert("RGB")
-        tensor = _DINO_TRANSFORM(pil_img).unsqueeze(0).to(_DINO_DEVICE)
+        # Some torchvision type stubs incorrectly infer the transform result
+        # as PIL.Image, although the composed transform returns a torch.Tensor.
+        tensor = cast(Any, _DINO_TRANSFORM)(pil_img).unsqueeze(0).to(_DINO_DEVICE)
         
         with torch.no_grad():
             embedding = _DINO_MODEL(tensor).cpu().numpy().squeeze()
