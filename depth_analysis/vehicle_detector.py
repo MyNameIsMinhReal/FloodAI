@@ -75,7 +75,7 @@ def _get_pil_font(size: int = 14):
 
 
 def _pil_put_text(img_bgr, text: str, pos, font_size: int,
-                  color_bgr: tuple, bg_color_bgr: tuple = None, padding: int = 3):
+                color_bgr: tuple, bg_color_bgr: tuple | None = None, padding: int = 3):
     """Vẽ text tiếng Việt lên ảnh OpenCV dùng PIL."""
     try:
         from PIL import Image, ImageDraw

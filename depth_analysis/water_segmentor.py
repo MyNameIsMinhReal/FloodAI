@@ -88,6 +88,114 @@ class WaterSegmentor:
         self._seg_processor  = None
         self._loaded_type    = None
 
+    def _get_model_order(self):
+        """Return the configured model priority order."""
+        if self.model_type == "auto":
+            return ["yolov8", "segformer", "deeplab"]
+        return [self.model_type]
+
+    def _run_model(self, model_name: str, img_rgb: np.ndarray) -> Optional[SegmentationResult]:
+        """Dispatch to the requested model runner."""
+        if model_name == "yolov8":
+            return self._run_yolov8_seg(img_rgb)  # type: ignore[attr-defined]
+        if model_name == "segformer":
+            return self._run_segformer(img_rgb)  # type: ignore[attr-defined]
+        if model_name == "deeplab":
+            return self._run_deeplab(img_rgb)
+        return None
+
+    def _run_deeplab(self, img_rgb: np.ndarray) -> Optional[SegmentationResult]:
+        """Run torchvision DeepLab and derive a water mask."""
+        import torch
+        import torchvision.transforms as T
+        from torchvision.models.segmentation import deeplabv3_resnet101
+
+        if self._seg_model is None or self._loaded_type != "deeplab":
+            log.info("  Loading DeepLabV3+ ResNet101 ...")
+            self._seg_model = deeplabv3_resnet101(
+                weights="DeepLabV3_ResNet101_Weights.DEFAULT"
+            )
+            self._seg_device = (
+                "cuda" if self.device == "auto" and torch.cuda.is_available()
+                else "cpu" if self.device == "auto" else self.device
+            )
+            self._seg_model = self._seg_model.to(self._seg_device).eval()
+            self._loaded_type = "deeplab"
+
+        h, w = img_rgb.shape[:2]
+        transform = T.Compose([
+            T.ToTensor(),
+            T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+        ])
+        inp = torch.as_tensor(transform(Image.fromarray(img_rgb))).unsqueeze(0).to(
+            self._seg_device
+        )
+        with torch.no_grad():
+            output = self._seg_model(inp)["out"]
+
+        seg = output.argmax(1).squeeze().cpu().numpy().astype(np.uint8)
+        seg = cv2.resize(seg, (w, h), interpolation=cv2.INTER_NEAREST)
+        water_mask = cv2.bitwise_and(
+            (seg == 0).astype(np.uint8) * 255,
+            self._quick_color_water(img_rgb),
+        )
+        limit = np.zeros((h, w), np.uint8)
+        limit[h * 2 // 5:, :] = 255
+        water_mask = cv2.bitwise_and(water_mask, limit)
+        kernel = np.ones((9, 9), np.uint8)
+        water_mask = cv2.morphologyEx(water_mask, cv2.MORPH_CLOSE, kernel)
+        water_mask = cv2.morphologyEx(water_mask, cv2.MORPH_OPEN, kernel)
+        water_pct = float((water_mask > 0).sum()) / (h * w)
+        return SegmentationResult(
+            water_mask=water_mask,
+            wet_surface_mask=np.zeros((h, w), np.uint8),
+            water_area_pct=round(water_pct * 100, 2),
+            water_line_y=self._find_water_line(water_mask, h),
+            model_used="deeplabv3+",
+            confidence=0.60,
+        )
+
+    def _quick_color_water(self, img_rgb: np.ndarray) -> np.ndarray:
+        """Create a fast HSV-based water-color mask for model refinement."""
+        img_bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
+        hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+        h, w = img_rgb.shape[:2]
+        profiles = (
+            ((90, 35, 35), (135, 255, 255)),
+            ((5, 45, 25), (22, 230, 195)),
+            ((0, 0, 50), (180, 40, 180)),
+            ((20, 50, 80), (38, 230, 240)),
+            ((14, 55, 40), (30, 245, 215)),
+            ((0, 0, 80), (180, 25, 210)),
+        )
+        combined = np.zeros((h, w), dtype=np.uint8)
+        for lower, upper in profiles:
+            combined = cv2.bitwise_or(
+                combined,
+                cv2.inRange(hsv, np.array(lower), np.array(upper)),
+            )
+
+        lower_region = np.zeros((h, w), dtype=np.uint8)
+        lower_region[h * 3 // 10:, :] = 255
+        combined = cv2.bitwise_and(combined, lower_region)
+        kernel = np.ones((7, 7), np.uint8)
+        combined = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, kernel)
+        return cv2.morphologyEx(combined, cv2.MORPH_OPEN, kernel)
+
+    def _color_based_fallback(self, img_rgb: np.ndarray) -> SegmentationResult:
+        """Create a segmentation result when no model is available."""
+        h, w = img_rgb.shape[:2]
+        water_mask = self._quick_color_water(img_rgb)
+        water_pct = float((water_mask > 0).sum()) / (h * w)
+        return SegmentationResult(
+            water_mask=water_mask,
+            wet_surface_mask=np.zeros((h, w), dtype=np.uint8),
+            water_area_pct=round(water_pct * 100, 2),
+            water_line_y=self._find_water_line(water_mask, h),
+            model_used="color_fallback",
+            confidence=0.40,
+        )
+
     # ══════════════════════════════════════════════════════════════════
     # PUBLIC API
     # ══════════════════════════════════════════════════════════════════
@@ -144,6 +252,16 @@ class WaterSegmentor:
             color_mask=color_mask,
             img_rgb=img_rgb,
         )
+
+    def _find_water_line(self, water_mask: np.ndarray, h: int) -> int:
+        """Return the first image row containing a substantial water region."""
+        if water_mask.sum() == 0:
+            return h
+        row_counts = (water_mask > 0).sum(axis=1)
+        valid_rows = np.where(row_counts > water_mask.shape[1] * 0.05)[0]
+        if len(valid_rows) == 0:
+            return h
+        return int(valid_rows[0])
 
 
 def fuse_water_masks(
@@ -217,20 +335,6 @@ def fuse_water_masks(
     # ══════════════════════════════════════════════════════════════════
     # MODEL RUNNERS
     # ══════════════════════════════════════════════════════════════════
-
-    def _get_model_order(self):
-        if self.model_type == "auto":
-            return ["yolov8", "segformer", "deeplab"]
-        return [self.model_type]
-
-    def _run_model(self, model_name: str, img_rgb: np.ndarray) -> Optional[SegmentationResult]:
-        if model_name == "yolov8":
-            return self._run_yolov8_seg(img_rgb)
-        elif model_name == "segformer":
-            return self._run_segformer(img_rgb)
-        elif model_name == "deeplab":
-            return self._run_deeplab(img_rgb)
-        return None
 
     def _run_yolov8_seg(self, img_rgb: np.ndarray) -> Optional[SegmentationResult]:
         """

@@ -169,10 +169,13 @@ class PersonSegmentor:
             from ultralytics import YOLO
             if self._det_model is None:
                 self._det_model = YOLO(self.yolo_model_path)
-            results = self._det_model(img_bgr, classes=[0], verbose=False)  # 0 = person
+            results: Any = self._det_model(img_bgr, classes=[0], verbose=False)  # 0 = person
             persons = []
-            for r in results:
-                for box in r.boxes:
+            for r in results or []:
+                boxes = getattr(r, "boxes", None)
+                if boxes is None:
+                    continue
+                for box in boxes:
                     bbox = box.xyxy[0].cpu().numpy().astype(int).tolist()
                     conf = float(box.conf)
                     persons.append((bbox, conf))
@@ -198,9 +201,10 @@ class PersonSegmentor:
                 return None
             results = self._pose_model(crop, verbose=False)
             for r in results:
-                if r.keypoints and len(r.keypoints) > 0:
-                    kps_xy  = r.keypoints.xy[0].cpu().numpy()   # (17, 2)
-                    kps_conf= r.keypoints.conf[0].cpu().numpy()  # (17,)
+                keypoints = getattr(r, "keypoints", None)
+                if keypoints is not None and len(keypoints) > 0:
+                    kps_xy  = keypoints.xy[0].cpu().numpy()   # (17, 2)
+                    kps_conf= keypoints.conf[0].cpu().numpy()  # (17,)
                     # Chuyển về tọa độ ảnh gốc
                     kps_xy[:, 0] += x1
                     kps_xy[:, 1] += y1

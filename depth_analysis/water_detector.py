@@ -7,7 +7,7 @@ MỚI: WaterColorProfile, turbidity_score, foam/oil/night detection
 """
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, Optional
 import cv2
 import numpy as np
 
@@ -195,7 +195,14 @@ class WaterDetector:
         water_scale_small = float(scales[0.5].sum() / 255) / (h * w)
         water_scale_large = float(scales[1.5].sum() / 255) / (h * w)
         # Neu large-scale water gap 2x small-scale → vung nuoc bi rach
-        scale_consistency = 1.0 - min(1.0, abs(water_scale_large - water_area_pct) / max(water_area_pct, 0.01))
+        # ``water_area_pct`` is assigned after refinement below. Use the current
+        # filtered mask for this pre-refinement consistency calculation.
+        current_water_area_pct = float(filtered.sum() / 255) / (h * w)
+        scale_consistency = 1.0 - min(
+            1.0,
+            abs(water_scale_large - current_water_area_pct)
+            / max(current_water_area_pct, 0.01),
+        )
 
         # [IMPROVE] Semantic segmentation refinement (optional, GPU-powered):
         # Su dung WaterSegmentor de refine mask → giam false positives cho
@@ -204,8 +211,10 @@ class WaterDetector:
         if self.use_segmentation:
             try:
                 from depth_analysis.water_segmentor import WaterSegmentor
-                _seg = WaterSegmentor.get_instance()
-                seg_result = _seg.segment(img_bgr, color_mask=filtered)
+                # WaterSegmentor does not expose a ``get_instance`` class
+                # method; create the segmentor through its public constructor.
+                _seg = WaterSegmentor()
+                seg_result = _seg.segment(img_bgr)
                 if seg_result is not None and seg_result.water_area_pct > 0.01:
                     # Chi giu seg_mask nam trong color_mask (intersection)
                     refined = cv2.bitwise_and(filtered, seg_result.water_mask)
@@ -214,7 +223,7 @@ class WaterDetector:
                         filtered = refined
                         seg_conf = seg_result.confidence
                         ch["segmentation"] = seg_conf
-                    log.debug(f"  Seg refinement: {water_area_pct:.1f}% → "
+                    log.debug(f"  Seg refinement: {current_water_area_pct:.1f}% → "
                               f"{float(refined.sum()/255)/(h*w):.1f}%")
             except Exception as e:
                 log.debug(f"  Seg skip: {e}")
@@ -283,7 +292,8 @@ class WaterDetector:
     # ── Detectors ─────────────────────────────────────────────────────────────
 
     def _detect_hsv(self, hsv, h, w):
-        result, scores = np.zeros((h, w), np.uint8), {}
+        result: np.ndarray = np.zeros((h, w), np.uint8)
+        scores: dict[str, float] = {}
         for key, prof in HSV_WATER_PROFILES.items():
             lo, hi = prof["hsv"]
             mask   = cv2.inRange(hsv, np.array(lo), np.array(hi))
@@ -293,7 +303,7 @@ class WaterDetector:
                 result = cv2.bitwise_or(result, mask)
         if not scores:
             return result, scores, {"type": "none", "name_vi": "Không có nước"}
-        dom_key  = max(scores, key=scores.get)
+        dom_key  = max(scores, key=lambda key: scores[key])
         dom_prof = HSV_WATER_PROFILES[dom_key]
         return result, scores, {"type": dom_key, "name_vi": dom_prof["name_vi"]}
 

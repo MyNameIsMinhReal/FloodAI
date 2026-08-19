@@ -31,7 +31,7 @@ Cách dùng:
 
 import logging
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, cast
 
 import cv2
 import numpy as np
@@ -335,8 +335,14 @@ class RaincoatDetector:
         """
         try:
             model, processor = self._load_clip()
-            if model is None:
+            if model is None or processor is None:
                 return -1.0
+
+            # _load_clip returns None when the optional dependency/model is
+            # unavailable; narrow the dynamically loaded Hugging Face objects
+            # for static type checkers before calling them.
+            model_obj = cast(Any, model)
+            processor_obj = cast(Any, processor)
 
             import torch
             from PIL import Image
@@ -344,7 +350,7 @@ class RaincoatDetector:
             pil_img = Image.fromarray(person_crop)
 
             all_prompts = CLIP_POSITIVE_PROMPTS + CLIP_NEGATIVE_PROMPTS
-            inputs = processor(
+            inputs = processor_obj(
                 text=all_prompts,
                 images=pil_img,
                 return_tensors="pt",
@@ -352,7 +358,7 @@ class RaincoatDetector:
             )
 
             with torch.no_grad():
-                outputs = model(**inputs)
+                outputs = model_obj(**inputs)
                 logits = outputs.logits_per_image  # (1, n_prompts)
                 probs = logits.softmax(dim=-1).squeeze().cpu().numpy()
 

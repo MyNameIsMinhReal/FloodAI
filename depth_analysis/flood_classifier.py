@@ -49,8 +49,8 @@ class FloodClassifier:
         min_water_area:  float = 0.04,
         device:          str   = "auto",
         resnet_path:     str   = "",            # path đến .pth, "" = tắt
-        resnet_labels:   list  = None,          # ["dry","flood","heavy_flood"]
-        ensemble_weights: dict = None,          # {"color":0.45,"dino":0.25,"resnet":0.20}
+        resnet_labels:   Optional[list] = None, # ["dry","flood","heavy_flood"]
+        ensemble_weights: Optional[dict] = None, # {"color":0.45,"dino":0.25,"resnet":0.20}
     ):
         self.dino_model       = dino_model
         self.flood_threshold  = flood_threshold

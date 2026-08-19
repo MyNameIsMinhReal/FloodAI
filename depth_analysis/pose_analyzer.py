@@ -27,7 +27,7 @@ Cai dat: pip install ultralytics
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, cast
 
 from utils.constants import DEFAULT_POSE_MODEL
 
@@ -130,6 +130,9 @@ class PoseAnalyzer:
         poses   = []
 
         for result in results:
+            # The YOLO type stubs may infer each item as a Tensor, while
+            # runtime inference returns a Results object.
+            result = cast(Any, result)
             if result.keypoints is None:
                 continue
             kpts_data = result.keypoints.data   # Tensor (N, 17, 3)

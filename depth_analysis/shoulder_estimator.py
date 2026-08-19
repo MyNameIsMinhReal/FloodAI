@@ -435,7 +435,7 @@ class ShoulderWidthEstimator:
 
         # ── Ensemble ─────────────────────────────────────────────────────
         if results:
-            final = self._ensemble(results, inflate_factor)
+            final = self._ensemble(results, inflate_factor, keypoints, bbox)
         else:
             final = ShoulderEstimateResult(
                 estimated_height_cm=DEFAULT_HEIGHT_CM,
@@ -889,6 +889,8 @@ class ShoulderWidthEstimator:
         self,
         results: List[Tuple[ShoulderEstimateResult, float]],
         inflate_factor: float = 1.0,
+        keypoints: Optional[np.ndarray] = None,
+        bbox: Optional[List[int]] = None,
     ) -> ShoulderEstimateResult:
         """
         Kết hợp các method bằng weighted average.
@@ -939,7 +941,7 @@ class ShoulderWidthEstimator:
         conf    = best_conf * max(0.70, 1.0 - spread / 60.0)
 
         # [IMPROVE] Child detection - sử dụng child-specific ratios
-        child_info = _detect_child(final_height, keypoints, bbox)
+        child_info = _detect_child(final_height, keypoints, bbox or [0, 0, 0, 0])
         if child_info["is_child"]:
             # Trẻ em: dùng shoulder-to-height ratio khác
             sh_ratio = CHILD_SHOULDER_TO_HEIGHT
@@ -949,7 +951,9 @@ class ShoulderWidthEstimator:
 
         # [IMPROVE] Gender classification for appropriate shoulder-to-height ratio
         # Sử dụng shoulder_cm từ best_r để classify gender
-        gender_info = _classify_gender_from_pose(keypoints, bbox, best_r.shoulder_width_cm)
+        gender_info = _classify_gender_from_pose(
+            keypoints, bbox or [0, 0, 0, 0], best_r.shoulder_width_cm
+        )
         
         # Chọn shoulder-to-height ratio phù hợp
         if gender_info["gender"] == "male":
@@ -960,7 +964,7 @@ class ShoulderWidthEstimator:
             sh_ratio = SHOULDER_TO_HEIGHT_RATIO_VN
         
         # Apply adaptive ratio based on shoulder size and torso ratio
-        adaptive_ratio = _get_height_ratio(shoulder_cm, gender_info["torso_ratio"])
+        adaptive_ratio = _get_height_ratio(best_r.shoulder_width_cm, gender_info["torso_ratio"])
         # Combine with gender-specific ratio
         final_ratio = (sh_ratio + adaptive_ratio) / 2.0
 

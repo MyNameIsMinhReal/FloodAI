@@ -87,7 +87,9 @@ class BuildingSegmentor:
             from ultralytics import YOLO
             if self._model is None:
                 self._model = YOLO(self.model_path)
-            results = self._model(img_bgr, verbose=False)
+            # Ultralytics' type stubs may infer the model output as a Tensor,
+            # although inference returns an iterable of Results objects.
+            results: Any = self._model(img_bgr, verbose=False)
             h, w = img_bgr.shape[:2]
             building_mask = np.zeros((h, w), dtype=np.uint8)
             wall_mask     = np.zeros((h, w), dtype=np.uint8)

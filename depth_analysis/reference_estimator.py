@@ -20,7 +20,6 @@ from collections import Counter
 from dataclasses import dataclass, field, asdict
 
 from utils.constants import FLOOD_LEVEL_KNEE, FLOOD_LEVEL_HIP, FLOOD_LEVEL_CHEST, FLOOD_LEVEL_COMPLETE
-from utils.constants import classify_level
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict
 import cv2
@@ -302,7 +301,7 @@ class ReferenceEstimator:
         self,
         yolo_model:    str   = DEFAULT_YOLO_MODEL,
         depth_model:   str   = DEFAULT_DEPTH_MODEL,
-        output_dir:    Path  = None,
+        output_dir:    Optional[Path] = None,
         device:        str   = "auto",
         conf_thresh:   float = 0.35,
         use_dino:      bool  = True,
@@ -362,7 +361,15 @@ class ReferenceEstimator:
             dev = "cuda" if (self.device == "auto" and torch.cuda.is_available()) else "cpu"
             mid = "nvidia/segformer-b0-finetuned-ade-512-512"
             self._seg_proc  = SegformerImageProcessor.from_pretrained(mid)
-            self._seg_model = SegformerForSemanticSegmentation.from_pretrained(mid).to(dev)
+            self._seg_model = SegformerForSemanticSegmentation.from_pretrained(mid)
+            # Keep the dynamically loaded Transformers model opaque to static
+            # type checkers; some versions expose an incomplete ``to`` stub.
+            seg_model = self._seg_model
+            if seg_model is None:
+                raise RuntimeError("SegFormer model failed to load")
+            # Resolve dynamically so type checkers do not bind the incomplete
+            # Transformers stub to the wrong callable signature.
+            getattr(seg_model, "to")(torch.device(dev))
             self._seg_model.eval(); self._seg_dev = dev
         except Exception as e:
             log.debug(f"  SegFormer skip: {e}")
@@ -462,17 +469,20 @@ class ReferenceEstimator:
         # 7. Depth map
         try:
             self._load_depth()
+            depth_pipe = self._depth_pipe
+            if depth_pipe is None:
+                raise RuntimeError("Depth pipeline failed to load")
             # [FIX] Resize ảnh lớn trước khi đưa vào depth model để tránh RAM spike.
             # Model depth chạy ổn ở 1024px — kết quả sẽ được resize lại về (w,h) sau.
             _MAX_DEPTH_SIDE = 1024
             if max(h, w) > _MAX_DEPTH_SIDE:
                 _scale = _MAX_DEPTH_SIDE / max(h, w)
                 pil_for_depth = pil_img.resize(
-                    (int(w * _scale), int(h * _scale)), Image.LANCZOS
+                    (int(w * _scale), int(h * _scale)), Image.Resampling.LANCZOS
                 )
             else:
                 pil_for_depth = pil_img
-            d_out      = self._depth_pipe(pil_for_depth)
+            d_out      = depth_pipe(pil_for_depth)
             del pil_for_depth  # [FIX] giải phóng ngay sau khi model chạy xong
             depth_np   = np.array(d_out["depth"], dtype=np.float32)
             del d_out          # [FIX] giải phóng output của model
@@ -1112,9 +1122,31 @@ class ReferenceEstimator:
     def _detect_objects(self, img_rgb, h, w):
         dets = []
         try:
-            for res in self._yolo(img_rgb, conf=self.conf_thresh, verbose=False):
-                for box in res.boxes:
-                    name = res.names[int(box.cls[0])]
+            yolo = self._yolo
+            if yolo is None:
+                log.debug("  YOLO unavailable; skipping object detection")
+                return dets
+            results = yolo(img_rgb, conf=self.conf_thresh, verbose=False)
+            # Some YOLO wrappers/type stubs may return None or raw tensors
+            # instead of Ultralytics Results objects.  Ignore those safely.
+            if results is None:
+                return dets
+            for res in results:
+                boxes = getattr(res, "boxes", None)
+                if boxes is None:
+                    continue
+                for box in boxes:
+                    # Results may be tensor-like objects without a ``names``
+                    # attribute; class names are also available on the model.
+                    names = getattr(res, "names", None)
+                    if names is None:
+                        names = getattr(yolo, "names", None)
+                    if names is None:
+                        names = getattr(getattr(yolo, "model", None), "names", None)
+                    if names is None:
+                        continue
+                    class_id = int(box.cls[0])
+                    name = names.get(class_id) if isinstance(names, dict) else names[class_id]
                     if name not in REF_HEIGHTS: continue
                     conf = float(box.conf[0])
                     x1,y1,x2,y2 = [int(v) for v in box.xyxy[0].tolist()]
@@ -1228,13 +1260,15 @@ class ReferenceEstimator:
     def _run_segformer(self, img_rgb, h, w):
         if not self.use_segformer: return h, 0.0, 0.0
         self._load_segformer()
-        if not self._seg_model: return h, 0.0, 0.0
+        seg_model = self._seg_model
+        seg_proc = self._seg_proc
+        if seg_model is None or seg_proc is None: return h, 0.0, 0.0
         try:
             import torch
-            inp = self._seg_proc(images=Image.fromarray(img_rgb), return_tensors="pt")
+            inp = seg_proc(images=Image.fromarray(img_rgb), return_tensors="pt")
             inp = {k: v.to(self._seg_dev) for k,v in inp.items()}
             with torch.no_grad():
-                logits = self._seg_model(**inp).logits
+                logits = seg_model(**inp).logits
             seg = torch.nn.functional.interpolate(
                 logits, size=(h,w), mode="bilinear", align_corners=False
             ).argmax(1).squeeze(0).cpu().numpy()
@@ -1634,7 +1668,7 @@ class ReferenceEstimator:
             # Tranh truong hop bbox bao gom ca xe may ben duoi
             # → bh bi phong đai → water_cm tinh sai cao
             effective_y2 = y2
-            if obj_class == "person":
+            if obj_class == "person" and img_rgb is not None:
                 est_foot_y, foot_conf = self._estimate_person_foot_y(
                     det, dets, img_rgb, h, w)
                 if foot_conf > 0.30 and est_foot_y < y2:
@@ -1922,6 +1956,9 @@ class ReferenceEstimator:
 
                 # Use median person estimate for multi-person robustness
                 person_median = float(np.median([o.water_height_cm for o in persons]))
+                # Default keeps the estimate defined when no vehicle adjustment
+                # is applied (for example, with three or more persons).
+                yolo_cm = person_median
 
                 if len(persons) >= 3:
                     # ── [IMPROVE] MAD-based outlier detection ────────────

@@ -168,8 +168,16 @@ class DoorDetector:
             results = self._model(img_bgr, verbose=False)
             doors = []
             for r in results:
-                for i, box in enumerate(r.boxes):
-                    cls_name = r.names.get(int(box.cls), "door").lower()
+                # Ultralytics is imported dynamically, so type checkers may infer
+                # each result as a Tensor instead of a Results instance.
+                boxes: Any = getattr(r, "boxes", None)
+                if boxes is None:
+                    continue
+                for box in boxes:
+                    # Ultralytics is imported dynamically; keep the result
+                    # metadata opaque to static type checkers.
+                    names: Any = getattr(r, "names", {})
+                    cls_name = names.get(int(box.cls), "door").lower()
                     if cls_name not in DOOR_CLASSES:
                         continue
                     bbox = box.xyxy[0].cpu().numpy().astype(int).tolist()
