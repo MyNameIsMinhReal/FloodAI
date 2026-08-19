@@ -607,6 +607,167 @@ class ErrorTracker:
 
         return sorted(patterns, key=lambda x: -x["frequency"])
 
+    # [IMPROVE] Causal Error Analysis & Feature Correlation
+    def get_causal_analysis(self, days: int = 30) -> Dict:
+        """
+        Phân tích nhân quả: tìm feature nào GÂY RA lỗi (không chỉ tương quan).
+        
+        Dùng:
+        - Conditional probability P(error | feature) vs P(error)
+        - Stratified analysis: error rate theo từng feature bucket
+        """
+        since = datetime.now() - timedelta(days=days)
+        
+        cursor = self.conn.execute("""
+            SELECT features, error_type, predicted_depth, actual_depth, predicted_level, actual_level
+            FROM errors
+            WHERE timestamp > ?
+        """, (since.isoformat(),))
+        
+        rows = cursor.fetchall()
+        if len(rows) < 20:
+            return {"error": "insufficient_data", "n": len(rows)}
+        
+        features_list = []
+        error_types = []
+        depth_errors = []
+        level_errors = []
+        
+        for r in rows:
+            try:
+                feat = json.loads(r["features"] or "{}")
+                features_list.append(feat)
+                error_types.append(r["error_type"])
+                if r["predicted_depth"] is not None and r["actual_depth"] is not None:
+                    depth_errors.append(abs(r["predicted_depth"] - r["actual_depth"]))
+                else:
+                    depth_errors.append(None)
+                if r["predicted_level"] is not None and r["actual_level"] is not None:
+                    level_errors.append(r["predicted_level"] != r["actual_level"])
+                else:
+                    level_errors.append(None)
+            except Exception:
+                continue
+        
+        all_keys = set()
+        for f in features_list:
+            all_keys.update(f.keys())
+        
+        causal_results = {}
+        base_error_rate = len([e for e in error_types if e]) / max(len(error_types), 1)
+        
+        for key in all_keys:
+            vals = [f.get(key) for f in features_list if f.get(key) is not None]
+            if not vals:
+                continue
+            
+            try:
+                numeric_vals = [float(v) for v in vals if isinstance(v, (int, float))]
+                if len(numeric_vals) < 10:
+                    continue
+                
+                q25, q50, q75 = np.percentile(numeric_vals, [25, 50, 75])
+                bins = []
+                for v in vals:
+                    fv = float(v)
+                    if fv <= q25: bins.append("Q1")
+                    elif fv <= q50: bins.append("Q2")
+                    elif fv <= q75: bins.append("Q3")
+                    else: bins.append("Q4")
+            except:
+                bins = [str(v) for v in vals]
+            
+            bin_errors = {}
+            bin_counts = {}
+            for b, err_type, d_err, l_err in zip(bins, error_types, depth_errors, level_errors):
+                if b not in bin_counts:
+                    bin_counts[b] = 0
+                    bin_errors[b] = {"count": 0, "depth_mae": [], "level_wrong": 0}
+                bin_counts[b] += 1
+                if err_type:
+                    bin_errors[b]["count"] += 1
+                if d_err is not None:
+                    bin_errors[b]["depth_mae"].append(d_err)
+                if l_err is not None and l_err:
+                    bin_errors[b]["level_wrong"] += 1
+            
+            causal_score = 0.0
+            for b in bin_counts:
+                if bin_counts[b] < 3:
+                    continue
+                err_rate = bin_errors[b]["count"] / bin_counts[b]
+                if err_rate > base_error_rate * 2.0:
+                    causal_score += (err_rate - base_error_rate) * (bin_counts[b] / len(features_list))
+            
+            if causal_score > 0.05:
+                causal_results[key] = {
+                    "causal_score": round(causal_score, 4),
+                    "base_error_rate": round(base_error_rate, 4),
+                    "bins": {
+                        b: {
+                            "count": bin_counts[b],
+                            "error_rate": round(bin_errors[b]["count"] / bin_counts[b], 4),
+                            "depth_mae": round(np.mean(bin_errors[b]["depth_mae"]), 2) if bin_errors[b]["depth_mae"] else None,
+                            "level_error_rate": round(bin_errors[b]["level_wrong"] / bin_counts[b], 4) if bin_counts[b] > 0 else None,
+                        }
+                        for b in bin_counts
+                    }
+                }
+        
+        return {
+            "n_samples": len(features_list),
+            "base_error_rate": round(base_error_rate, 4),
+            "causal_features": causal_results,
+        }
+
+    def get_feature_correlation_matrix(self, days: int = 30) -> Dict:
+        """Tính ma trận tương quan giữa các features và lỗi."""
+        since = datetime.now() - timedelta(days=days)
+        cursor = self.conn.execute("""
+            SELECT features FROM errors WHERE timestamp > ?
+        """, (since.isoformat(),))
+        
+        features_list = []
+        for r in cursor.fetchall():
+            try:
+                features_list.append(json.loads(r["features"] or "{}"))
+            except:
+                continue
+        
+        if len(features_list) < 10:
+            return {"error": "insufficient_data"}
+        
+        numeric_features = {}
+        for f in features_list:
+            for k, v in f.items():
+                if isinstance(v, (int, float)) and not isinstance(v, bool):
+                    if k not in numeric_features:
+                        numeric_features[k] = []
+                    numeric_features[k].append(v)
+        
+        valid_features = {k: v for k, v in numeric_features.items() if len(v) >= 10}
+        if len(valid_features) < 2:
+            return {"error": "not_enough_numeric_features"}
+        
+        feature_names = list(valid_features.keys())
+        n = len(feature_names)
+        matrix = np.zeros((n, n))
+        
+        for i, f1 in enumerate(feature_names):
+            for j, f2 in enumerate(feature_names):
+                if i <= j:
+                    min_len = min(len(valid_features[f1]), len(valid_features[f2]))
+                    v1 = np.array(valid_features[f1][:min_len])
+                    v2 = np.array(valid_features[f2][:min_len])
+                    if np.std(v1) > 0 and np.std(v2) > 0:
+                        corr = np.corrcoef(v1, v2)[0, 1]
+                        matrix[i, j] = matrix[j, i] = round(corr, 3)
+        
+        return {
+            "features": feature_names,
+            "correlation_matrix": matrix.tolist(),
+        }
+
     def close(self):
         self.conn.close()
 

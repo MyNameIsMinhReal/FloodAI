@@ -36,6 +36,8 @@ class AdaptiveThresholdsV2:
     """
     Tự động học và điều chỉnh thresholds.
     Backward-compatible với file JSON v1/v2.
+    
+    [IMPROVE] Integrated Bayesian Thompson Sampling optimizer for smarter threshold tuning.
     """
 
     def __init__(self, config_path: str = "learning/adaptive_thresholds.json"):
@@ -51,11 +53,16 @@ class AdaptiveThresholdsV2:
         }
         self._meta: Dict = {
             "last_updated":   datetime.now().isoformat(),
-            "version":        "3.0",
+            "version":        "3.1",
             "adjustment_log": [],
             "last_adjusted":  {},
             "accuracy_trend": [],
         }
+        
+        # [IMPROVE] Bayesian Thompson Sampling optimizer
+        self._bayes_opt = BayesianThresholdOptimizer(n_bins=15)
+        self._bayes_opt.initialize(list(self.thresholds.keys()))
+        
         self._load()
 
     # ── Persistence ───────────────────────────────────────────────────────────
@@ -187,19 +194,29 @@ class AdaptiveThresholdsV2:
             if rel_change < 0.005:
                 continue
 
-            self.thresholds[key] = new_val
+            # [IMPROVE] Bayesian Thompson Sampling: so sánh EMA vs Bayesian suggestion
+            bayes_val = self._bayes_opt.get_best(key)
+            # Combine: 70% EMA+delta, 30% Bayesian
+            final_val = self._clamp(key, 0.7 * new_val + 0.3 * bayes_val)
+            
+            # Update Bayesian posterior with observed reward
+            # Reward = negative error rate improvement
+            error_rate_improvement = (1.0 - error_rate)  # reward higher when error rate low
+            self._bayes_opt.update(key, final_val, error_rate_improvement)
+
+            self.thresholds[key] = final_val
             self._meta["last_adjusted"][key] = datetime.now().isoformat()
             reason = (
                 f"auto (delta={delta:+.3f}, EMA={ema:.2f}, "
-                f"{total_errors} errors/{total_processed} processed, "
+                f"bayes={bayes_val:.3f}, {total_errors} errors/{total_processed} processed, "
                 f"avg_loss={avg_composite_loss:.3f})"
             )
-            self._log_adjustment(key, old_val, new_val, reason)
+            self._log_adjustment(key, old_val, final_val, reason)
             adjusted.append(
-                f"{key}: {old_val:.3f} → {new_val:.3f} "
-                f"(delta={delta:+.3f}, loss={avg_composite_loss:.3f})"
+                f"{key}: {old_val:.3f} → {final_val:.3f} "
+                f"(delta={delta:+.3f}, bayes={bayes_val:.3f}, loss={avg_composite_loss:.3f})"
             )
-            log.info(f"[AdaptiveThresholds v3] Adjusted {key}: {old_val:.3f} → {new_val:.3f}")
+            log.info(f"[AdaptiveThresholds v3.1] Adjusted {key}: {old_val:.3f} → {final_val:.3f}")
 
         if adjusted:
             self._save()
@@ -313,15 +330,85 @@ class AdaptiveThresholdsV2:
         self._meta["adjustment_log"] = self._meta["adjustment_log"][-500:]
 
 
-if __name__ == "__main__":
-    t = AdaptiveThresholdsV2()
-    print("=== Thresholds ===")
-    for k, v in t.get_all().items():
-        lo, hi = THRESHOLD_BOUNDS.get(k, (0, 1))
-        print(f"  {k}: {v:.3f}  [{lo}–{hi}]")
-    print("\n=== Trend ===")
-    trend = t.get_trend()
-    print(f"  Direction: {trend['direction']} | Error rate: {trend['current_error_rate']:.1%}")
-    print("\n=== History (5 gần nhất) ===")
-    for adj in t.get_adjustment_history(last_n=5):
-        print(f"  [{adj['timestamp'][:10]}] {adj['key']}: {adj['old']} → {adj['new']}")
+import json
+import logging
+import random
+import math
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+from datetime import datetime, timedelta
+
+log = logging.getLogger(__name__)
+
+
+# [IMPROVE] Bayesian Optimization for Threshold Tuning
+class BayesianThresholdOptimizer:
+    """
+    Bayesian Optimization (Thompson Sampling) cho auto-tuning thresholds.
+    
+    Mỗi threshold là một "arm" trong multi-armed bandit.
+    State: Beta(alpha, beta) distribution per threshold value bin.
+    Reward: negative error rate after applying threshold.
+    """
+    
+    def __init__(self, n_bins: int = 10):
+        self.n_bins = n_bins
+        # Per threshold: n_bins * (alpha, beta) pairs
+        self.posterior = {}  # {threshold_name: [(alpha, beta), ...] for each bin}
+        self.bounds = THRESHOLD_BOUNDS
+        
+    def initialize(self, threshold_names: List[str]):
+        """Khởi tạo prior Beta(1, 1) uniform cho mỗi bin."""
+        for name in threshold_names:
+            lo, hi = self.bounds.get(name, (0.0, 1.0))
+            self.posterior[name] = [(1.0, 1.0) for _ in range(self.n_bins)]
+    
+    def sample(self, name: str) -> float:
+        """Thompson sampling: sample từ posterior, chọn bin tốt nhất."""
+        if name not in self.posterior:
+            lo, hi = self.bounds.get(name, (0.0, 1.0))
+            return (lo + hi) / 2
+        
+        lo, hi = self.bounds.get(name, (0.0, 1.0))
+        best_bin = 0
+        best_sample = -1
+        for i, (alpha, beta) in enumerate(self.posterior[name]):
+            sample = random.betavariate(alpha, beta)
+            if sample > best_sample:
+                best_sample = sample
+                best_bin = i
+        # Map bin → value
+        return lo + (best_bin + 0.5) * (hi - lo) / self.n_bins
+    
+    def update(self, name: str, value: float, reward: float):
+        """Cập nhật posterior với reward (negative error rate)."""
+        if name not in self.posterior:
+            self.initialize([name])
+        
+        lo, hi = self.bounds.get(name, (0.0, 1.0))
+        bin_idx = min(int((value - lo) / (hi - lo) * self.n_bins), self.n_bins - 1)
+        bin_idx = max(0, bin_idx)
+        
+        alpha, beta = self.posterior[name][bin_idx]
+        # Reward ∈ [-1, 1] → shift to [0, 1] for Bernoulli likelihood
+        # reward = 1 - error_rate (đã là positive)
+        p = max(0.0, min(1.0, (reward + 1.0) / 2.0))
+        
+        # Bayesian update: Beta(alpha + p, beta + 1 - p)
+        self.posterior[name][bin_idx] = (alpha + p, beta + (1.0 - p))
+    
+    def get_best(self, name: str) -> float:
+        """Trả về giá trị threshold với posterior mean cao nhất."""
+        if name not in self.posterior:
+            lo, hi = self.bounds.get(name, (0.0, 1.0))
+            return (lo + hi) / 2
+        
+        lo, hi = self.bounds.get(name, (0.0, 1.0))
+        best_bin = 0
+        best_mean = -1
+        for i, (alpha, beta) in enumerate(self.posterior[name]):
+            mean = alpha / (alpha + beta)
+            if mean > best_mean:
+                best_mean = mean
+                best_bin = i
+        return lo + (best_bin + 0.5) * (hi - lo) / self.n_bins

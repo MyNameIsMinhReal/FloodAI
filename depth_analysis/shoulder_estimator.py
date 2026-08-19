@@ -41,9 +41,27 @@ SHOULDER_TO_HEIGHT_RATIO   = 0.240   # trung bình
 SHOULDER_TO_HEIGHT_RATIO_M = 0.245   # nam
 SHOULDER_TO_HEIGHT_RATIO_F = 0.232   # nữ
 
+# [IMPROVE] Vietnamese-specific anthropometric constants
+# Nguồn: "Phân tích nhân trắc học người Việt Nam" (Đỗ Xuân Hợp, 2001) + các khảo sát mới hơn
+# Người VN thường có torso ngắn hơn, chân dài hơn so với người phương Tây
+SHOULDER_TO_HEIGHT_RATIO_VN       = 0.235   # trung bình VN
+SHOULDER_TO_HEIGHT_RATIO_VN_M     = 0.240   # nam VN
+SHOULDER_TO_HEIGHT_RATIO_VN_F     = 0.228   # nữ VN
+
+# Dempster ratios cho người VN (torso ngắn hơn, chân dài hơn)
+SEG_HEAD_NECK_VN   = 0.135   # đầu + cổ (hơi lớn hơn)
+SEG_TRUNK_VN       = 0.285   # thân (vai → hông) - ngắn hơn
+SEG_UPPER_LEG_VN   = 0.250   # đùi
+SEG_LOWER_LEG_VN   = 0.251   # cẳng chân
+SEG_HEAD_TO_HIP_VN = SEG_HEAD_NECK_VN + SEG_TRUNK_VN  # = 0.420
+
+# Tỷ lệ đầu: khoảng cách tai-tai / chiều cao
+HEAD_WIDTH_TO_HEIGHT_RATIO_VN = 0.148  # VN hơi nhỏ hơn
+EYE_WIDTH_TO_HEIGHT_RATIO_VN  = 0.064
+
 # Chiều cao mặc định nếu không ước tính được
-DEFAULT_HEIGHT_CM  = 170.0
-DEFAULT_HEIGHT_MIN = 140.0
+DEFAULT_HEIGHT_CM  = 165.0  # [IMPROVE] Trung bình VN ~165cm (nam 168, nữ 158)
+DEFAULT_HEIGHT_MIN = 120.0  # [IMPROVE] Cho phép trẻ em thấp hơn
 DEFAULT_HEIGHT_MAX = 200.0
 
 # Ngưỡng confidence keypoint YOLO-Pose
@@ -82,6 +100,18 @@ MIN_BBOX_HEIGHT_FOR_SHOULDER = 60
 MIN_BBOX_WIDTH_FOR_SHOULDER  = 30
 
 POSE_FACTOR_ADJUST_WEIGHT = 0.06
+
+# [IMPROVE] Raincoat / loose clothing detection constants
+RAINCOAT_SATURATION_THRESH   = 130   # áo mưa thường saturation cao (màu đồng nhất)
+RAINCOAT_BRIGHTNESS_MIN      = 80    # không quá tối
+RAINCOAT_HUE_RANGE           = (80, 140)  # xanh/cam - màu áo mưa phổ biến
+RAINCOAT_TEXTURE_MAX         = 12    # áo mưa có texture thấp (vai đồng nhất)
+RAINCOAT_SHOULDER_INFLATE    = 1.25  # áo mưa làm vai to ra ~25%
+LOOSE_CLOTHING_SHOULDER_INFLATE = 1.15  # áo rộng thường
+
+# [IMPROVE] Child detection
+CHILD_HEIGHT_THRESHOLD_CM    = 140.0  # dưới này coi là trẻ em
+CHILD_SHOULDER_TO_HEIGHT     = 0.210  # trẻ em vai/chiều cao thấp hơn
 
 
 @dataclass
@@ -133,6 +163,193 @@ def _get_height_ratio(shoulder_cm: float, torso_ratio: float = 1.0) -> float:
     return max(0.210, min(0.270, base))
 
 
+# [IMPROVE] Raincoat / loose clothing detection
+def _detect_raincoat_on_person(img_rgb: np.ndarray, bbox: List[int], kpts: Optional[np.ndarray]) -> dict:
+    """
+    Phát hiện áo mưa / quần áo rộng trên người để điều chỉnh shoulder width.
+    Returns: dict với keys: is_raincoat, is_loose, inflate_factor, confidence
+    """
+    x1, y1, x2, y2 = bbox
+    # Crop vùng người (mở rộng nhẹ để lấy áo)
+    pad = max(10, int((y2 - y1) * 0.05))
+    crop_x1 = max(0, x1 - pad)
+    crop_y1 = max(0, y1 - pad)
+    crop_x2 = min(img_rgb.shape[1], x2 + pad)
+    crop_y2 = min(img_rgb.shape[0], y2 + pad)
+    
+    person_crop = img_rgb[crop_y1:crop_y2, crop_x1:crop_x2]
+    if person_crop.size == 0:
+        return {"is_raincoat": False, "is_loose": False, "inflate_factor": 1.0, "confidence": 0.0}
+    
+    hsv = cv2.cvtColor(person_crop, cv2.COLOR_RGB2HSV)
+    gray = cv2.cvtColor(person_crop, cv2.COLOR_RGB2GRAY)
+    
+    # 1. Saturation analysis - áo mưa thường có màu đồng nhất, saturation cao
+    sat_mean = float(hsv[:, :, 1].mean())
+    sat_std  = float(hsv[:, :, 1].std())
+    
+    # 2. Texture analysis - áo mưa texture thấp (vai đồng nhất)
+    lap = cv2.Laplacian(gray, cv2.CV_64F)
+    texture_score = float(np.abs(lap).mean())
+    
+    # 3. Color analysis - áo mưa thường xanh/cam/đỏ đồng nhất
+    hue_mean = float(hsv[:, :, 0].mean())
+    val_mean = float(hsv[:, :, 2].mean())
+    
+    # 4. Brightness consistency - áo mưa sáng đồng đều
+    val_std = float(hsv[:, :, 2].std())
+    
+    is_raincoat = (
+        sat_mean > RAINCOAT_SATURATION_THRESH and
+        texture_score < RAINCOAT_TEXTURE_MAX and
+        RAINCOAT_HUE_RANGE[0] <= hue_mean <= RAINCOAT_HUE_RANGE[1] and
+        val_mean > RAINCOAT_BRIGHTNESS_MIN and
+        val_std < 35  # màu đồng đều
+    )
+    
+    # Loose clothing: texture thấp nhưng không đủ điều kiện áo mưa
+    is_loose = (
+        not is_raincoat and
+        texture_score < 18 and
+        sat_std < 25 and
+        val_std < 40
+    )
+    
+    inflate_factor = 1.0
+    if is_raincoat:
+        inflate_factor = RAINCOAT_SHOULDER_INFLATE
+    elif is_loose:
+        inflate_factor = LOOSE_CLOTHING_SHOULDER_INFLATE
+    
+    confidence = 0.0
+    if is_raincoat:
+        confidence = min(0.9, (sat_mean - 130) / 50 * 0.5 + (15 - texture_score) / 15 * 0.5)
+    elif is_loose:
+        confidence = min(0.7, (20 - texture_score) / 20 * 0.5 + (30 - sat_std) / 30 * 0.5)
+    
+    return {
+        "is_raincoat": is_raincoat,
+        "is_loose": is_loose,
+        "inflate_factor": inflate_factor,
+        "confidence": float(confidence),
+        "sat_mean": sat_mean,
+        "texture_score": texture_score,
+    }
+
+
+# [IMPROVE] Gender classification from pose/shoulder ratio
+def _classify_gender_from_pose(kpts: Optional[np.ndarray], bbox: List[int], shoulder_cm: float) -> dict:
+    """
+    Phân loại giới tính từ pose và tỉ lệ vai/hông.
+    Nam: vai rộng, hông hẹp → torso_ratio > 1.05
+    Nữ: vai hẹp, hông rộng → torso_ratio < 1.0
+    Returns: {"gender": "male"|"female"|"unknown", "confidence": float}
+    """
+    if kpts is None:
+        return {"gender": "unknown", "confidence": 0.0, "torso_ratio": 1.0}
+    
+    # Tính tỉ lệ vai/hông từ keypoints
+    ls_x, ls_y, ls_c = _kpt(kpts, KP_LEFT_SHLD)
+    rs_x, rs_y, rs_c = _kpt(kpts, KP_RIGHT_SHLD)
+    lh_x, lh_y, lh_c = _kpt(kpts, KP_LEFT_HIP)
+    rh_x, rh_y, rh_c = _kpt(kpts, KP_RIGHT_HIP)
+    
+    shoulder_conf = (ls_c + rs_c) / 2 if (ls_c > KP_CONF_THRESH and rs_c > KP_CONF_THRESH) else max(ls_c, rs_c)
+    hip_conf = (lh_c + rh_c) / 2 if (lh_c > KP_CONF_THRESH and rh_c > KP_CONF_THRESH) else max(lh_c, rh_c)
+    
+    if shoulder_conf < KP_CONF_THRESH or hip_conf < KP_CONF_THRESH:
+        # Fallback: dùng shoulder_cm nếu có
+        if shoulder_cm > 42:
+            return {"gender": "male", "confidence": 0.55, "torso_ratio": 1.0}
+        elif shoulder_cm < 36:
+            return {"gender": "female", "confidence": 0.55, "torso_ratio": 1.0}
+        return {"gender": "unknown", "confidence": 0.0, "torso_ratio": 1.0}
+    
+    shoulder_w = abs(rs_x - ls_x)
+    hip_w = abs(rh_x - lh_x)
+    
+    if hip_w < 5:
+        return {"gender": "unknown", "confidence": 0.0, "torso_ratio": 1.0}
+    
+    torso_ratio = shoulder_w / hip_w
+    
+    # Nam: vai rộng hơn hông (torso_ratio > 1.05)
+    # Nữ: hông rộng hơn vai (torso_ratio < 1.0)
+    if torso_ratio > 1.08:
+        gender = "male"
+        conf = min(0.85, (torso_ratio - 1.0) * 2.0)
+    elif torso_ratio < 0.98:
+        gender = "female"
+        conf = min(0.85, (1.0 - torso_ratio) * 2.5)
+    else:
+        gender = "unknown"
+        conf = 0.3
+    
+    return {"gender": gender, "confidence": float(conf), "torso_ratio": float(torso_ratio)}
+
+
+# [IMPROVE] Child detection - trẻ em có tỷ lệ cơ thể khác người lớn
+def _detect_child(estimated_height_cm: float, kpts: Optional[np.ndarray], bbox: List[int]) -> dict:
+    """
+    Phát hiện trẻ em dựa trên chiều cao ước tính và tỉ lệ đầu/cơ thể.
+    Trẻ em: đầu to hơn theo tỷ lệ, chân ngắn hơn, vai hẹp hơn.
+    Returns: {"is_child": bool, "confidence": float, "age_group": "infant|child|adolescent|adult"}
+    """
+    if estimated_height_cm >= CHILD_HEIGHT_THRESHOLD_CM:
+        return {"is_child": False, "confidence": 0.9, "age_group": "adult"}
+    
+    # Dưới 140cm → có thể là trẻ em hoặc người lớn thấp
+    is_child = True
+    confidence = 0.7
+    age_group = "child"
+    
+    if kpts is not None:
+        # Kiểm tra tỉ lệ đầu/chân
+        head_y = None
+        for idx in [KP_NOSE, KP_LEFT_EYE, KP_RIGHT_EYE]:
+            _, y, c = _kpt(kpts, idx)
+            if c >= KP_CONF_THRESH:
+                if head_y is None or y < head_y:
+                    head_y = y
+        
+        ankle_y = None
+        for idx in [KP_LEFT_ANKLE, KP_RIGHT_ANKLE]:
+            _, y, c = _kpt(kpts, idx)
+            if c >= KP_CONF_THRESH:
+                if ankle_y is None or y > ankle_y:
+                    ankle_y = y
+        
+        if head_y is not None and ankle_y is not None:
+            body_px = ankle_y - head_y
+            # Ước tính kích thước đầu từ tai-tai hoặc mắt-mắt
+            le_x, _, le_c = _kpt(kpts, KP_LEFT_EAR)
+            re_x, _, re_c = _kpt(kpts, KP_RIGHT_EAR)
+            if le_c >= KP_CONF_THRESH and re_c >= KP_CONF_THRESH:
+                head_w = abs(re_x - le_x)
+                if body_px > 0:
+                    head_body_ratio = head_w / body_px
+                    # Trẻ em: head/body ratio > 0.18 (người lớn ~0.14)
+                    if head_body_ratio > 0.18:
+                        confidence = min(0.95, confidence + 0.2)
+                        if estimated_height_cm < 100:
+                            age_group = "infant"
+                        elif estimated_height_cm < 130:
+                            age_group = "child"
+                        else:
+                            age_group = "adolescent"
+    
+    if estimated_height_cm < 90:
+        age_group = "infant"
+        confidence = max(confidence, 0.85)
+    elif estimated_height_cm < 120:
+        age_group = "child"
+        confidence = max(confidence, 0.8)
+    elif estimated_height_cm < 140:
+        age_group = "adolescent"
+    
+    return {"is_child": is_child, "confidence": float(confidence), "age_group": age_group}
+
+
 class ShoulderWidthEstimator:
     """
     Ước tính chiều cao người qua vai — v2 với ensemble nhiều method.
@@ -150,16 +367,35 @@ class ShoulderWidthEstimator:
         """
         Ước tính chiều cao người. Thử các method theo thứ tự ưu tiên,
         kết hợp ensemble khi có nhiều method đều cho kết quả.
+        [IMPROVE] Phát hiện áo mưa/quần áo rộng để điều chỉnh shoulder width.
         """
         x1, y1, x2, y2 = bbox
         bh = max(y2 - y1, 1)
         bw = max(x2 - x1, 1)
 
-        # px_per_cm baseline từ bbox (assume 170cm = full height)
+        # [IMPROVE] Raincoat / loose clothing detection
+        raincoat_info = _detect_raincoat_on_person(img_rgb, bbox, keypoints)
+        inflate_factor = raincoat_info["inflate_factor"]
+
+        # [IMPROVE] Gender classification for appropriate shoulder-to-height ratio
+        gender_info = {"gender": "unknown", "confidence": 0.0, "torso_ratio": 1.0}
+        # Sẽ gọi sau khi có shoulder_cm estimate (trong ensemble)
+
+        # [IMPROVE] Vanishing point detection cho perspective-aware depth scale
+        vp_result = None
+        if depth_norm is not None:
+            try:
+                from depth_analysis.perspective_analyzer import PerspectiveAnalyzer
+                pa = PerspectiveAnalyzer()
+                vp_result = pa.detect_vanishing_point(img_rgb)
+            except Exception:
+                pass
+
+        # px_per_cm baseline từ bbox (assume DEFAULT_HEIGHT_CM = full height)
         px_per_cm_base = bh / DEFAULT_HEIGHT_CM
 
-        # Perspective scale từ depth_norm
-        depth_scale = self._depth_scale(depth_norm, bbox) if depth_norm is not None else 1.0
+        # Perspective scale từ depth_norm + vanishing point
+        depth_scale = self._depth_scale(depth_norm, bbox, vp_result) if depth_norm is not None else 1.0
         px_per_cm   = px_per_cm_base * depth_scale
 
         results: List[Tuple[ShoulderEstimateResult, float]] = []  # (result, weight)
@@ -199,7 +435,7 @@ class ShoulderWidthEstimator:
 
         # ── Ensemble ─────────────────────────────────────────────────────
         if results:
-            final = self._ensemble(results)
+            final = self._ensemble(results, inflate_factor)
         else:
             final = ShoulderEstimateResult(
                 estimated_height_cm=DEFAULT_HEIGHT_CM,
@@ -210,6 +446,11 @@ class ShoulderWidthEstimator:
 
         # Pose factor adjustment
         final = self._adjust_for_pose(final, pose_factor)
+        
+        # [IMPROVE] Lưu raincoat info vào notes
+        if raincoat_info["is_raincoat"] or raincoat_info["is_loose"]:
+            final.notes += f" | raincoat={raincoat_info['is_raincoat']} loose={raincoat_info['is_loose']} inflate={inflate_factor:.2f}"
+        
         return final
 
     # ── Method 1: Head-to-Ankle ──────────────────────────────────────────
@@ -647,13 +888,29 @@ class ShoulderWidthEstimator:
     def _ensemble(
         self,
         results: List[Tuple[ShoulderEstimateResult, float]],
+        inflate_factor: float = 1.0,
     ) -> ShoulderEstimateResult:
         """
         Kết hợp các method bằng weighted average.
         Weight = method_weight * confidence.
+        [IMPROVE] Apply inflate_factor correction for raincoat/loose clothing.
         """
         if len(results) == 1:
-            return results[0][0]
+            r = results[0][0]
+            # Apply inflate_factor correction
+            if inflate_factor != 1.0:
+                corrected_shoulder_cm = r.shoulder_width_cm / inflate_factor
+                corrected_height_cm = corrected_shoulder_cm / SHOULDER_TO_HEIGHT_RATIO
+                return ShoulderEstimateResult(
+                    estimated_height_cm = round(_clamp_height(corrected_height_cm), 1),
+                    shoulder_width_px   = round(r.shoulder_width_px / inflate_factor, 1),
+                    shoulder_width_cm   = round(corrected_shoulder_cm, 1),
+                    px_per_cm           = r.px_per_cm,
+                    method              = r.method + "_raincoat_corrected",
+                    confidence          = r.confidence,
+                    notes               = r.notes + f" inflate_corrected={inflate_factor:.2f}",
+                )
+            return r
 
         total_w  = 0.0
         height_sum = 0.0
@@ -681,32 +938,58 @@ class ShoulderWidthEstimator:
         spread  = max(heights) - min(heights)
         conf    = best_conf * max(0.70, 1.0 - spread / 60.0)
 
-        # Recompute shoulder từ final height
-        shoulder_cm = final_height * SHOULDER_TO_HEIGHT_RATIO
+        # [IMPROVE] Child detection - sử dụng child-specific ratios
+        child_info = _detect_child(final_height, keypoints, bbox)
+        if child_info["is_child"]:
+            # Trẻ em: dùng shoulder-to-height ratio khác
+            sh_ratio = CHILD_SHOULDER_TO_HEIGHT
+            final_height = _clamp_height(final_height)  # keep height
+            conf = max(0.1, conf - 0.15)  # giảm confidence chút do uncertainty
+            log.debug(f"  Child detected: age_group={child_info['age_group']} height={final_height:.0f}cm")
 
-        log.debug(
-            f"  ShoulderEst [ensemble {'+'.join(methods)}]: "
-            f"heights={[f'{h:.0f}' for h in heights]} → {final_height:.0f}cm "
-            f"spread={spread:.0f}cm conf={conf:.2f}"
-        )
+        # [IMPROVE] Gender classification for appropriate shoulder-to-height ratio
+        # Sử dụng shoulder_cm từ best_r để classify gender
+        gender_info = _classify_gender_from_pose(keypoints, bbox, best_r.shoulder_width_cm)
+        
+        # Chọn shoulder-to-height ratio phù hợp
+        if gender_info["gender"] == "male":
+            sh_ratio = SHOULDER_TO_HEIGHT_RATIO_VN_M
+        elif gender_info["gender"] == "female":
+            sh_ratio = SHOULDER_TO_HEIGHT_RATIO_VN_F
+        else:
+            sh_ratio = SHOULDER_TO_HEIGHT_RATIO_VN
+        
+        # Apply adaptive ratio based on shoulder size and torso ratio
+        adaptive_ratio = _get_height_ratio(shoulder_cm, gender_info["torso_ratio"])
+        # Combine with gender-specific ratio
+        final_ratio = (sh_ratio + adaptive_ratio) / 2.0
+
+        # Recompute shoulder từ final height
+        shoulder_cm = final_height * final_ratio
+
+        # [IMPROVE] Apply inflate_factor correction to shoulder
+        if inflate_factor != 1.0:
+            shoulder_cm = shoulder_cm / inflate_factor
 
         return ShoulderEstimateResult(
             estimated_height_cm = round(final_height, 1),
-            shoulder_width_px   = round(best_r.shoulder_width_px, 1),
+            shoulder_width_px   = round(best_r.shoulder_width_px / inflate_factor, 1),
             shoulder_width_cm   = round(shoulder_cm, 1),
-            px_per_cm           = round(best_r.px_per_cm, 4),
-            method              = f"ensemble({'+'.join(methods)})",
-            confidence          = round(min(0.95, conf), 3),
-            kp_left             = best_r.kp_left,
-            kp_right            = best_r.kp_right,
-            notes               = f"spread={spread:.0f}cm n={len(results)}",
+            px_per_cm           = best_r.px_per_cm,
+            method              = "ensemble_" + "+".join(methods),
+            confidence          = round(conf, 3),
+            notes               = f"methods={'+'.join(methods)} inflate={inflate_factor:.2f}",
         )
 
     # ── Depth scale ───────────────────────────────────────────────────────
-    def _depth_scale(self, depth_norm: np.ndarray, bbox: List[int]) -> float:
+    def _depth_scale(self, depth_norm: np.ndarray, bbox: List[int], vp_result: Optional[dict] = None) -> float:
         """
         Ước tính scale correction từ depth map.
         Người ở xa (depth cao) → px/cm thấp → cần scale lên.
+        
+        [IMPROVE] Perspective-aware scaling:
+        - Dùng vanishing point nếu có để tính scale chính xác hơn
+        - Scale = f(depth, distance_from_vp) thay vì chỉ depth đơn thuần
         """
         try:
             x1, y1, x2, y2 = bbox
@@ -723,9 +1006,26 @@ class ShoulderWidthEstimator:
             ]
             depth_val = float(np.median(d_patch)) if d_patch.size > 0 else 0.5
 
-            # Correction: người xa (depth=1) → scale down 0.7; gần (depth=0) → 1.3
-            # Linear interpolation
-            scale = 1.3 - 0.6 * depth_val
+            # [IMPROVE] Perspective-aware scaling:
+            # Nếu có vanishing point → tính scale dựa trên vị trí tương đối đến VP
+            if vp_result is not None and vp_result.get("vp_confidence", 0) > 0.3:
+                vp_y = vp_result.get("vp_y", h / 3)
+                scale_rate = vp_result.get("scale_rate", 1.0)
+                
+                # Scale theo ground plane: scale tăng từ VP xuống dưới
+                if vp_y < cy:
+                    rel_pos = (cy - vp_y) / max(h - vp_y, 1)
+                    perspective_scale = 1.0 + scale_rate * rel_pos
+                    # Kết hợp depth scale + perspective scale
+                    depth_scale = 1.3 - 0.6 * depth_val
+                    scale = (depth_scale + perspective_scale) / 2.0
+                else:
+                    # VP ở trên người → người rất gần
+                    scale = 1.3 - 0.6 * depth_val
+            else:
+                # Fallback: linear depth scale
+                scale = 1.3 - 0.6 * depth_val
+            
             return max(0.5, min(2.0, scale))
         except Exception:
             return 1.0

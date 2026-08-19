@@ -80,21 +80,14 @@ def extract_feature_vector(
     predicted_depth: float,
     predicted_level: str,
     confidence: float,
+    dino_embedding: Optional[np.ndarray] = None,  # [IMPROVE] DINOv2 semantic embedding
 ) -> np.ndarray:
     """
     Chuyển features dict + prediction → numpy vector chuẩn hóa.
 
-    Vector gồm 10 chiều:
-      [0] brightness_norm       (0–1)
-      [1] blur_norm             (0–1, log scale)
-      [2] aspect_ratio_norm     (0–1)
-      [3] is_night              (0/1)
-      [4] num_objects_norm      (0–1)
-      [5] num_people_norm       (0–1)
-      [6] has_pose              (0/1)
-      [7] predicted_depth_norm  (0–1, max 500cm)
-      [8] predicted_level_norm  (0–1)
-      [9] confidence            (0–1)
+    Vector gốc 10 chiều + DINOv2 embedding (384/768 dim):
+      [0-9]   Hand-crafted features (brightness, blur, aspect, night, objects, people, pose, depth, level, confidence)
+      [10...] DINOv2 embedding (semantic understanding of scene)
     """
     brightness   = float(features.get("brightness",   128.0))
     blur_score   = float(features.get("blur_score",   100.0))
@@ -106,7 +99,7 @@ def extract_feature_vector(
 
     lvl_idx = LEVEL_IDX.get(str(predicted_level).upper(), 0)
 
-    return np.array([
+    handcrafted = np.array([
         min(brightness / 255.0, 1.0),
         min(math.log1p(blur_score) / math.log1p(2000), 1.0),
         min(aspect_ratio / 3.0, 1.0),
@@ -119,6 +112,48 @@ def extract_feature_vector(
         min(float(confidence), 1.0),
     ], dtype=np.float32)
 
+    # [IMPROVE] Append DINOv2 embedding for semantic understanding
+    if dino_embedding is not None:
+        # Normalize embedding to unit length
+        dino_norm = dino_embedding / (np.linalg.norm(dino_embedding) + 1e-6)
+        return np.concatenate([handcrafted, dino_norm.astype(np.float32)])
+    
+    return handcrafted
+
+
+# [IMPROVE] DINOv2 embedding extraction helper
+def extract_dino_embedding(img_rgb: np.ndarray, model_name: str = "dinov2_vits14") -> Optional[np.ndarray]:
+    """
+    Trích xuất DINOv2 embedding từ ảnh.
+    Returns: (384,) vector cho dinov2_vits14 hoặc (768,) cho dinov2_vitb14
+    """
+    try:
+        import torch
+        import torchvision.transforms as T
+        from PIL import Image
+        
+        # Load model (cache globally)
+        global _DINO_MODEL, _DINO_TRANSFORM, _DINO_DEVICE
+        if '_DINO_MODEL' not in globals() or _DINO_MODEL is None:
+            _DINO_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+            _DINO_MODEL = torch.hub.load('facebookresearch/dinov2', model_name, pretrained=True).to(_DINO_DEVICE).eval()
+            _DINO_TRANSFORM = T.Compose([
+                T.Resize((224, 224)),
+                T.ToTensor(),
+                T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ])
+        
+        pil_img = Image.fromarray(img_rgb).convert("RGB")
+        tensor = _DINO_TRANSFORM(pil_img).unsqueeze(0).to(_DINO_DEVICE)
+        
+        with torch.no_grad():
+            embedding = _DINO_MODEL(tensor).cpu().numpy().squeeze()
+        
+        return embedding
+    except Exception as e:
+        log.debug(f"DINOv2 embedding failed: {e}")
+        return None
+
 
 # ── kNN Correction Engine ─────────────────────────────────────────────────────
 
@@ -128,20 +163,35 @@ class KNNCorrectionEngine:
 
     Mỗi training point = (feature_vector, depth_correction, level_correction)
     Khi inference: tìm K neighbors gần nhất → weighted average correction.
+    
+    [IMPROVE] Hỗ trợ variable-dim features (handcrafted + DINOv2).
+    Dùng cosine similarity cho DINO part, Euclidean cho handcrafted.
     """
 
-    def __init__(self):
-        self.X:      np.ndarray = np.empty((0, 10), dtype=np.float32)
-        self.d_corr: np.ndarray = np.empty(0, dtype=np.float32)   # depth correction (cm)
-        self.l_corr: np.ndarray = np.empty(0, dtype=np.int8)      # level correction (steps)
+    def __init__(self, handcrafted_dim: int = 10, dino_dim: int = 384):
+        self.handcrafted_dim = handcrafted_dim
+        self.dino_dim = dino_dim
+        self.total_dim = handcrafted_dim + dino_dim
+        
+        # Separate storage for efficient similarity computation
+        self.X_hc: np.ndarray = np.empty((0, handcrafted_dim), dtype=np.float32)  # handcrafted
+        self.X_dino: np.ndarray = np.empty((0, dino_dim), dtype=np.float32)       # DINO embeddings
+        self.d_corr: np.ndarray = np.empty(0, dtype=np.float32)
+        self.l_corr: np.ndarray = np.empty(0, dtype=np.int8)
         self.trained_at: Optional[str] = None
         self.n_cases: int = 0
+        
+        # [IMPROVE] Approximate NN index (simple ball tree for dino embeddings)
+        self._dino_tree = None
 
-    def fit(self, cases: List[dict]) -> int:
-        """Train từ danh sách reviewed cases."""
-        rows_X, rows_d, rows_l = [], [], []
+    def fit(self, cases: List[dict], images_rgb: Optional[List[np.ndarray]] = None) -> int:
+        """Train từ danh sách reviewed cases.
+        
+        [IMPROVE] images_rgb: optional list of RGB images để extract DINOv2 embeddings
+        """
+        rows_hc, rows_dino, rows_d, rows_l = [], [], [], []
 
-        for c in cases:
+        for i, c in enumerate(cases):
             try:
                 features = json.loads(c.get("features") or "{}")
                 pred_dep = float(c.get("predicted_depth") or 0)
@@ -150,27 +200,52 @@ class KNNCorrectionEngine:
                 act_dep  = float(c.get("actual_depth")   or 0)
                 act_lv   = str(c.get("actual_level")     or "NO_FLOOD")
 
-                vec  = extract_feature_vector(features, pred_dep, pred_lv, conf)
+                # Extract DINOv2 embedding if images provided
+                dino_emb = None
+                if images_rgb is not None and i < len(images_rgb):
+                    dino_emb = extract_dino_embedding(images_rgb[i])
+                
+                vec = extract_feature_vector(features, pred_dep, pred_lv, conf, dino_emb)
                 d_c  = act_dep - pred_dep
                 l_c  = LEVEL_IDX.get(act_lv.upper(), 0) - LEVEL_IDX.get(pred_lv.upper(), 0)
 
-                rows_X.append(vec)
+                # Split into handcrafted + DINO
+                hc = vec[:self.handcrafted_dim]
+                dino = vec[self.handcrafted_dim:] if len(vec) > self.handcrafted_dim else np.zeros(self.dino_dim, dtype=np.float32)
+                
+                rows_hc.append(hc)
+                rows_dino.append(dino)
                 rows_d.append(d_c)
                 rows_l.append(l_c)
             except Exception as e:
                 log.debug(f"[kNN] Skip case: {e}")
                 continue
 
-        if not rows_X:
+        if not rows_hc:
             return 0
 
-        self.X      = np.array(rows_X, dtype=np.float32)
-        self.d_corr = np.array(rows_d, dtype=np.float32)
-        self.l_corr = np.array(rows_l, dtype=np.int8)
+        self.X_hc     = np.array(rows_hc, dtype=np.float32)
+        self.X_dino   = np.array(rows_dino, dtype=np.float32)
+        self.d_corr   = np.array(rows_d, dtype=np.float32)
+        self.l_corr   = np.array(rows_l, dtype=np.int8)
         self.trained_at = datetime.now().isoformat()
-        self.n_cases    = len(rows_X)
-        log.info(f"[kNN] Trained on {self.n_cases} reviewed cases")
+        self.n_cases    = len(rows_hc)
+        
+        # [IMPROVE] Build simple ball tree for DINO embeddings (approximate NN)
+        if self.n_cases > 20:
+            self._build_dino_index()
+            
+        log.info(f"[kNN] Trained on {self.n_cases} reviewed cases (dim={self.total_dim})")
         return self.n_cases
+
+    def _build_dino_index(self):
+        """Build simple KD-tree for DINO embeddings (approximate NN)."""
+        try:
+            from sklearn.neighbors import KDTree
+            self._dino_tree = KDTree(self.X_dino, leaf_size=10)
+        except ImportError:
+            # Fallback: linear scan
+            self._dino_tree = None
 
     def predict_correction(
         self,
@@ -179,12 +254,57 @@ class KNNCorrectionEngine:
     ) -> Tuple[float, int, float, int]:
         """
         Trả về (depth_correction, level_correction, avg_similarity, n_used).
+        
+        [IMPROVE] Hybrid similarity: handcrafted (Euclidean) + DINOv2 (cosine)
         """
         if self.n_cases < MIN_TRAINING_CASES:
             return 0.0, 0, 0.0, 0
 
-        # Cosine similarity (đã chuẩn hóa 0–1 nên dùng L2 distance cũng ok)
-        diffs = self.X - vec[np.newaxis, :]          # (N, 10)
+        # Split query vector
+        hc_q = vec[:self.handcrafted_dim]
+        dino_q = vec[self.handcrafted_dim:] if len(vec) > self.handcrafted_dim else np.zeros(self.dino_dim, dtype=np.float32)
+        
+        # [IMPROVE] Hybrid similarity
+        # Handcrafted: L2 distance
+        diffs_hc = self.X_hc - hc_q[np.newaxis, :]
+        dists_hc = np.linalg.norm(diffs_hc, axis=1)
+        
+        # DINOv2: Cosine similarity
+        if self._dino_tree is not None and len(dino_q) > 0:
+            # Query KD-tree for top-K DINO neighbors
+            dino_dists, dino_idx = self._dino_tree.query(dino_q.reshape(1, -1), k=min(k * 3, self.n_cases))
+            dino_dists = dino_dists.flatten()
+            dino_idx = dino_idx.flatten()
+            # Convert L2 to cosine-ish (assuming normalized)
+            dino_sim = 1.0 / (1.0 + dino_dists)
+            # Combine: use DINO indices as candidates, re-rank with combined score
+            candidate_idx = dino_idx
+        else:
+            candidate_idx = np.arange(self.n_cases)
+            # Compute DINO cosine for all (fallback)
+            dino_norm_q = dino_q / (np.linalg.norm(dino_q) + 1e-6)
+            dino_norm_db = self.X_dino / (np.linalg.norm(self.X_dino, axis=1, keepdims=True) + 1e-6)
+            dino_sim = dino_norm_db @ dino_norm_q
+
+        # Combined score: 0.6 * handcrafted_inv + 0.4 * dino_sim
+        hc_inv = 1.0 / (1.0 + dists_hc[candidate_idx])
+        dino_s = dino_sim if self._dino_tree is not None else dino_sim[candidate_idx]
+        
+        combined_scores = 0.6 * hc_inv + 0.4 * dino_s
+        
+        # Top-K by combined score
+        top_k_local = np.argsort(combined_scores)[-k:][::-1]
+        top_k = candidate_idx[top_k_local]
+        
+        # Weighted average correction
+        weights = combined_scores[top_k_local]
+        weights = weights / (weights.sum() + 1e-6)
+        
+        d_corr = float(np.sum(self.d_corr[top_k] * weights))
+        l_corr = int(round(np.sum(self.l_corr[top_k] * weights)))
+        avg_sim = float(weights.max())  # best similarity
+        
+        return d_corr, l_corr, avg_sim, len(top_k)
         dists = np.sqrt((diffs ** 2).sum(axis=1))    # (N,)
 
         # Chuyển distance → similarity (Gaussian kernel)

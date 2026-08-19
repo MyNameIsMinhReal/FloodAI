@@ -1459,6 +1459,126 @@ class AgentMemory:
             self.response_patterns.clear()
         self._save_to_disk()
 
+    # [IMPROVE] Memory Consolidation & Compression
+    def consolidate(self, max_chat: int = 50, max_corrections: int = 100,
+                    max_actions: int = 100, max_images: int = 50) -> Dict:
+        """
+        Nén bộ nhớ: cắt bớt lịch sử cũ, nén pattern ít dùng.
+        
+        Returns: dict thống kê sau khi consolidate.
+        """
+        with self._lock:
+            original_sizes = {
+                "chat_history": len(self.chat_history),
+                "correction_log": len(self.correction_log),
+                "action_history": len(self.action_history),
+                "image_history": len(self.image_history),
+                "response_patterns": len(self.response_patterns),
+            }
+            
+            # Cắt chat history: chỉ giữ N tin nhắn gần nhất
+            if len(self.chat_history) > max_chat:
+                self.chat_history = self.chat_history[-max_chat:]
+            
+            # Cắt correction log: giữ N corrections gần nhất
+            if len(self.correction_log) > max_corrections:
+                self.correction_log = self.correction_log[-max_corrections:]
+            
+            # Cắt action history
+            if len(self.action_history) > max_actions:
+                self.action_history = self.action_history[-max_actions:]
+            
+            # Cắt image history
+            if len(self.image_history) > max_images:
+                self.image_history = self.image_history[-max_images:]
+            
+            # Nén response patterns: xóa pattern ít dùng (< 2 lần) và cũ (> 60 ngày)
+            cutoff = datetime.now() - timedelta(days=60)
+            patterns_to_keep = {}
+            for k, v in self.response_patterns.items():
+                times_used = v.get("times_used", 0)
+                saved_at = v.get("saved_at", "")
+                try:
+                    saved_dt = datetime.fromisoformat(saved_at)
+                except:
+                    saved_dt = datetime.now()
+                
+                if times_used >= 2 or saved_dt > cutoff:
+                    patterns_to_keep[k] = v
+            
+            self.response_patterns = patterns_to_keep
+            
+            new_sizes = {
+                "chat_history": len(self.chat_history),
+                "correction_log": len(self.correction_log),
+                "action_history": len(self.action_history),
+                "image_history": len(self.image_history),
+                "response_patterns": len(self.response_patterns),
+            }
+            
+            self._save_to_disk()
+            
+            return {
+                "consolidated": True,
+                "before": original_sizes,
+                "after": new_sizes,
+                "freed": {k: original_sizes[k] - new_sizes[k] for k in original_sizes},
+            }
+
+    def compress_long_term(self) -> Dict:
+        """
+        Nén strong: aggregate correction_log thành bias summary + keep only recent.
+        Dùng khi disk space thấp hoặc memory footprint quá lớn.
+        """
+        with self._lock:
+            # Compute bias summary từ correction_log
+            bias_summary = self.get_calibration_bias()
+            
+            # Keep only last 20 corrections + bias summary
+            recent_corrections = self.correction_log[-20:] if len(self.correction_log) > 20 else list(self.correction_log)
+            self.correction_log = recent_corrections
+            
+            # Store bias summary as a special entry
+            self.correction_log.insert(0, {
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "type": "bias_summary",
+                "depth_bias_cm": bias_summary.get("depth_bias_cm", 0.0),
+                "by_level": bias_summary.get("by_level", {}),
+                "n_samples_total": bias_summary.get("n_samples", 0),
+            })
+            
+            # Aggressive image history pruning
+            if len(self.image_history) > 20:
+                self.image_history = self.image_history[-20:]
+            
+            self._save_to_disk()
+            
+            return {
+                "compressed": True,
+                "bias_summary": bias_summary,
+                "corrections_kept": len(self.correction_log),
+                "images_kept": len(self.image_history),
+            }
+
+    def get_memory_usage(self) -> Dict:
+        """Trả về kích thước bộ nhớ hiện tại (ước lượng bytes)."""
+        with self._lock:
+            import sys
+            sizes = {
+                "chat_history": sys.getsizeof(json.dumps(self.chat_history, ensure_ascii=False)),
+                "correction_log": sys.getsizeof(json.dumps(self.correction_log, ensure_ascii=False)),
+                "action_history": sys.getsizeof(json.dumps(self.action_history, ensure_ascii=False)),
+                "image_history": sys.getsizeof(json.dumps(self.image_history, ensure_ascii=False)),
+                "response_patterns": sys.getsizeof(json.dumps(self.response_patterns, ensure_ascii=False)),
+                "chat_messages": len(self.chat_history),
+                "corrections": len(self.correction_log),
+                "actions": len(self.action_history),
+                "images": len(self.image_history),
+                "patterns": len(self.response_patterns),
+            }
+            sizes["total_bytes"] = sum(s for k, s in sizes.items() if isinstance(s, int) and k not in ["chat_messages", "corrections", "actions", "images", "patterns"])
+            return sizes
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PIPELINE TOOLS  (enhanced: calibration tool + simulation)

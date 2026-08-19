@@ -1,0 +1,14 @@
+prompt = (
+            f"Bạn vừa phân tích lũ xong (action: {action_type}).\n"
+            f"{result_text}{context_text}\n\n"
+            "Hãy viết phản hồi tự nhiên bằng tiếng Việt cho người dùng. "
+            "Không cần dùng định dạng INTENT/DEPTH_HINT, chỉ viết response thôi."
+        )
+
+        messages = [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user",   "content": prompt},
+        ]
+        try:
+            raw = self._infer(messages)
+            # Nếu model vẫn xuất header → chỉ l�

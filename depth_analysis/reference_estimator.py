@@ -1946,6 +1946,25 @@ class ReferenceEstimator:
                     if len(inliers) < len(persons):
                         log.debug(f"  MAD outlier: {len(persons)-len(inliers)} removed "
                                   f"(bound={outlier_bound:.1f}cm, mad={mad:.1f}cm)")
+
+                # [IMPROVE] Multi-person height consensus:
+                # Cross-validate estimated heights của multiple people.
+                # Nếu nhiều người trong cùng ảnh → height estimates nên consistent.
+                if len(persons) >= 3:
+                    est_heights = [o.estimated_height_cm for o in persons if o.estimated_height_cm > 0]
+                    if len(est_heights) >= 3:
+                        height_median = float(np.median(est_heights))
+                        height_mad = float(np.median(np.abs(np.array(est_heights) - height_median)))
+                        height_mad = max(height_mad, 2.0)
+                        # Nếu spread quá lớn (> 15cm) → có thể có lỗi đo
+                        if height_mad > 7.5:
+                            log.warning(f"  Height consensus: large spread MAD={height_mad:.1f}cm "
+                                        f"among {len(persons)} persons → check measurements")
+                            # Flag outliers
+                            for p in persons:
+                                if p.estimated_height_cm > 0 and abs(p.estimated_height_cm - height_median) > height_mad * 3:
+                                    log.warning(f"    Person height outlier: {p.estimated_height_cm:.0f}cm "
+                                                f"(median={height_median:.0f}cm)")
                 else:
                     if vehicles:
                         v_confs = sum(o.confidence * max(o.local_wl_conf, 0.15) for o in vehicles)

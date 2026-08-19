@@ -291,55 +291,87 @@ class LLMEnhancer:
             )
         if not self.model_path:
             raise ValueError("Cần chỉ định model_path cho backend transformers")
-
+        
         use_gpu = self._device == "cuda" and torch.cuda.is_available()
         if use_gpu:
             self._gpu_id = _best_gpu_index()
             device_map = {"": self._gpu_id}
-            # Dùng QLoRA 4-bit để tiết kiệm VRAM lúc inference (~16GB thay vì 65GB)
-            try:
-                from transformers import BitsAndBytesConfig
-                bnb_config = BitsAndBytesConfig(
-                    load_in_4bit=True,
-                    bnb_4bit_quant_type="nf4",
-                    bnb_4bit_compute_dtype=torch.bfloat16,
-                    bnb_4bit_use_double_quant=True,
+            
+            # [IMPROVE] Configurable quantization bits (4-bit or 8-bit)
+            if self._use_quantization and self._quantization_bits in (4, 8):
+                try:
+                    from transformers import BitsAndBytesConfig
+                    if self._quantization_bits == 4:
+                        bnb_config = BitsAndBytesConfig(
+                            load_in_4bit=True,
+                            bnb_4bit_quant_type="nf4",
+                            bnb_4bit_compute_dtype=torch.bfloat16,
+                            bnb_4bit_use_double_quant=True,
+                        )
+                        log.info(f"[LLM] Loading transformers model: {self.model_path} (4-bit QLoRA, cuda:{self._gpu_id})")
+                    else:  # 8-bit
+                        bnb_config = BitsAndBytesConfig(
+                            load_in_8bit=True,
+                            bnb_8bit_compute_dtype=torch.bfloat16,
+                        )
+                        log.info(f"[LLM] Loading transformers model: {self.model_path} (8-bit, cuda:{self._gpu_id})")
+                    
+                    self._tokenizer = AutoTokenizer.from_pretrained(
+                        self.model_path, trust_remote_code=True
+                    )
+                    self._model = AutoModelForCausalLM.from_pretrained(
+                        self.model_path,
+                        quantization_config=bnb_config,
+                        device_map=device_map,
+                    )
+                except ImportError:
+                    log.warning("[LLM] BitsAndBytesConfig not available, loading without quantization")
+                    self._quantization_config = None
+                    self._model = AutoModelForCausalLM.from_pretrained(
+                        self.model_path, device_map=device_map, trust_remote_code=True
+                    )
+                    self._tokenizer = AutoTokenizer.from_pretrained(
+                        self.model_path, trust_remote_code=True
+                    )
+            else:
+                # Load without quantization
+                log.info(f"[LLM] Loading transformers model: {self.model_path} (no quantization, cuda:{self._gpu_id})")
+                self._model = AutoModelForCausalLM.from_pretrained(
+                    self.model_path, device_map=device_map, trust_remote_code=True
                 )
-                log.info(f"[LLM] Loading transformers model: {self.model_path} (4-bit QLoRA, cuda:{self._gpu_id})")
                 self._tokenizer = AutoTokenizer.from_pretrained(
                     self.model_path, trust_remote_code=True
                 )
-                self._model = AutoModelForCausalLM.from_pretrained(
-                    self.model_path,
-                    quantization_config=bnb_config,
-                    device_map=device_map,
-                    trust_remote_code=True,
-                )
-                self._model.eval()
-                log.info(f"[LLM] Model loaded (4-bit QLoRA on cuda:{self._gpu_id})")
-                return
-            except Exception as e:
-                log.warning(f"[LLM] QLoRA thất bại ({e}), fallback bfloat16")
-            dtype = torch.bfloat16
         else:
-            self._gpu_id = None
-            device_map = "cpu"
-            dtype = torch.float32
-        log.info(f"[LLM] Loading transformers model: {self.model_path} (device_map={device_map}, dtype={dtype})")
-        self._tokenizer = AutoTokenizer.from_pretrained(
-            self.model_path, trust_remote_code=True
-        )
-        self._model = AutoModelForCausalLM.from_pretrained(
-            self.model_path,
-            torch_dtype=dtype,
-            device_map=device_map,
-            trust_remote_code=True,
-        )
+            # CPU mode
+            log.info(f"[LLM] Loading transformers model: {self.model_path} (CPU)")
+            self._model = AutoModelForCausalLM.from_pretrained(
+                self.model_path, device_map="cpu", trust_remote_code=True
+            )
+            self._tokenizer = AutoTokenizer.from_pretrained(
+                self.model_path, trust_remote_code=True
+            )
+        
+        # [IMPROVE] Load draft model for speculative decoding
+        if self._use_speculative and self._draft_model_path and Path(self._draft_model_path).exists():
+            log.info(f"[LLM] Loading draft model for speculative decoding: {self._draft_model_path}")
+            try:
+                if use_gpu:
+                    self._speculative_draft_model = AutoModelForCausalLM.from_pretrained(
+                        self._draft_model_path, device_map=device_map, trust_remote_code=True
+                    )
+                else:
+                    self._speculative_draft_model = AutoModelForCausalLM.from_pretrained(
+                        self._draft_model_path, device_map="cpu", trust_remote_code=True
+                    )
+                log.info(f"[LLM] Draft model loaded for speculative decoding")
+            except Exception as e:
+                log.warning(f"[LLM] Failed to load draft model: {e}")
+                self._speculative_draft_model = None
+        
         self._model.eval()
         log.info(f"[LLM] Transformers model loaded ({'cuda:'+str(self._gpu_id) if use_gpu else 'CPU'} mode)")
-
-    # ── Inference ─────────────────────────────────────────────────────
-
+        return
     def _infer(self, messages: List[Dict], max_new_tokens: Optional[int] = None) -> str:
         tokens = max_new_tokens if max_new_tokens is not None else self.max_new_tokens
         if self.backend == "llama_cpp":
@@ -574,3 +606,188 @@ if __name__ == "__main__":
         print(f"Level hint: {parsed.level_hint}")
         print(f"Response  : {parsed.response}")
         print()
+
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [IMPROVE] RAG Retriever for similar cases
+# ─────────────────────────────────────────────────────────────────────────────
+
+class RAGRetriever:
+    """
+    Retrieval-Augmented Generation: tìm cases đã review tương tự để enhance LLM response.
+    
+    Sử dụng:
+    1. DINOv2 embedding để tìm cases visual similarity
+    2. Hybrid score để rank
+    """
+    
+    def __init__(self, db_path: str = "learning/review_queue.db"):
+        self.db_path = db_path
+        self._embedding_cache = {}  # image_path -> DINOv2 embedding
+    
+    def _get_dino_embedding(self, image_path: str):
+        """Get cached or compute DINOv2 embedding."""
+        if image_path in self._embedding_cache:
+            return self._embedding_cache[image_path]
+        
+        try:
+            from PIL import Image
+            import torch
+            import torchvision.transforms as T
+            
+            global _RAG_DINO_MODEL, _RAG_DINO_TRANSFORM, _RAG_DINO_DEVICE
+            if '_RAG_DINO_MODEL' not in globals() or _RAG_DINO_MODEL is None:
+                _RAG_DINO_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+                _RAG_DINO_MODEL = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14', pretrained=True).to(_RAG_DINO_DEVICE).eval()
+                _RAG_DINO_TRANSFORM = T.Compose([
+                    T.Resize((224, 224)),
+                    T.ToTensor(),
+                    T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+                ])
+            
+            img = Image.open(image_path).convert("RGB")
+            tensor = _RAG_DINO_TRANSFORM(img).unsqueeze(0).to(_RAG_DINO_DEVICE)
+            
+            with torch.no_grad():
+                emb = _RAG_DINO_MODEL(tensor).cpu().numpy().squeeze()
+            
+            self._embedding_cache[image_path] = emb
+            return emb
+        except Exception as e:
+            log.debug(f"RAG DINO embedding failed: {e}")
+            return None
+    
+    def retrieve(
+        self,
+        query_image_path: str,
+        top_k: int = 3,
+        min_similarity: float = 0.75,
+    ):
+        """
+        Tìm cases đã review tương tự query image.
+        
+        Returns: List[Dict] với keys: image_path, similarity, predicted_depth, actual_depth, actual_level, review_notes
+        """
+        query_emb = self._get_dino_embedding(query_image_path)
+        if query_emb is None:
+            return []
+        
+        try:
+            import sqlite3
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("""
+                SELECT image_path, predicted_depth, actual_depth, actual_level, review_notes, image_hash
+                FROM review_queue
+                WHERE status = 'reviewed' AND actual_depth IS NOT NULL
+            """)
+            candidates = cursor.fetchall()
+            conn.close()
+        except Exception as e:
+            log.debug(f"RAG DB query failed: {e}")
+            return []
+        
+        if not candidates:
+            return []
+        
+        results = []
+        for row in candidates:
+            cand_emb = self._get_dino_embedding(row["image_path"])
+            if cand_emb is None:
+                continue
+            
+            # Cosine similarity
+            q_norm = query_emb / (np.linalg.norm(query_emb) + 1e-6)
+            c_norm = cand_emb / (np.linalg.norm(cand_emb) + 1e-6)
+            sim = float(q_norm @ c_norm)
+            
+            if sim >= min_similarity:
+                results.append({
+                    "image_path": row["image_path"],
+                    "similarity": round(sim, 4),
+                    "predicted_depth": row["predicted_depth"],
+                    "actual_depth": row["actual_depth"],
+                    "actual_level": row["actual_level"],
+                    "review_notes": row["review_notes"],
+                })
+        
+        results.sort(key=lambda x: -x["similarity"])
+        return results[:top_k]
+
+
+# [IMPROVE] Enhanced LLMEnhancer with RAG
+def enhance_with_rag(llm_enhancer, rag_retriever=None):
+    """
+    Monkey-patch LLMEnhancer.generate_response để thêm RAG context.
+    """
+    if rag_retriever is None:
+        rag_retriever = RAGRetriever()
+    
+    original_generate = llm_enhancer.generate_response
+    
+    def rag_generate_response(
+        self,
+        results,
+        action_type,
+        memory_summary=None,
+        duration_s=0,
+    ):
+        # Get RAG context from first image
+        rag_context = ""
+        if results and rag_retriever:
+            img_path = results[0].get("original_path") or results[0].get("image_path")
+            if img_path:
+                similar = rag_retriever.retrieve(img_path, top_k=2, min_similarity=0.75)
+                if similar:
+                    rag_context = (
+                "[Cases tương tự đã review:]\n"
+            )
+                    for s in similar:
+                        rag_context += (
+                            f"- Ảnh tương tự {s['similarity']:.0%}: "
+                            f"pred={s['predicted_depth']:.0f}cm, "
+                            f"actual={s['actual_depth']:.0f}cm ({s['actual_level']})"
+                        )
+                        if s['review_notes']:
+                            rag_context += f" — note: {s['review_notes']}"
+                        rag_context += "\n"
+        
+        # Call original with enhanced prompt
+        if not results:
+            return "ℹ️ Không có kết quả phân tích."
+        
+        result_text = self._format_results_for_prompt(results, duration_s)
+        context_text = ""
+        if memory_summary:
+            n_corr = memory_summary.get("n_corrections", 0)
+            trend  = memory_summary.get("correction_trend", "none")
+            if n_corr > 0:
+                context_text = (
+                    f"[Lịch sử: {n_corr} lần sửa, xu hướng: {trend}]"
+                )
+        
+        prompt = (
+            f"Bạn vừa phân tích lũ xong (action: {action_type}).\n"
+            f"{result_text}{context_text}{rag_context}"
+
+            "Hãy viết phản hồi tự nhiên bằng tiếng Việt cho người dùng. "
+            "Không cần dùng định dạng INTENT/DEPTH_HINT, chỉ viết response thôi."
+        )
+        
+        messages = [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user",   "content": prompt},
+        ]
+        try:
+            raw = self._infer(messages)
+            parsed = _parse_llm_output(raw)
+            return parsed.response if parsed.response else _remove_chinese(raw)
+        except Exception as e:
+            log.warning(f"[LLM] rag_generate_response lỗi: {e}")
+            return self._fallback_response(results, duration_s)
+    
+    # Monkey-patch
+    llm_enhancer.generate_response = rag_generate_response.__get__(llm_enhancer, LLMEnhancer)
+    return llm_enhancer

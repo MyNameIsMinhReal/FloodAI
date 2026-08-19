@@ -125,6 +125,8 @@ _ACKNOWLEDGEMENTS: List[str] = [
     "Ảnh đã được phân tích.",
     "Mình đã nhận được ảnh.",
     "Mình vừa xem qua ảnh.",
+    "Đã xem xong ảnh bạn gửi.",
+    "Ảnh bạn gửi mình đã xem hết rồi.",
 ]
 
 # Template chính theo level — có {depth_range} và {location} placeholder
@@ -133,38 +135,54 @@ _LEVEL_TEMPLATES: Dict[str, List[str]] = {
         "Khu vực {location}trông khô ráo, không có dấu hiệu ngập đáng kể.",
         "Ảnh cho thấy {location}chưa có dấu hiệu ngập.",
         "Hệ thống không ghi nhận nước ngập tại {location}.",
+        "Nhìn ảnh thì {location}hơi khô ráo, không thấy ngập đâu.",
+        "{location}trông khô khô, không thấy dấu hiệu ngập.",
     ],
     "PUDDLE": [
         "Ảnh cho thấy {location}có một số vũng nước nhỏ, chưa đến mức ngập đáng kể.",
         "Có vũng nước trên mặt đường tại {location}, mực nước khoảng {depth_range}.",
         "Hệ thống ghi nhận vũng nước nhỏ tại {location}, khoảng {depth_range}.",
+        "Nhìn thì {location}có vài vũng nước nhỏ, mực nước khoảng {depth_range}, chưa ngập đáng kể.",
+        "{location}có vài vũng nước lẻ tẻ, mực nước khoảng {depth_range}.",
     ],
     "ANKLE": [
         "Ảnh cho thấy {location}có dấu hiệu ngập nhẹ, nước khoảng mắt cá chân — ước tính {depth_range}.",
         "Khu vực {location}ngập khoảng mắt cá, ước tính {depth_range}.",
         "Hệ thống ghi nhận mực nước tại {location}khoảng mắt cá chân, ước tính {depth_range}.",
+        "{location}hơi ngập, nước khoảng mắt cá chân thôi — mực nước ước tính {depth_range}.",
+        "Nhìn thì {location}ngập nhẹ, khoảng mắt cá chân (khoảng {depth_range}).",
     ],
     "KNEE": [
         "Ảnh cho thấy {location}có dấu hiệu ngập khá rõ, mực nước khoảng tới đầu gối — ước tính {depth_range}.",
         "Khu vực {location}ngập khoảng đầu gối, ước tính {depth_range}.",
         "Hệ thống ghi nhận {location}ngập đầu gối, ước tính {depth_range}.",
+        "{location}ngập đến đầu gối, mực nước ước tính {depth_range}.",
+        "{location}ngập khoảng đầu gối thôi, khoảng {depth_range}.",
     ],
     "WAIST": [
         "Ảnh cho thấy {location}ngập khá sâu, mực nước ước tính khoảng tới thắt lưng — {depth_range}.",
         "Khu vực {location}ngập sâu, ước tính {depth_range} (ngang hông).",
         "Hệ thống ghi nhận mực nước tại {location}đã đến mức thắt lưng, khoảng {depth_range}.",
+        "{location}ngập sâu, nước đến hông, ước tính {depth_range}.",
+        "{location}ngập sâu lắm, nước tới hông, khoảng {depth_range}.",
     ],
     "CHEST": [
         "Ảnh cho thấy {location}ngập rất sâu, ước tính {depth_range} — gần tới ngực.",
         "Khu vực {location}ngập nguy hiểm, mực nước ước tính {depth_range}.",
+        "{location}ngập rất sâu, nước gần ngực, khoảng {depth_range}.",
+        "Nhìn ảnh thì {location}ngập ngực, mực nước ước tính {depth_range}.",
     ],
     "SUBMERGED": [
         "Ảnh cho thấy {location}ngập hoàn toàn, mực nước ước tính {depth_range}.",
         "Khu vực {location}ngập toàn bộ, tình trạng nghiêm trọng.",
+        "{location}ngập hoàn toàn, mực nước ước tính {depth_range}.",
+        "{location}ngập kín, nước lên cao, khoảng {depth_range}.",
     ],
     "UNKNOWN": [
         "Mình chưa xác định được mức ngập chính xác tại {location}.",
         "Ảnh chưa đủ rõ để kết luận mức ngập tại {location}.",
+        "Khó kết luận mức ngập tại {location} từ ảnh này.",
+        "Mình chưa thể xác định mức ngập tại {location} từ ảnh này.",
     ],
 }
 
@@ -174,21 +192,25 @@ _CONFIDENCE_PHRASES: Dict[str, List[str]] = {
         "Kết quả này khá chắc chắn.",
         "Độ tin cậy cao.",
         "Mình khá tự tin về kết quả này.",
+        "Kết quả này tin cậy lắm.",
     ],
     "tương đối tin cậy": [
         "Kết quả tương đối tin cậy, nhưng vẫn nên kiểm tra thêm.",
         "Kết quả có thể tham khảo, nhưng nên xác minh trước khi đăng công khai.",
         "Thông tin này đáng tin, tuy nhiên vẫn nên được kiểm tra lại.",
+        "Kết quả tin cậy ở mức trung bình, nên kiểm tra thêm cho chắc.",
     ],
     "chưa thật sự chắc chắn": [
         "Thông tin này chưa thật sự chắc chắn, nên xem lại trước khi đăng.",
         "Kết quả chưa ổn định, cần kiểm tra thêm.",
         "Mình chưa đủ chắc về kết quả này.",
+        "Kết quả hơi bất ổn, nên xem lại kỹ hơn.",
     ],
     "chưa đủ cơ sở kết luận": [
         "Mình chưa đủ cơ sở để kết luận — cần thêm thông tin.",
         "Kết quả chưa đủ tin cậy để kết luận.",
         "Không đủ cơ sở để xác nhận, cần kiểm tra lại.",
+        "Cơ sở chưa đủ để chắc chắn, cần thêm thông tin.",
     ],
 }
 
@@ -379,16 +401,36 @@ class ResponseRewriter:
             if conf_lbl not in ("khá chắc chắn",):
                 parts.append("Thông tin này nên được kiểm tra thêm.")
         else:
-            # (3) Mức chắc chắn
+            # (3) Mức chắc chắn — thêm từ nối tự nhiên
             conf_phrases = _CONFIDENCE_PHRASES.get(
                 conf_lbl, _CONFIDENCE_PHRASES["chưa thật sự chắc chắn"]
             )
-            parts.append(cls._rng.choice(conf_phrases))
+            # Thêm từ nối tự nhiên trước câu confidence
+            connectors = [
+                "Ngoài ra, ",
+                "Thêm vào đó, ",
+                "Bên cạnh đó, ",
+                "Ngoài ra thì, ",
+                ""
+            ]
+            connector = cls._rng.choice(connectors)
+            conf_phrase = cls._rng.choice(_CONFIDENCE_PHRASES.get(
+                conf_lbl, _CONFIDENCE_PHRASES["chưa thật sự chắc chắn"]
+            ))
+            parts.append(f"{connector}{conf_phrase}")
 
-        # (4) Khuyến cáo
+        # (4) Khuyến cáo — thêm từ nối
         rec = _RECOMMENDATIONS.get(level, "")
         if rec:
-            parts.append(rec)
+            rec_connectors = [
+                "Vì vậy, ",
+                "Do đó, ",
+                "Nên nhớ rằng, ",
+                "Lưu ý: ",
+                ""
+            ]
+            rec_connector = cls._rng.choice(rec_connectors)
+            parts.append(f"{rec_connector}{rec}")
 
         # Câu hỏi lại nếu thiếu thông tin
         if missing_fields:
@@ -396,12 +438,18 @@ class ResponseRewriter:
             priority = ["location", "image_quality", "timestamp"]
             for field_name in priority:
                 if field_name in missing_fields:
-                    parts.append(
-                        "\n" + _FOLLOWUP_QUESTIONS.get(
-                            field_name,
-                            f"Bạn có thể cung cấp thêm thông tin về {field_name} không?"
-                        )
+                    question = _FOLLOWUP_QUESTIONS.get(
+                        field_name,
+                        f"Bạn có thể cung cấp thêm thông tin về {field_name} không?"
                     )
+                    # Thêm từ nối mềm dẻo
+                    question_connectors = [
+                        "Còn một chút, ",
+                        "Một chút nữa, ",
+                        "Thêm chút này, ",
+                        ""
+                    ]
+                    parts.append(f"{cls._rng.choice(question_connectors)}{question}")
                     break
 
         return " ".join(p.strip() for p in parts if p.strip())
@@ -489,13 +537,21 @@ class ResponseRewriter:
         rec = _RECOMMENDATIONS.get(level, "")
         rec_sentence = f" {rec}" if rec else ""
 
+        # Thêm hedging phrases tự nhiên
+        hedging_intro = cls._rng.choice([
+            "Theo hệ thống, ",
+            "Theo kết quả phân tích, ",
+            "Hệ thống ghi nhận, ",
+            "Kết quả cho thấy, ",
+        ])
+
         if depth_val > 0:
             text = (
-                f"Ghi nhận{loc_part} {level_natural}, "
+                f"{hedging_intro}{loc_part} {level_natural}, "
                 f"ước tính {d_range}{multi}{status}.{rec_sentence}"
             )
         else:
-            text = f"Ghi nhận tình trạng ngập{loc_part}{multi}{status}.{rec_sentence}"
+            text = f"{hedging_intro}ghi nhận tình trạng ngập{loc_part}{multi}{status}.{rec_sentence}"
 
         return text
 
@@ -513,7 +569,7 @@ class ResponseRewriter:
 
         # Severity prefix
         if level in ("CHEST", "SUBMERGED"):
-            prefix = f"{emoji} Cảnh báo nghiêm:"
+            prefix = f"{emoji} Cảnh báo nghiêm trọng:"
         elif level in ("WAIST", "KNEE"):
             prefix = f"{emoji} Cảnh báo:"
         else:
@@ -523,7 +579,16 @@ class ResponseRewriter:
         rec_short = rec.split(".")[0] + "." if rec else ""
 
         d_part = f" ({d_range})" if d_range else ""
-        return f"{prefix} {loc_part}{level_natural}{d_part}. {rec_short}".strip()
+        
+        # Thêm từ nối mềm dẻo
+        transition = cls._rng.choice([
+            "Do đó, ",
+            "Vì vậy, ",
+            "Nên nhớ: ",
+            "Cần lưu ý: ",
+        ])
+        
+        return f"{prefix} {loc_part}{level_natural}{d_part}. {transition}{rec_short}".strip()
 
     # ── DEBUG ─────────────────────────────────────────────────────
 

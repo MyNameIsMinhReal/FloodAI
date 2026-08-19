@@ -53,12 +53,14 @@ class TrackState:
     raincoat_history: List[bool]  = field(default_factory=list)
     pose_history:     List[str]   = field(default_factory=list)
     depth_history:    List[float] = field(default_factory=list)
+    height_history:   List[float] = field(default_factory=list)  # [IMPROVE] Height smoothing
 
     # Computed outputs
     raincoat_vote: Optional[bool]  = None    # majority vote
     raincoat_conf: float           = 0.0
     smoothed_keypoints: Optional[np.ndarray] = None
     ema_depth: Optional[float]     = None    # [IMPROVE] EMA smoothed depth
+    ema_height: Optional[float]    = None    # [IMPROVE] EMA smoothed height
 
 
 @dataclass
@@ -73,6 +75,7 @@ class TrackResult:
     pose_vote:     Optional[str]
     depth_median:  Optional[float]
     depth_ema:     Optional[float]     # [IMPROVE] EMA smoothed depth
+    height_ema:    Optional[float]     # [IMPROVE] EMA smoothed height
     is_new_track:  bool
 
 
@@ -118,6 +121,7 @@ class PersonTracker:
         raincoats: Optional[List[Optional[bool]]]       = None,
         poses:     Optional[List[Optional[str]]]        = None,
         depths:    Optional[List[Optional[float]]]      = None,
+        heights:   Optional[List[Optional[float]]]      = None,  # [IMPROVE] Height smoothing
     ) -> List[TrackResult]:
         """
         Cập nhật tracker với detections frame hiện tại.
@@ -129,6 +133,7 @@ class PersonTracker:
             raincoats: [True/False/None, ...] per detection
             poses:     ["STANDING"/"WADING"/..., ...] per detection
             depths:    [depth_cm, ...] per detection
+            heights:   [height_cm, ...] per detection (optional, for EMA smoothing)
 
         Returns:
             List[TrackResult] — chỉ các track đủ min_hits (confirmed)
@@ -141,6 +146,7 @@ class PersonTracker:
         if raincoats is None: raincoats = cast(List[Optional[bool]],       [None] * N)
         if poses     is None: poses     = cast(List[Optional[str]],        [None] * N)
         if depths    is None: depths    = cast(List[Optional[float]],      [None] * N)
+        if heights   is None: heights   = cast(List[Optional[float]],      [None] * N)
 
         # Step 1: predict (tăng age, miss)
         for t in self._tracks.values():
@@ -182,14 +188,23 @@ class PersonTracker:
                 if len(t.depth_history) > self.history_len:
                     t.depth_history.pop(0)
                 # [IMPROVE] EMA smoothing cho depth:
-                # Cu: chi dung median (robust nhung lag 1 frame)
-                # Moi: EMA (Exponential Moving Average) smooth hon,
-                #   alpha=0.3 → 70% frame cu, 30% frame moi → giam jitter.
                 alpha = 0.3
                 if t.ema_depth is None:
                     t.ema_depth = dp
                 else:
                     t.ema_depth = alpha * dp + (1.0 - alpha) * t.ema_depth
+
+            # [IMPROVE] EMA smoothing cho height:
+            hp = heights[det_idx]
+            if hp is not None:
+                t.height_history.append(hp)
+                if len(t.height_history) > self.history_len:
+                    t.height_history.pop(0)
+                alpha_h = 0.25  # slightly more conservative for height
+                if t.ema_height is None:
+                    t.ema_height = hp
+                else:
+                    t.ema_height = alpha_h * hp + (1.0 - alpha_h) * t.ema_height
 
             # Compute votes
             t.raincoat_vote, t.raincoat_conf = self._majority_vote_bool(t.raincoat_history)
@@ -204,6 +219,7 @@ class PersonTracker:
             ps = poses[det_idx]
             dp = depths[det_idx]
 
+            hp = heights[det_idx]
             self._tracks[new_id] = TrackState(
                 track_id=new_id,
                 bbox=bboxes[det_idx],
@@ -214,6 +230,7 @@ class PersonTracker:
                 raincoat_history=[rc] if rc is not None else [],
                 pose_history=[ps] if ps is not None else [],
                 depth_history=[dp] if dp is not None else [],
+                height_history=[hp] if hp is not None else [],
                 raincoat_vote=rc,
                 raincoat_conf=float(rc) if rc is not None else 0.0,
             )
@@ -230,6 +247,7 @@ class PersonTracker:
             if t.hits >= self.min_hits or tid in new_ids:
                 pose_vote = self._majority_vote_str(t.pose_history)
                 depth_med = float(np.median(t.depth_history)) if t.depth_history else None
+                height_med = float(np.median(t.height_history)) if t.height_history else None
                 results.append(TrackResult(
                     track_id=t.track_id,
                     bbox=t.bbox,
@@ -239,7 +257,8 @@ class PersonTracker:
                     raincoat_conf=t.raincoat_conf,
                     pose_vote=pose_vote,
                     depth_median=depth_med,
-                    depth_ema=t.ema_depth,  # [IMPROVE] EMA smoothed depth
+                    depth_ema=t.ema_depth,
+                    height_ema=t.ema_height,  # [IMPROVE] EMA smoothed height
                     is_new_track=(tid in new_ids),
                 ))
 
