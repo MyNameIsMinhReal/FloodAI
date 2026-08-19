@@ -25,7 +25,7 @@ import logging
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import torch
 import torch.nn as nn
@@ -154,10 +154,27 @@ class EWC:
             
             # Move batch to device
             batch = self._move_batch_to_device(batch)
+
+            # Support both mapping-style batches and (inputs, labels) tuples.
+            if isinstance(batch, dict):
+                model_inputs = batch
+                labels = batch.get("labels", batch.get("input_ids"))
+            elif (isinstance(batch, (list, tuple)) and len(batch) == 2
+                  and isinstance(batch[0], dict)):
+                model_inputs = dict(batch[0])
+                labels = batch[1]
+                model_inputs.setdefault("labels", labels)
+            else:
+                log.warning("[EWC] Skipping unsupported batch type: %s", type(batch))
+                continue
+
+            if not isinstance(labels, torch.Tensor):
+                log.warning("[EWC] Skipping batch without tensor labels")
+                continue
             
             # Forward
-            outputs = model(**batch)
-            loss = criterion(outputs, batch.get("labels", batch.get("input_ids")))
+            outputs = model(**model_inputs)
+            loss = criterion(outputs, labels)
             
             # Backward
             model.zero_grad()
@@ -168,7 +185,7 @@ class EWC:
                 if param.requires_grad and param.grad is not None:
                     grad_accum[name] += param.grad.detach() ** 2
             
-            samples_processed += batch.get("labels", batch.get("input_ids")).size(0)
+            samples_processed += labels.size(0)
         
         # Normalize: Fisher ≈ E[grad²] = sum(grad²) / N
         fisher_new = {name: g / max(samples_processed, 1) for name, g in grad_accum.items()}
@@ -234,7 +251,7 @@ class EWC:
         if not self._fisher_diag:
             return torch.tensor(0.0, device=self.device)
         
-        penalty = 0.0
+        penalty = torch.tensor(0.0, device=self.device)
         for name, param in model.named_parameters():
             if not param.requires_grad or name not in self._fisher_diag:
                 continue
@@ -316,7 +333,7 @@ def create_ewc_callback(
     dataloader,
     num_samples: int = 500,
     every_n_epochs: int = 1,
-) -> callable:
+) -> Callable:
     """
     Tạo callback để gọi sau mỗi epoch trong training.
     

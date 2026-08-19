@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict, field
 import logging
+import numpy as np
 
 log = logging.getLogger(__name__)
 
@@ -666,7 +667,7 @@ class ErrorTracker:
                 if len(numeric_vals) < 10:
                     continue
                 
-                q25, q50, q75 = np.percentile(numeric_vals, [25, 50, 75])
+                q25, q50, q75 = np.percentile(numeric_vals, [25, 50, 75]) # pyright: ignore[reportUndefinedVariable]
                 bins = []
                 for v in vals:
                     fv = float(v)
@@ -707,7 +708,7 @@ class ErrorTracker:
                         b: {
                             "count": bin_counts[b],
                             "error_rate": round(bin_errors[b]["count"] / bin_counts[b], 4),
-                            "depth_mae": round(np.mean(bin_errors[b]["depth_mae"]), 2) if bin_errors[b]["depth_mae"] else None,
+                            "depth_mae": round(sum(bin_errors[b]["depth_mae"]) / len(bin_errors[b]["depth_mae"]), 2) if bin_errors[b]["depth_mae"] else None,
                             "level_error_rate": round(bin_errors[b]["level_wrong"] / bin_counts[b], 4) if bin_counts[b] > 0 else None,
                         }
                         for b in bin_counts
