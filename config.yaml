@@ -139,7 +139,7 @@ ground_detection:
 
 # ── AI Deblur ────────────────────────────────────────────────────────────────
 deblur:
-  enable:          true
+  enable:          false         # [A4000-16GB] Tắt NAFNet, tốn VRAM không critical cho <10cm
   method:          "auto"      # "nafnet" | "auto" | "wiener" | "off"
   # "nafnet"  = NAFNet AI (tot nhat, can: pip install basicsr + download model)
   # "auto"    = Thu NAFNet truoc, fallback Wiener neu khong co model
@@ -260,7 +260,7 @@ models:
 
   # [v4] Depth batch chunk size — ảnh mỗi lần xử lý trước khi giải phóng RAM
   # Giảm xuống 4 nếu RAM < 8GB. Tăng lên 12 nếu RAM >= 16GB.
-  depth_chunk_size: 8
+  depth_chunk_size: 2         # [A4000-16GB] Giảm burst memory
 
   # Flood classifier (ResNet-18 fine-tuned)
   # Đặt path .pth file tại đây, hoặc để trống để tắt
@@ -273,11 +273,11 @@ models:
   # VLM (Vision-Language Model) — dùng cho stage vlm_verify
   # Để trống "" = tắt (stage vẫn chạy nhưng verdict=skipped)
   # Model nhỏ hơn nếu máy yếu: "Qwen/Qwen2-VL-2B-Instruct"
-  vlm: ""
+  vlm: "Qwen/Qwen2.5-VL-3B-Instruct"   # [A4000-16GB] BẬT VLM 3B cho cross-check <10cm
 
   # [v4] SAM2 Mask Segmentor — refine mask nước bằng Segment Anything
   # Cần cài: pip install segment-anything-2  + weight (~2GB). Chưa cài = bỏ qua.
-  use_sam: false
+  use_sam: true                # [A4000-16GB] BẬT SAM2 cho water mask chính xác <10cm
   sam_model_type: "sam2_hiera_large"     # sam2_hiera_large / sam2_hiera_small
   sam_model_path: ""                     # Để trống = auto-download
 
@@ -286,7 +286,7 @@ models:
   ensemble_weights:
     color:  0.45
     dino:   0.25
-    resnet: 0.20
+    resnet: 0.15      # [A4000-16GB] SAM2 bù lại, giảm ResNet từ 0.20 → 0.15
 
 # ── Filter Toggles (MỚI) ─────────────────────────────────────────────────────
 enable_filters:
@@ -381,7 +381,7 @@ vlm_verify:
   auto_correct: true        # Tự sửa số khi VLM chắc chắn pipeline sai
   min_confidence_to_correct: 0.65   # Confidence tối thiểu để được sửa
 
-  unload_after: false       # true = giải phóng VRAM ngay sau stage này
+  unload_after: true        # [A4000-16GB] Giải phóng VRAM ngay sau stage này
 
 # ── Measurement Fusion (MỚI v4) ────────────────────────────────────────────────
 # Cài đặt cho quá trình gộp nhiều phép đo (reference objects + depth model).
