@@ -44,8 +44,11 @@ def run_pipeline(args, cfg: dict):
         loader.log_status()
 
     # ── Intermediate cache ────────────────────────────────────────────────────
+    # [v4] IntermediateCache singleton được khởi tạo ở đây nếu cần dùng.
+    # Hiện tại chưa có module nào gọi get_cache(), giữ lại để tương lai
+    # cache depth/segmentation results giữa các batch.
     from utils.memory_manager import IntermediateCache, log_memory
-    cache = IntermediateCache.instance(max_entries=cfg.get("cache_max_entries", 200))
+    IntermediateCache.instance(max_entries=cfg.get("cache_max_entries", 200))
     log_memory("startup")
 
     # ── Model Versioning ──────────────────────────────────────────────────────

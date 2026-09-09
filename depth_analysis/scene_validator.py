@@ -177,7 +177,6 @@ class SceneValidator:
             score = min(score + 0.08, 1.0)
 
         # ── Rule 6: Texture variance (nước thật có texture) ────────────────
-        # [FIX] Khong copy ca anh (24MB voi 4K) — dung bitwise_and inplace
         if img_bgr is not None and water_px > 100:
             gray_water = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
             masked_pixels = gray_water[water_mask > 0]
@@ -186,6 +185,32 @@ class SceneValidator:
                 if texture_var < self.min_texture_variance:
                     score -= 0.10
                     warnings.append("⚠ Vùng nước thiếu texture — có thể là bề mặt bóng/kính")
+
+        # ── [v4] Rule 7: Low-light / night gating ─────────────────────────
+        if img_bgr is not None:
+            brightness = float(np.mean(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)))
+            if brightness < 40.0:
+                score -= 0.25
+                warnings.append(
+                    f"⚠ Ảnh tối (brightness={brightness:.0f}/255) "
+                    f"— đo water line thiếu chính xác"
+                )
+            elif brightness < 60.0:
+                score -= 0.10
+                warnings.append(f"⚠ Ảnh hơi tối (brightness={brightness:.0f})")
+
+        # ── [v4] Rule 8: Blur (camera rung / lấy nét sai) ──────────────────
+        if img_bgr is not None:
+            blur_val = self._laplacian_variance(img_bgr)
+            if blur_val < 50.0:
+                score -= 0.30
+                warnings.append(
+                    f"❌ Ảnh rất mờ (Laplacian={blur_val:.0f}) "
+                    f"— đo lường rất thiếu chính xác"
+                )
+            elif blur_val < 120.0:
+                score -= 0.10
+                warnings.append(f"⚠ Ảnh hơi mờ (Laplacian={blur_val:.0f})")
 
         # ── Determine scene type ────────────────────────────────────────────
         score = max(0.0, min(1.0, score))
@@ -225,3 +250,14 @@ class SceneValidator:
             building_mask=building_mask,
             shadow_mask=shadow_mask,
         )
+
+    # ── [v4] Helpers ────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _laplacian_variance(img_bgr: np.ndarray) -> float:
+        """
+        Độ sắc nét ảnh (đơn giản, nhanh): phương sai Laplacian.
+        Giá trị nhỏ ≈ ảnh mờ; lớn ≈ sắc nét.
+        """
+        gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+        return float(cv2.Laplacian(gray, cv2.CV_64F).var())

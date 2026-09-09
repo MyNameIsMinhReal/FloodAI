@@ -8,8 +8,11 @@ Features:
   - Ghi kết quả vào review queue để human-in-the-loop
   - Theo dõi error rate → auto-retrain khi vượt ngưỡng
   - Adaptive thresholds: tự chỉnh ngưỡng blur/content dựa trên hiệu suất
+  - [v4] Auto-trigger fine-tune segmentation khi đủ data review
 """
 import logging
+import subprocess
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, List
 
@@ -74,8 +77,9 @@ class LearnStage:
     def _trigger_retrain(self, sl) -> None:
         """
         Kích hoạt retrain model.
-        Hiện tại: invalidate cache → model sẽ được retrain lần chạy sau.
-        Future: gửi task tới Celery worker.
+        1. Invalidate cache → model sẽ được retrain lần chạy sau.
+        2. [v4] Nếu dataset flood segmentation tồn tại → chạy fine-tune
+           segmentation song song (subprocess, background).
         """
         try:
             from learning.ai_learner import AiLearner
@@ -84,3 +88,39 @@ class LearnStage:
             log.info("  [Learn] Cache đã invalidate → model sẽ retrain lần sau")
         except Exception as exc:
             log.warning(f"  [Learn] Retrain trigger thất bại: {exc}")
+
+        # ── [v4 Gap C] Auto-trigger fine-tune segmentation ──────────────────
+        # Kiểm tra xem dataset FloodNet/RescueNet đã có chưa. Nếu có → chạy
+        # finetune_segmentation.py trong background (subprocess) để fine-tune
+        # SegFormer-B0 thành flood binary classifier.
+        finetune_cfg = self.cfg.get("finetune_seg", {})
+        dataset_dir  = finetune_cfg.get("dataset_dir", "datasets/FloodNet")
+        output_dir   = finetune_cfg.get("output_dir", "models/flood_segnet")
+        epochs       = finetune_cfg.get("epochs", 20)
+
+        ds_path = Path(dataset_dir)
+        train_dir = ds_path / "train" / "images"
+        if not train_dir.exists():
+            log.debug(f"  [Finetune] Dataset không tồn tại: {train_dir} → bỏ qua")
+            return
+
+        try:
+            script = Path(__file__).resolve().parents[2] / "learning" / "finetune_segmentation.py"
+            if not script.exists():
+                log.debug(f"  [Finetune] Script không tồn tại: {script} → bỏ qua")
+                return
+
+            log.info(f"  [Finetune] Launching segmentation fine-tune → {output_dir}")
+            subprocess.Popen(
+                [
+                    sys.executable, str(script),
+                    "--dataset_dir", dataset_dir,
+                    "--output_dir", output_dir,
+                    "--epochs", str(epochs),
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except Exception as exc:
+            log.warning(f"  [Finetune] Launch thất bại: {exc}")

@@ -123,6 +123,11 @@ class DepthCalibrator:
         """
         Áp dụng calibration cho một prediction.
 
+        [v4] Context-aware: chọn calibration theo group (person/vehicle/
+        no_reference) KẾT HỢP ngữ cảnh (day/night). Key đầy đủ dạng
+        "person_night". Nếu chưa có calibration cho ngữ cảnh đó → fallback
+        về calibration group gốc (tương thích file cũ).
+
         Args:
             predicted: chiều sâu từ model (cm)
             result: depth_result object (dùng để auto-detect group)
@@ -133,11 +138,15 @@ class DepthCalibrator:
             calibrated depth (cm)
         """
         group = self._detect_group(result, has_person, has_vehicle)
-        cal = self._cals.get(group, LinearCalibration())
+        ctx   = self._detect_context(result)
+        cal = self._cals.get(f"{group}_{ctx}") or self._cals.get(group) or LinearCalibration()
+        # Chỉ dùng context calibration khi nó đã được fit (khác identity)
+        if f"{group}_{ctx}" not in self._cals or self._cals[f"{group}_{ctx}"].n_samples == 0:
+            cal = self._cals.get(group, LinearCalibration())
         calibrated = cal.apply(predicted)
         if abs(calibrated - predicted) > 1:
-            log.debug("[Calibrator] %s: %.1f → %.1f cm (group=%s)",
-                      getattr(result, "image_path", "?"), predicted, calibrated, group)
+            log.debug("[Calibrator] %.1f → %.1f cm (group=%s ctx=%s)",
+                      predicted, calibrated, group, ctx)
         return calibrated
 
     def calibrate_batch(self, results: List[Any]) -> List[Any]:
@@ -170,9 +179,38 @@ class DepthCalibrator:
     ):
         """Thêm 1 feedback sample (predicted vs actual) để fit sau."""
         group = self._detect_group(result, has_person, has_vehicle)
-        self._samples[group].append((predicted, actual))
-        log.debug("[Calibrator] Sample added (group=%s): pred=%.1f actual=%.1f",
-                  group, predicted, actual)
+        ctx   = self._detect_context(result)
+        key   = f"{group}_{ctx}"
+        self._samples.setdefault(key, []).append((predicted, actual))
+        log.debug("[Calibrator] Sample added (key=%s): pred=%.1f actual=%.1f",
+                  key, predicted, actual)
+
+    @staticmethod
+    def _detect_context(result: Optional[Any]) -> str:
+        """
+        [v4] Suy ra ngữ cảnh của ảnh để chọn calibration riêng.
+
+        Ưu tiên các field có thể có trên result:
+            - is_night (bool) / day_night ("day"|"night")
+            - scene_type ("flood"|"wet_road"|...) → chỉ phân biệt night/day
+            - brightness (float) < 60 → "night"
+        Fallback: "day".
+        """
+        if result is None:
+            return "day"
+        is_night = _get(result, "is_night", None)
+        if is_night is not None:
+            return "night" if is_night else "day"
+        dn = _get(result, "day_night", None)
+        if isinstance(dn, str) and dn.lower() in ("night", "day"):
+            return dn.lower()
+        brightness = _get(result, "brightness", None)
+        try:
+            if brightness is not None and float(brightness) < 60.0:
+                return "night"
+        except (TypeError, ValueError):
+            pass
+        return "day"
 
     def fit(self, min_samples: int = 5) -> Dict[str, bool]:
         """

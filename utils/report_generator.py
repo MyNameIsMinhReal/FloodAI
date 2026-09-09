@@ -120,6 +120,8 @@ class ReportGeneratorV2:
             "water_height_cm", "water_height_range",
             "confidence", "depth_flood_pct",
             "detected_objects_count", "detected_object_types",
+            # [v4] Scene quality + review metadata
+            "scene_score", "is_night", "needs_review",
             "notes", "original_path", "overlay_path", "depth_map_path",
         ]
 
@@ -141,6 +143,10 @@ class ReportGeneratorV2:
                     "detected_object_types": ", ".join(
                         set(o.get("class_name","") for o in objs)
                     ),
+                    # [v4] Scene quality + review
+                    "scene_score":   d.get("scene_score", ""),
+                    "is_night":      d.get("is_night", ""),
+                    "needs_review":  d.get("needs_review", ""),
                     "notes":       d.get("notes", ""),
                     "original_path":   d.get("original_path", ""),
                     "overlay_path":    d.get("overlay_path", ""),
@@ -186,6 +192,21 @@ class ReportGeneratorV2:
         avg_water = sum(total_water_cm) / len(total_water_cm) if total_water_cm else 0
         max_water = max(total_water_cm) if total_water_cm else 0
 
+        # [v4] Scene quality stats
+        scene_scores = []
+        night_count  = 0
+        review_count = 0
+        for r in depth_data:
+            d2 = r.__dict__ if hasattr(r, "__dict__") else r
+            sc = d2.get("scene_score")
+            if sc is not None:
+                scene_scores.append(float(sc))
+            if d2.get("is_night"):
+                night_count += 1
+            if d2.get("needs_review"):
+                review_count += 1
+        avg_scene = sum(scene_scores) / len(scene_scores) if scene_scores else 0
+
         # -- Stats HTML ----------------------------------------------
         stats_html = ""
         color_map  = {"crawled": "#38bdf8", "filtered": "#a78bfa",
@@ -200,6 +221,13 @@ class ReportGeneratorV2:
                 stats_html += self._stat_card(
                     level_counts[lvl], lvl, LEVEL_COLORS.get(lvl, "#fff")
                 )
+        # [v4] Scene quality stats cards
+        if scene_scores:
+            stats_html += self._stat_card(f"{avg_scene:.0%}", "Avg Quality", "#06b6d4")
+        if night_count:
+            stats_html += self._stat_card(night_count, "Night", "#8b5cf6")
+        if review_count:
+            stats_html += self._stat_card(review_count, "Review Queue", "#f59e0b")
 
         # -- Table rows ----------------------------------------------
         rows_html = ""
@@ -217,6 +245,13 @@ class ReportGeneratorV2:
             dfp  = d.get("depth_flood_pct", 0)
             objs = d.get("detected_objects", [])
             name = d.get("filename", "")
+            # [v4] Scene quality
+            sc   = d.get("scene_score")
+            sc_txt = f"{float(sc):.0%}" if sc is not None else "—"
+            is_night_val = d.get("is_night", False)
+            needs_rev_val = d.get("needs_review", False)
+            night_badge = '<span style="color:#c084fc">🌙</span>' if is_night_val else ""
+            review_badge = '<span style="color:#f59e0b">⚠ review</span>' if needs_rev_val else ""
 
             overlay_src = d.get("overlay_path", "")
             depth_src   = d.get("depth_map_path", "")
@@ -251,6 +286,7 @@ class ReportGeneratorV2:
                 <span class="bar-bg"><span class="bar" style="width:{bar_pct:.0f}%;background:{bar_color}"></span></span>
               </td>
               <td style="color:#94a3b8">{conf*100:.0f}%</td>
+              <td style="font-size:.78em">{night_badge} {review_badge} <span style="color:#94a3b8">{sc_txt}</span></td>
               <td>{obj_chips}</td>
               <td>
                 <a href="{depth_src}" target="_blank" style="color:#38bdf8;font-size:.8em">depth map</a>
@@ -259,7 +295,7 @@ class ReportGeneratorV2:
             </tr>"""
 
         if not rows_html:
-            rows_html = '<tr><td colspan="8" style="text-align:center;color:#475569;padding:30px">No depth analysis data available</td></tr>'
+            rows_html = '<tr><td colspan="9" style="text-align:center;color:#475569;padding:30px">No depth analysis data available</td></tr>'
 
         html = f"""<!DOCTYPE html>
 <html lang="vi">
@@ -289,6 +325,7 @@ class ReportGeneratorV2:
         <th>Flood Level</th>
         <th>Water Depth</th>
         <th>Conf.</th>
+        <th>Quality</th>
         <th>Reference Objects (measured)</th>
         <th>Depth Map</th>
         <th>Notes</th>

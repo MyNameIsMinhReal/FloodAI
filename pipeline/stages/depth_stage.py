@@ -71,11 +71,19 @@ class DepthStage:
         )
 
         # Shorthand mapping
+        # Nhóm RELATIVE (cần reference object để suy ra tỉ lệ mét):
         depth_map = {
             "small": "depth-anything/Depth-Anything-V2-Small-hf",
             "base":  "depth-anything/Depth-Anything-V2-Base-hf",
             "large": "depth-anything/Depth-Anything-V2-Large-hf",
-            "midas": "Intel/dpt-hybrid-midas",   # thêm MiDaS như gợi ý
+            "midas": "Intel/dpt-hybrid-midas",
+            # Nhóm METRIC — trả số mét TRỰC TIẾP, chính xác hơn hẳn cho đo mực nước
+            # (vẫn tương thích pipeline vì output được normalize như cũ)
+            "zoedepth":   "Intel/zoedepth-nyu-kitti",   # metric, indoor+outdoor (~1.5GB)
+            "zoedepth-n": "Intel/zoedepth-nyu",          # metric, indoor
+            "zoedepth-k": "Intel/zoedepth-kitti",        # metric, outdoor (khuyên dùng)
+            "depthpro":   "apple/DepthPro-hf",           # metric, chi tiết cao (~2GB)
+            "metric3d":   "Zigeng/Metric3D-v2-giant",    # metric mạnh nhất (rất nặng)
         }
         yolo_map = {
             "nano":   "yolov8n.pt",
@@ -111,8 +119,13 @@ class DepthStage:
             pose_model=models["pose"],
             use_segformer=self.cfg.get("use_segformer", True),
         )
+        estimator._cfg = self.cfg   # cho SAM hook trong _measure_objects_local
 
-        chunk_size = self.cfg.get("depth_chunk_size", 8)
+        # [v4] depth_chunk_size: models.depth_chunk_size > cfg.depth_chunk_size > default 8
+        chunk_size = (
+            self.cfg.get("models", {}).get("depth_chunk_size")
+            or self.cfg.get("depth_chunk_size", 8)
+        )
         results = estimator.analyze_batch(images, chunk_size=chunk_size)
         estimator.unload_heavy_models()
         return results

@@ -7,7 +7,7 @@ MỚI: WaterColorProfile, turbidity_score, foam/oil/night detection
 """
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
@@ -80,6 +80,54 @@ class WaterDetectionResult:
     puddle_area_pct: float = 0.0     # % diện tích vũng nước trong ảnh
 
 
+def refine_water_line(
+    img_bgr: np.ndarray,
+    initial_y: int,
+    search_window: int = 25,
+) -> Tuple[int, float]:
+    """
+    [v4] Snap water line vào biên ướt-khô thật bằng gradient ngang.
+
+    Nguyên lý: biên giữa vùng NƯỚC (mịn, phản chiếu) và vùng KHÔ (gờ
+    curb, vệt bùn) tạo cạnh ngang mạnh trong ảnh. Mask nước do threshold
+    thường lệch vài pixel — hàm này tìm vị trí có gradient tổng mạnh nhất
+    trong ±search_window quanh initial_y rồi snap vào đó.
+
+    Args:
+        img_bgr:       ảnh gốc BGR
+        initial_y:     water line từ mask (pixel y)
+        search_window: bán kính tìm kiếm (px)
+
+    Returns:
+        (refined_y, snap_strength 0-1)
+        snap_strength thấp = không có cạnh rõ → giữ initial_y.
+    """
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape[:2]
+
+    y0 = max(0, initial_y - search_window)
+    y1 = min(h - 1, initial_y + search_window)
+    if y1 - y0 < 4:
+        return initial_y, 0.0
+
+    # Sobel ngang: phát hiện cạnh ngang (thay đổi sáng/tối theo trục dọc)
+    gx = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+    row_energy = np.mean(np.abs(gx[y0:y1, :]), axis=1)
+
+    best_idx  = int(np.argmax(row_energy))
+    best_y    = y0 + best_idx
+    max_e     = float(row_energy[best_idx])
+    mean_e    = float(np.mean(row_energy)) + 1e-6
+
+    # Strength: cạnh nổi bật bao nhiêu so với nền window
+    strength = min(1.0, max(0.0, (max_e / mean_e - 1.0) / 2.0))
+
+    # Chỉ snap khi cạnh đủ nổi bật VÀ không kéo quá xa
+    if strength > 0.3 and abs(best_y - initial_y) <= search_window:
+        return best_y, round(strength, 3)
+    return initial_y, 0.0
+
+
 class WaterDetector:
     def __init__(
         self,
@@ -90,6 +138,7 @@ class WaterDetector:
         use_ycbcr:      bool  = True,
         use_norm_rgb:   bool  = True,
         use_segmentation: bool = False,  # [IMPROVE] Semantic segmentation refinement
+        refine_line:    bool  = True,    # [v4] Snap water line vào biên ướt-khô
     ):
         self.min_water_area = min_water_area
         self.use_reflection = use_reflection
@@ -98,6 +147,7 @@ class WaterDetector:
         self.use_ycbcr      = use_ycbcr
         self.use_norm_rgb   = use_norm_rgb
         self.use_segmentation = use_segmentation
+        self.refine_line    = refine_line
         # [IMPROVE] Temporal smoothing state
         self._prev_mask: Optional[np.ndarray] = None
 
@@ -248,6 +298,20 @@ class WaterDetector:
             ch["reflection"] = 1.0 if has_reflection else 0.0
 
         water_line_y, wl_conf = self._find_water_line(filtered, h, w)
+
+        # ── [v4] Water line refinement: snap vào biên ướt-khô thật ──────
+        # Water line từ mask thường lệch 5-10px do mask mờ/erosion. Dùng
+        # gradient ngang của ảnh (biên nước-đất rõ nét) để snap vào đúng mép.
+        if self.refine_line and 0 < water_line_y < h - 1:
+            refined_y, snap_strength = refine_water_line(img_bgr, water_line_y)
+            if snap_strength > 0.3:
+                wl_conf = min(1.0, wl_conf + 0.10 * snap_strength)
+                log.debug(
+                    f"  [WaterLine] snap {water_line_y}→{refined_y} "
+                    f"(strength={snap_strength:.2f})"
+                )
+                water_line_y = refined_y
+
         water_level_pct = 1.0 - (water_line_y / max(h, 1))
 
         turbidity = self._calc_turbidity(dom, hsv_scores)

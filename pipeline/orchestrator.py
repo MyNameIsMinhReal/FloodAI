@@ -4,7 +4,7 @@ FloodPipeline Orchestrator
 ===========================
 Pipeline đã cắt bỏ Crawl và Filter. Flow mới:
 
-    Input (folder ảnh) → Analyze → Depth → Raincoat → Postprocess → Store → Learn
+    Input (folder ảnh) → Analyze → Depth → Raincoat → VLM Verify → Postprocess → Store → Learn
 
 Cách dùng:
     pipeline = FloodPipeline(cfg)
@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional
 from pipeline.stages.analyze_stage import AnalyzeStage
 from pipeline.stages.depth_stage import DepthStage
 from pipeline.stages.raincoat_stage import RaincoatStage
+from pipeline.stages.vlm_verify_stage import VLMVerifyStage
 from pipeline.stages.postprocess_stage import PostprocessStage
 from pipeline.stages.store_stage import StoreStage
 from pipeline.stages.learn_stage import LearnStage
@@ -77,11 +78,13 @@ class PipelineState:
     depth_results:   List[Any]  = field(default_factory=list)
     location_map:    Dict[str, Any] = field(default_factory=dict)
     confidence_scores: Dict[str, float] = field(default_factory=dict)
+    vlm_verifications: List[Dict[str, Any]] = field(default_factory=list)
 
     timings:         Dict[str, float] = field(default_factory=dict)
     errors:          List[str]        = field(default_factory=list)
     drive_folder_id: Optional[str]   = None
     output_dir:      Optional[Path]  = None
+    version_meta:    Dict[str, Any]  = field(default_factory=dict)  # [v4] pipeline version traceability
 
     # Optional callback(stage, current, total, message) cho progress realtime
     progress_callback: Any = field(default=None, repr=False)
@@ -117,7 +120,7 @@ class FloodPipeline:
     """
     Orchestrator chính — flow không có Crawl / Filter:
 
-        input images → analyze → depth → raincoat → postprocess → store → learn
+        input images → analyze → depth → raincoat → vlm_verify → postprocess → store → learn
 
     Ví dụ:
         pipeline = FloodPipeline(cfg)
@@ -133,11 +136,12 @@ class FloodPipeline:
         self.analyzer  = AnalyzeStage(cfg)
         self.depth     = DepthStage(cfg)
         self.raincoat  = RaincoatStage(cfg)
+        self.vlm_verify = VLMVerifyStage(cfg)
         self.postproc  = PostprocessStage(cfg)
         self.storage   = StoreStage(cfg)
         self.learner   = LearnStage(cfg)
 
-        log.info("FloodPipeline initialized — flow: input→analyze→depth→raincoat→postprocess→store→learn")
+        log.info("FloodPipeline initialized — flow: input→analyze→depth→raincoat→vlm_verify→postprocess→store→learn")
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
@@ -166,6 +170,13 @@ class FloodPipeline:
             progress_callback=self.progress_callback,
         )
 
+        # [v4 #5] Build version metadata (depth_model, yolo, config_hash)
+        try:
+            from utils.pipeline_version import build_version_meta
+            state.version_meta = build_version_meta(self.cfg)
+        except Exception:
+            state.version_meta = {}
+
         log.info(f"\n{'='*60}")
         log.info(f"  FLOOD PIPELINE — run_id={run_id}")
         log.info(f"  Input: {len(images)} ảnh")
@@ -188,6 +199,12 @@ class FloodPipeline:
         else:
             log.info("  [SKIP] Raincoat stage bị tắt trong config.")
 
+        # ── Stage 3.5: VLM Verify (kiểm định chéo trước khi xuất) ────
+        if not self.cfg.get("skip_vlm_verify", False):
+            state = self._run_stage("vlm_verify", self._stage_vlm_verify, state)
+        else:
+            log.info("  [SKIP] VLM verify stage bị tắt trong config.")
+
         # ── Stage 4: Postprocess ──────────────────────────────────────
         state = self._run_stage("postprocess", self._stage_postprocess, state)
 
@@ -203,6 +220,14 @@ class FloodPipeline:
         log.info(f"  PIPELINE HOÀN THÀNH — {total:.1f}s tổng cộng")
         self._print_timing_report(state)
         log.info(f"{'='*60}\n")
+
+        # ── [v4 #5] Pipeline version manifest ──────────────────────────────
+        try:
+            from utils.pipeline_version import attach_version_batch, save_run_manifest
+            attach_version_batch(state.depth_results, state.version_meta)
+            save_run_manifest(state.run_id, self.cfg, state)
+        except Exception as exc:
+            log.debug(f"  [Version] Manifest skip: {exc}")
 
         return state
 
@@ -309,6 +334,11 @@ class FloodPipeline:
         log.info(f"  [Raincoat] {rc_count}/{len(state.depth_results)} ảnh có áo mưa")
         return state
 
+    def _stage_vlm_verify(self, state: "PipelineState") -> "PipelineState":
+        if not state.depth_results:
+            return state
+        return self.vlm_verify.run(state)
+
     def _stage_postprocess(self, state: "PipelineState") -> "PipelineState":
         if not state.depth_results:
             return state
@@ -318,10 +348,39 @@ class FloodPipeline:
             img_key = getattr(result, "original_path", str(result))
             state.confidence_scores[img_key] = confidence
 
+        # ── [v4 Gap B] Temporal aggregation: gộp nhiều ảnh cùng vị trí ────
+        agg_cfg = self.cfg.get("temporal_agg", {})
+        if agg_cfg.get("enable", False) and state.location_map:
+            try:
+                from utils.temporal_aggregator import aggregate_by_location
+                n_before = len(state.depth_results)
+                state.depth_results = aggregate_by_location(
+                    state.depth_results, state.location_map,
+                    min_group_size=2,
+                )
+                log.info(
+                    f"  [Agg] Temporal aggregation: {n_before} ảnh → "
+                    f"{len(set(getattr(r, 'original_path','') for r in state.depth_results))} vị trí"
+                )
+            except Exception as exc:
+                log.warning(f"  [Agg] Bỏ qua: {exc}")
+
         if self.cfg.get("predict_routes", False):
             self.postproc.predict_routes(state)
 
         self.postproc.check_alerts(state)
+
+        # ── [v4 Gap #4] FloodAlerter (Telegram/email/Discord) ──────────────
+        try:
+            from utils.alerting import FloodAlerter
+            alerter = FloodAlerter(self.cfg)
+            sent = alerter.check_and_alert(state)
+            if sent:
+                log.info(f"  [Alert] Sent via: {[ch for ch, ok in sent if ok]}")
+        except Exception as exc:
+            log.debug(f"  [Alert] FloodAlerter skip: {exc}")
+
+        self.postproc.check_disagreements(state)
         state.log_stage("postprocess", state.timings.get("postprocess", 0), len(state.depth_results))
         return state
 

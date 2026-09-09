@@ -1,31 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-depth_analysis/ground_detector.py
------------------------------------
-Phan biet "duong nhua kho" vs "mat nuoc" bang SegFormer semantic segmentation.
+depth_analysis/ground_detector.py  [DEPRECATED — dead code, không dùng trong pipeline]
+=========================================================================================
+Phân biet "duong nhua kho" vs "mat nuoc" bang SegFormer semantic segmentation.
 
-Van de hien tai:
-  - Duong nhua mau xam/xanh bi nham la nuoc
-  - Phan duoi anh (duong) bi tinh la "ngap"
+⚠ ĐÃ KHÔNG CÒN DÙNG TRONG PIPELINE. SegFormer đã được tích hợp trực tiếp
+  trong ReferenceEstimator._run_segformer() — cung cấp seg_wl_y, seg_road_pct
+  và dùng làm water-line hint. Class GroundDetector dưới đây giữ lại để tham
+  khảo nếu cần tách riêng logic trong tương lai.
 
-Giai phap:
-  1. Chay SegFormer (nvidia/segformer-b0-finetuned-ade-512-512)
-     -> Phan loai moi pixel: road / sidewalk / water / sky / vegetation...
-  2. Tim duong ranh giua DUONG KHO (road/sidewalk) va NUOC (water/sea/river)
-  3. Dieu chinh water_line_y va confidence
-
-Labels ADE20K lien quan:
-  - 6:  road / asphalt
-  - 11: sidewalk / pavement
-  - 21: water / pool
-  - 26: sea
-  - 60: river
-  - 9:  grass
-  - 17: plant / tree
-
-Cai dat: pip install transformers torch
+Pipeline hiện tại dùng:
+  - ReferenceEstimator._run_segformer()  → SegFormer water/road mask
+  - WaterDetector (15 HSV profiles)      → color-based water detection
+  - FloodClassifier (DINOv2)             → flood probability
 """
-
 import logging
 from dataclasses import dataclass
 from typing import Any, Tuple, Optional, Dict

@@ -79,6 +79,37 @@ class StoreStage:
                 counts[lvl] = counts.get(lvl, 0) + 1
             return counts
 
+        def _vlm_stats(verifications) -> dict:
+            stats = {"total": len(verifications), "agree": 0,
+                     "disagree": 0, "uncertain": 0,
+                     "skipped": 0, "error": 0, "corrected": 0}
+            for v in verifications:
+                verdict = str(v.get("verdict", "uncertain"))
+                if verdict in stats:
+                    stats[verdict] += 1
+                if v.get("applied_correction"):
+                    stats["corrected"] += 1
+            return stats
+
+        def _scene_stats(depth_results) -> dict:
+            """[v4] Aggregate scene quality + night/review counts."""
+            scores, n_night, n_review = [], 0, 0
+            for r in depth_results:
+                d = r.__dict__ if hasattr(r, "__dict__") else r
+                sc = d.get("scene_score")
+                if sc is not None:
+                    scores.append(float(sc))
+                if d.get("is_night"):
+                    n_night += 1
+                if d.get("needs_review"):
+                    n_review += 1
+            return {
+                "avg_scene_score": round(sum(scores) / len(scores), 3) if scores else 0.0,
+                "min_scene_score": round(min(scores), 3) if scores else 0.0,
+                "night_count":     n_night,
+                "needs_review_count": n_review,
+            }
+
         summary = {
             "run_id":          state.run_id,
             "input_dir":       str(state.input_dir or ""),
@@ -86,6 +117,9 @@ class StoreStage:
             "total_analyzed":  len(state.depth_results),
             "drive_folder":    state.drive_folder_id or "N/A",
             "flood_summary":   _count_levels(state.depth_results),
+            "vlm_verification": _vlm_stats(state.vlm_verifications),
+            # [v4] Scene quality + review stats
+            "scene_quality":   _scene_stats(state.depth_results),
             "timings":         state.timings,
             "errors":          state.errors,
         }

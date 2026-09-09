@@ -171,6 +171,21 @@ class ModelLoader:
                 "labels":      resnet_labels,
             })
 
+        # VLM verifier (Qwen2.5-VL, optional — chỉ register khi config có)
+        vlm_key = model_cfg.get("vlm", "")
+        if vlm_key:
+            self.register("vlm", _loader_vlm, {
+                "model_name":   vlm_key,
+                "device_pref":  (cfg.get("vlm_verify", {}) or {}).get("device", "auto"),
+            })
+
+        # [v4 Gap F] SAM2 mask segmentor (optional — chỉ register khi use_sam=true)
+        if model_cfg.get("use_sam", False):
+            self.register("sam", _loader_sam, {
+                "model_type": model_cfg.get("sam_model_type", "sam2_hiera_large"),
+                "model_path": model_cfg.get("sam_model_path", ""),
+            })
+
     # ── Loading ────────────────────────────────────────────────────────────────
 
     def preload(self, names: list) -> None:
@@ -227,7 +242,7 @@ class ModelLoader:
         Giải phóng các model nặng (depth, dino) sau khi xử lý xong.
         Giữ lại các model nhẹ (yolo) cho các stages tiếp theo.
         """
-        HEAVY = {"depth", "dino"}
+        HEAVY = {"depth", "dino", "sam"}
         for name in list(self._loaded_names):
             if name in HEAVY:
                 self.unload(name)
@@ -375,6 +390,70 @@ def _loader_resnet18(config: dict) -> Any:
     }
 
 
+def _loader_vlm(config: dict) -> Any:
+    """
+    Load VLM (Qwen2.5-VL / Qwen2-VL / generic vision2seq).
+
+    Trả về dict:
+        {"model": model, "processor": processor, "device": torch.device,
+         "verifier": VLMVerifier singleton đã warm}
+
+    Dùng bởi vlm_verify stage — stage tự quản lazy load nếu model này
+    chưa được preload.
+    """
+    import torch
+    from transformers import AutoProcessor
+
+    name = config.get("model_name", "Qwen/Qwen2.5-VL-7B-Instruct")
+    pref = str(config.get("device_pref", "auto")).lower()
+    if pref == "cpu":
+        device = torch.device("cpu")
+    else:
+        device = torch.device(
+            "cuda:0" if torch.cuda.is_available() else "cpu"
+        )
+    dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
+
+    log.info(f"  [vlm] Loading {name} → {device} …")
+    processor = AutoProcessor.from_pretrained(
+        name, min_pixels=256 * 28 * 28, max_pixels=1280 * 28 * 28,
+    )
+
+    model = None
+    for cls_name in ("Qwen2_5_VLForConditionalGeneration",
+                     "Qwen2VLForConditionalGeneration"):
+        try:
+            import transformers as tf
+            cls = getattr(tf, cls_name, None)
+            if cls is None:
+                continue
+            model = cls.from_pretrained(name, torch_dtype=dtype)
+            break
+        except Exception as exc:
+            log.debug(f"  [vlm] {cls_name} fail: {exc}")
+    if model is None:
+        from transformers import AutoModelForVision2Seq
+        model = AutoModelForVision2Seq.from_pretrained(name, torch_dtype=dtype)
+
+    model.to(device)
+    model.eval()
+
+    # Warm singleton verifier để stage dùng lại (không load 2 lần)
+    try:
+        from depth_analysis.vlm_verifier import get_vlm_verifier
+        verifier = get_vlm_verifier()
+        verifier._model, verifier._processor, verifier._device = \
+            model, processor, device
+    except Exception as exc:
+        log.debug(f"  [vlm] Verifier warm-up skip: {exc}")
+        verifier = None
+
+    return {
+        "model": model, "processor": processor, "device": device,
+        "verifier": verifier,
+    }
+
+
 def _free_gpu():
     """Giải phóng GPU memory."""
     try:
@@ -383,3 +462,55 @@ def _free_gpu():
             torch.cuda.empty_cache()
     except ImportError:
         pass
+
+
+def _loader_sam(config: dict) -> Any:
+    """
+    Load SAM2 mask segmentor (Meta Segment Anything 2).
+
+    Trả về dict:
+        {"model": sam_model, "device": torch.device, "model_type": str}
+
+    SAM2 dùng ultralytics.SAM() nếu có, hoặc sam2 package.
+    """
+    import torch
+
+    model_type = config.get("model_type", "sam2_hiera_large")
+    model_path = config.get("model_path", "")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Ưu tiên ultralytics SAM2 (cài đơn giản: pip install ultralytics)
+    try:
+        from ultralytics import SAM
+        # ultralytics SAM2: SAM("sam2_hiera_large.pt") auto-downloads
+        if model_path:
+            sam_model = SAM(model_path)
+        else:
+            # Map shorthand → ultralytics filename
+            _ul_map = {
+                "sam2_hiera_large": "sam2_hiera_large.pt",
+                "sam2_hiera_small": "sam2_hiera_small.pt",
+            }
+            sam_model = SAM(_ul_map.get(model_type, model_type))
+        log.info(f"  [SAM2] Loaded via ultralytics: {model_type} → {device}")
+        return {"model": sam_model, "device": device, "model_type": model_type}
+    except ImportError:
+        pass
+
+    # Fallback: sam2 package (Meta official)
+    try:
+        from sam2.build_sam import build_sam2
+        from sam2.sam2_image_predictor import SAM2ImagePredictor
+        if model_path:
+            sam2_model = build_sam2(model_type, model_path, device=str(device))
+            predictor = SAM2ImagePredictor(sam2_model)
+            log.info(f"  [SAM2] Loaded via sam2 package: {model_type} → {device}")
+            return {"model": predictor, "device": device, "model_type": model_type}
+    except ImportError:
+        pass
+
+    raise RuntimeError(
+        f"SAM2 model '{model_type}' không load được.\n"
+        f"  → Cài: pip install ultralytics (đơn giản nhất)\n"
+        f"  → Hoặc: pip install sam2 (Meta official)"
+    )

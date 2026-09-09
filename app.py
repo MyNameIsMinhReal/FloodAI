@@ -340,6 +340,22 @@ def _analyze_image(image_b64: str) -> str:
                     "Pipeline phân tích ảnh chưa khả dụng (model chưa tải hoặc thiếu file).\n"
                     "Hãy mô tả những gì bạn thấy trong ảnh để tôi tư vấn thêm."
                 )
+            # ── [MỚI] Pre-validate ảnh trước khi chạy pipeline nặng ─────
+            try:
+                from depth_analysis.junk_classifier import JunkClassifier
+                jc = JunkClassifier()
+                screen = jc.classify(tmp_path)
+                if screen.image_type in ("junk", "dry"):
+                    log.info(f"[analyze_image] pre-validated "
+                             f"type={screen.image_type} reason={screen.reason}")
+                    return (
+                        f"{header}\n"
+                        f"{screen.vietnamese_message()}\n"
+                        "Vì vậy tôi không chạy phân tích độ sâu cho ảnh này."
+                        " Hãy gửi ảnh chụp ngoài trời lúc ngập để tôi phân tích."
+                    )
+            except Exception as exc:
+                log.warning(f"[analyze_image] pre-validate bỏ qua: {exc}")
             results = estimator.analyze_batch([Path(tmp_path)], chunk_size=1)
             if not results:
                 return f"{header}\nKhông trích xuất được kết quả từ ảnh."
@@ -349,6 +365,11 @@ def _analyze_image(image_b64: str) -> str:
             conf   = round(float(getattr(r, "confidence", 0) or 0) * 100, 1)
             n_objs = len(getattr(r, "detected_objects", []) or [])
             vehs   = getattr(r, "vehicles_detected", []) or []
+            # ── [v4] Thêm thông tin scene quality + night mode ──────────
+            scene_sc = getattr(r, "scene_score", None)
+            is_night = getattr(r, "is_night", None)
+            needs_rev = getattr(r, "needs_review", None)
+            spread   = getattr(r, "method_spread_cm", None)
             lines  = [
                 header,
                 "[KẾT QUẢ PHÂN TÍCH TỰ ĐỘNG]",
@@ -357,6 +378,13 @@ def _analyze_image(image_b64: str) -> str:
                 f"- Độ tin cậy: {conf}%",
                 f"- Số đối tượng phát hiện: {n_objs}",
             ]
+            if scene_sc is not None:
+                q_tag = "✅" if scene_sc >= 0.6 else "⚠" if scene_sc >= 0.4 else "❌"
+                lines.append(f"- Chất lượng ảnh: {q_tag} {scene_sc:.0%}")
+            if is_night is not None:
+                lines.append(f"- режим照明: {'đêm' if is_night else 'ngày'}")
+            if needs_rev:
+                lines.append(f"- ⚠ Cần xác minh: bất đồng đo lường (spread={spread:.0f}cm)" if spread else "- ⚠ Cần xác minh: bất đồng đo lường")
             if vehs:
                 lines.append(f"- Phương tiện: {', '.join(str(v) for v in vehs)}")
             return "\n".join(lines)
@@ -666,6 +694,10 @@ def api_map_data():
                 "confidence": result.get("confidence_raw", 0),
                 "time":     job.created_at,
                 "source":   result.get("source", "Người dân gửi"),
+                # [v4] Scene quality metadata
+                "scene_score": result.get("scene_score", None),
+                "is_night":    result.get("is_night", None),
+                "needs_review": result.get("needs_review", False),
             })
     except Exception as exc:
         log.warning("[map/data] %s", exc)

@@ -1600,6 +1600,7 @@ class PipelineTools:
         self._estimator = None
 
         self._register("analyze",           self._tool_analyze)
+        self._register("screen_images",     self._tool_screen_images)  # NEW pre-validate
         self._register("adjust_threshold",  self._tool_adjust_threshold)
         self._register("rerun",             self._tool_rerun)
         self._register("queue_review",      self._tool_queue_review)
@@ -1655,6 +1656,48 @@ class PipelineTools:
             )
         except Exception as e:
             return ToolResult(tool="analyze", success=False, error=str(e))
+
+    # ── Tool: screen images (pre-validate, nhẹ ~10ms, không GPU) ──
+
+    def _tool_screen_images(self, images: List[Path],
+                            junk_threshold: Optional[float] = None) -> ToolResult:
+        """
+        Pre-validate nhanh danh sách ảnh TRƯỚC khi chạy analysis nặng.
+
+        Phân loại mỗi ảnh: flood / dry / junk / uncertain.
+        - junk / dry → skip pipeline (không ngốn GPU)
+        - flood / uncertain → agent gọi tool "analyze" để phân tích đầy đủ
+
+        Trả về máy đọc được: [{"filename", "image_type", "confidence",
+                               "reason", "skip_pipeline", "message"}, ...]
+        """
+        t0 = time.time()
+        try:
+            from depth_analysis.junk_classifier import JunkClassifier
+            jc = JunkClassifier(junk_threshold=junk_threshold
+                                if junk_threshold else 0.80)
+            results = []
+            for p in images:
+                j = jc.classify(p)
+                results.append(j.to_dict())
+            return ToolResult(
+                tool="screen_images", success=True,
+                data={
+                    "results": results,
+                    "duration_s": round(time.time() - t0, 3),
+                    "summary": {
+                        "total": len(results),
+                        "junk":  sum(1 for r in results if r["image_type"] == "junk"),
+                        "dry":   sum(1 for r in results if r["image_type"] == "dry"),
+                        "flood": sum(1 for r in results if r["image_type"] == "flood"),
+                        "uncertain": sum(1 for r in results
+                                         if r["image_type"] == "uncertain"),
+                    },
+                },
+            )
+        except Exception as e:
+            # Không bao giờ làm sập agent — fallback cho phép analyze tiếp
+            return ToolResult(tool="screen_images", success=False, error=str(e))
 
     # ── Tool: adjust threshold ───────────────────────────────────
 

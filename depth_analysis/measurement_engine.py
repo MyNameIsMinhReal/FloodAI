@@ -17,7 +17,7 @@ Final result = weighted median (robust hon mean).
 
 import logging
 from dataclasses import dataclass, field
-from typing import List, Tuple, Optional
+from typing import Any, List, Tuple, Optional
 
 from utils.constants import FLOOD_LEVEL_KNEE, FLOOD_LEVEL_HIP, FLOOD_LEVEL_CHEST, FLOOD_LEVEL_COMPLETE
 from utils.constants import classify_level
@@ -45,6 +45,10 @@ class FinalMeasurement:
     votes:           List[MeasurementVote] = field(default_factory=list)
     dominant_source: str = ""
     notes:           str = ""
+    # ── [v4] Disagreement tracking — dùng để đẩy vào review queue ──
+    needs_review:    bool = False
+    review_reason:   str  = ""
+    method_spread_cm: float = 0.0   # p90 - p10 của các votes
 
 
 # Flood level thresholds (cm)
@@ -69,10 +73,16 @@ def classify_level(water_cm: float) -> Tuple[str, str]:
 class MeasurementEngine:
     """
     Ket hop nhieu nguon do de tinh muc nuoc chinh xac.
+
+    Fusion modes (config: measurement.fusion):
+        "bayesian" — inverse-variance weighted mean + MAD outlier rejection
+                     (mặc định, chính xác hơn khi có ≥2 nguồn độc lập)
+        "median"   — weighted median cũ (robust, giữ lại để so sánh)
     """
 
-    def __init__(self, min_confidence: float = 0.25):
+    def __init__(self, min_confidence: float = 0.25, fusion_mode: str = "bayesian"):
         self.min_confidence = min_confidence
+        self.fusion_mode = fusion_mode if fusion_mode in ("bayesian", "median") else "bayesian"
 
     # ------------------------------------------------------------------
     def _collect_sensor_votes(
@@ -135,17 +145,31 @@ class MeasurementEngine:
 
         self._apply_priority_weights(valid_votes)
 
-        # === Weighted median voting (robust hon mean, loai outliers) ===
-        water_cm, ci_low, ci_high, dominant = self._weighted_median(valid_votes)
+        # === Fusion: Bayesian (mặc định) hoặc weighted median ===
+        if self.fusion_mode == "bayesian" and len(valid_votes) >= 2:
+            water_cm, ci_low, ci_high, dominant = self._bayesian_fusion(valid_votes)
+        else:
+            water_cm, ci_low, ci_high, dominant = self._weighted_median(valid_votes)
 
         level, desc = classify_level(water_cm)
         confidence  = self._calc_final_confidence(valid_votes, water_cm)
         confidence  = self._bonus_agreement(valid_votes, water_cm, confidence)
 
+        # ── [v4] Disagreement → flag cho review queue ──────────────────────
+        spread = self._vote_spread(valid_votes)
+        needs_review, review_reason = False, ""
+        if len(valid_votes) >= 2:
+            spread_thresh = max(20.0, water_cm * 0.35)
+            if spread > spread_thresh:
+                needs_review = True
+                review_reason = "method_disagreement"
+                confidence *= 0.85   # phạt nhẹ khi bất đồng
+
         log.info(
             f"  Measurement: {water_cm:.0f}cm [{ci_low:.0f}-{ci_high:.0f}] "
             f"| {level} | conf={confidence:.2f} "
-            f"| {len(valid_votes)} votes | dominant={dominant}"
+            f"| {len(valid_votes)} votes | dominant={dominant} "
+            f"| fusion={self.fusion_mode}"
         )
 
         return FinalMeasurement(
@@ -158,6 +182,9 @@ class MeasurementEngine:
             votes            = valid_votes,
             dominant_source  = dominant,
             notes            = self._generate_notes(valid_votes, water_cm, level),
+            needs_review     = needs_review,
+            review_reason    = review_reason,
+            method_spread_cm = round(spread, 1),
         )
 
     # ------------------------------------------------------------------
@@ -346,6 +373,67 @@ class MeasurementEngine:
         )
 
     # ------------------------------------------------------------------
+    def _vote_spread(self, votes: List[MeasurementVote]) -> float:
+        """Độ phân tán p90-p10 của các votes (cm)."""
+        if len(votes) < 2:
+            return 0.0
+        vals = np.array([v.water_cm for v in votes], dtype=np.float64)
+        return float(np.percentile(vals, 90) - np.percentile(vals, 10))
+
+    def _bayesian_fusion(
+        self, votes: List[MeasurementVote]
+    ) -> Tuple[float, float, float, str]:
+        """
+        Inverse-variance weighted mean với MAD outlier rejection.
+
+        Mỗi nguồn có σ riêng suy từ confidence: nguồn tin cậy cao → σ nhỏ
+        → trọng số lớn. Outlier (lệch cụm > 3×MAD) bị loại trước khi gộp.
+
+        Returns:
+            (fused_cm, ci_low, ci_high, dominant_source)
+        """
+        vals = np.array([v.water_cm for v in votes], dtype=np.float64)
+
+        # ── Bước 1: MAD outlier rejection ──────────────────────────────
+        med = float(np.median(vals))
+        mad = float(np.median(np.abs(vals - med)))
+        # MAD=1.4826 ≈ std của phân phối chuẩn; floor để không chia 0
+        sigma_mad = max(1.4826 * mad, 5.0)
+        keep_idx = [
+            i for i, v in enumerate(votes)
+            if abs(v.water_cm - med) <= 3.0 * sigma_mad
+        ]
+        # Giữ tối thiểu 1 vote (nếu tất cả đều là "outlier" thì giữ hết)
+        kept = [votes[i] for i in keep_idx] or votes
+
+        # ── Bước 2: inverse-variance weights ───────────────────────────
+        # σ_i = base × (1 − conf) + floor  → conf=1 → σ=8cm; conf=0.3 → σ≈26cm
+        weights, weighted_sum = [], 0.0
+        for v in kept:
+            sigma = 8.0 * (1.0 - v.confidence) + 4.0
+            w = (v.confidence ** 2) / (sigma ** 2)
+            weights.append(w)
+            weighted_sum += w * v.water_cm
+
+        total_w = sum(weights)
+        fused = weighted_sum / total_w if total_w > 0 else med
+
+        # ── Bước 3: CI từ weighted std ─────────────────────────────────
+        kvals = np.array([v.water_cm for v in kept], dtype=np.float64)
+        if len(kept) > 1 and total_w > 0:
+            var = float(np.sum(weights * (kvals - fused) ** 2) / total_w)
+            ci_half = max(1.96 * np.sqrt(max(var, 0.0)), 4.0)
+        else:
+            ci_half = 10.0
+
+        dominant = max(kept, key=lambda v: v.confidence).source
+        return (
+            round(float(fused), 1),
+            round(float(fused - ci_half), 1),
+            round(float(fused + ci_half), 1),
+            dominant,
+        )
+
     def _weighted_median(
         self, votes: List[MeasurementVote]
     ) -> Tuple[float, float, float, str]:
@@ -411,3 +499,50 @@ class MeasurementEngine:
             f"Ket hop {len(votes)} nguon: {sources}. "
             f"Mức nước: {water_cm:.0f}cm ({level})."
         )
+
+
+# ── [v4] Disagreement assessment cho postprocess/review queue ─────────────────
+
+def _get(obj: Any, key: str, default=None):
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def assess_disagreement(result) -> Tuple[bool, float, str]:
+    """
+    Kiểm tra bất đồng giữa kết quả cuối và các reference objects.
+
+    Dùng khi result KHÔNG lưu FinalMeasurement (vd ReferenceFloodResult):
+    so sánh water_height_cm cuối với từng object đo được. Nếu ≥1 reference
+    mạnh (confidence cao) lệch quá 30% so với kết quả cuối → flag review.
+
+    Args:
+        result: ReferenceFloodResult / dict có detected_objects,
+                water_height_cm
+
+    Returns:
+        (needs_review, max_dev_pct, reason)
+    """
+    final_cm = _get(result, "water_height_cm", None)
+    objects = _get(result, "detected_objects", []) or []
+    if final_cm is None or not objects or final_cm <= 0:
+        return False, 0.0, ""
+
+    max_dev, n_strong = 0.0, 0
+    for o in objects:
+        if _get(o, "skip_measure", False):
+            continue
+        obj_cm = _get(o, "water_height_cm", 0.0)
+        conf   = float(_get(o, "confidence", 0.0))
+        if not obj_cm or obj_cm <= 0 or conf < 0.5:
+            continue
+        n_strong += 1
+        dev = abs(obj_cm - final_cm) / max(final_cm, 1.0)
+        # Object mạnh mà nói ngập nhiều hơn hẳn kết quả cuối → đáng ngờ nhất
+        if obj_cm > final_cm * 1.2 and dev > max_dev:
+            max_dev = dev
+
+    if n_strong >= 1 and max_dev > 0.30:
+        return True, round(max_dev * 100, 1), "method_disagreement"
+    return False, round(max_dev * 100, 1), ""

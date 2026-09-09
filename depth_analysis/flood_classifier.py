@@ -51,6 +51,7 @@ class FloodClassifier:
         resnet_path:     str   = "",            # path đến .pth, "" = tắt
         resnet_labels:   Optional[list] = None, # ["dry","flood","heavy_flood"]
         ensemble_weights: Optional[dict] = None, # {"color":0.45,"dino":0.25,"resnet":0.20}
+        cfg:             Optional[dict] = None,  # [v4] pipeline config → WaterDetector options
     ):
         self.dino_model       = dino_model
         self.flood_threshold  = flood_threshold
@@ -61,6 +62,7 @@ class FloodClassifier:
         self.ensemble_weights = ensemble_weights or {
             "color": 0.45, "dino": 0.25, "resnet": 0.20
         }
+        self._cfg             = cfg or {}
         self._extractor: Any = None
         self._model: Any     = None
         self._water_detector = None  # lazy load
@@ -69,6 +71,7 @@ class FloodClassifier:
     def _get_water_detector(self):
         if self._water_detector is None:
             from depth_analysis.water_detector import WaterDetector
+            wd_cfg = self._cfg.get("water_detection", {})
             self._water_detector = WaterDetector(
                 min_water_area=self.min_water_area,
                 use_reflection=True,
@@ -76,6 +79,7 @@ class FloodClassifier:
                 use_lab=True,
                 use_ycbcr=True,
                 use_norm_rgb=True,
+                refine_line=wd_cfg.get("refine_line", True),
             )
         return self._water_detector
 

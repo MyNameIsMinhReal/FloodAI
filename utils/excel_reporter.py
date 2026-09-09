@@ -193,6 +193,8 @@ class ExcelReporter:
         hdrs = [
             ("STT",       5),  ("Tên file",   28), ("Mức ngập",  14),
             ("Nước (cm)", 12), ("Khoảng",     16), ("Tin cậy",   11),
+            # [v4] Scene quality columns
+            ("Chất lượng", 12), ("Đêm", 6), ("Cần review", 11),
             ("Vật thể",   22), ("Ghi chú",    40), ("Ảnh",       16),
         ]
 
@@ -223,6 +225,10 @@ class ExcelReporter:
                 d.get("water_height_cm", 0),
                 d.get("water_height_range", ""),
                 f"{d.get('confidence', 0)*100:.0f}%",
+                # [v4] Scene quality data
+                f"{float(d.get('scene_score', 0) or 0)*100:.0f}%",
+                "Đêm" if d.get("is_night") else "",
+                "Có" if d.get("needs_review") else "",
                 objs,
                 (d.get("notes", "") or "")[:150],
             ]

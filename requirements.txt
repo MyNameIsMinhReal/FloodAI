@@ -3,6 +3,7 @@ numpy>=1.24
 Pillow>=10.0
 opencv-python>=4.8
 requests>=2.31
+pyyaml>=6.0             # config.yaml parsing
 
 # == Image crawling (Selenium browser - bypasses all rate limits) ==============
 selenium>=4.15
@@ -36,8 +37,9 @@ google-auth-oauthlib>=1.1
 
 # == Ground Detection (SegFormer semantic segmentation) =======================
 # transformers>=4.40 (da co o tren)
-# Cai them:
-# pip install pyyaml  (cho config.yaml)
+
+# == Excel Report =============================================================
+openpyxl>=3.1           # Excel (.xlsx) report generation
 
 # == AI Deblur (NAFNet) ========================================================
 # Option A: basicsr (co NAFNet, tot nhat)
@@ -45,14 +47,15 @@ google-auth-oauthlib>=1.1
 #   Download model: https://github.com/megvii-research/NAFNet/releases
 #
 # Option B: Wiener deconvolution (built-in, khong can cai them)
-#
-# pip install pyyaml openpyxl   (cho config.yaml va Excel report)
 
 # Raincoat Detection (thêm v3)
 # CLIP zero-shot (tùy chọn — tắt use_clip: false nếu không cần)
 # transformers>=4.35.0   # đã có từ depth analysis
 # torch>=2.0.0           # đã có từ depth analysis
 Pillow>=10.0.0           # PIL Image cho CLIP processor
+
+# == System monitoring =========================================================
+psutil>=5.9              # memory_manager.py
 
 # == Web application (app.py) ==================================================
 flask>=3.0
@@ -62,6 +65,6 @@ peft>=0.10               # LoRA adapter loading (flood-agent-merged)
 
 # Geo-localization
 geoclip          # AI visual geo-localization (GPU), ~2GB model download lần đầu
-exifread         # đọc GPS EXIF từ ảnh
+exifread         # đọc GPS EXIF từ ảnh (backup khi PIL EXIF không đủ)
 # easyocr        # đã có từ trước
 # paddleocr      # đã có từ trước (tốt hơn cho tiếng Việt)

@@ -245,7 +245,7 @@ pipeline:
 # ── Model Switching (MỚI) ────────────────────────────────────────────────────
 models:
   # Depth estimation
-  # Options: small | base | large | midas
+  # Options: small | base | large | midas | zoedepth | depthpro | metric3d
   depth: small
 
   # Object detector
@@ -258,6 +258,10 @@ models:
   # Feature extraction
   dino: facebook/dinov2-small
 
+  # [v4] Depth batch chunk size — ảnh mỗi lần xử lý trước khi giải phóng RAM
+  # Giảm xuống 4 nếu RAM < 8GB. Tăng lên 12 nếu RAM >= 16GB.
+  depth_chunk_size: 8
+
   # Flood classifier (ResNet-18 fine-tuned)
   # Đặt path .pth file tại đây, hoặc để trống để tắt
   flood_resnet: "models/flood_resnet/model_flood_v20.pth"
@@ -265,6 +269,17 @@ models:
   # Label map của flood_resnet (thứ tự index khi train)
   # Nếu train theo thứ tự khác, sửa ở đây, không cần đụng code
   flood_resnet_labels: ["dry", "flood", "heavy_flood"]
+
+  # VLM (Vision-Language Model) — dùng cho stage vlm_verify
+  # Để trống "" = tắt (stage vẫn chạy nhưng verdict=skipped)
+  # Model nhỏ hơn nếu máy yếu: "Qwen/Qwen2-VL-2B-Instruct"
+  vlm: ""
+
+  # [v4] SAM2 Mask Segmentor — refine mask nước bằng Segment Anything
+  # Cần cài: pip install segment-anything-2  + weight (~2GB). Chưa cài = bỏ qua.
+  use_sam: false
+  sam_model_type: "sam2_hiera_large"     # sam2_hiera_large / sam2_hiera_small
+  sam_model_path: ""                     # Để trống = auto-download
 
   # Trọng số ensemble — tổng phải = 1.0 (channel_bonus tính thêm ngoài)
   # color: WaterDetector, dino: DINOv2, resnet: ResNet-18
@@ -347,3 +362,82 @@ raincoat:
   # Adaptive YOLO confidence theo điều kiện mưa
   # heavy_rain_conf: 0.20   # Mưa to → hạ ngưỡng detect person
   # normal_conf: 0.35        # Thời tiết bình thường
+
+# ── VLM Verify (MỚI v4) ──────────────────────────────────────────────────────
+# Kiểm định chéo bằng Vision-Language Model — chạy SAU CÙNG trước khi xuất.
+# VLM "nhìn" ảnh gốc và xác minh các con số pipeline đo được:
+#   mực nước (cm), chiều cao từng người, số người/xe...
+# VD: pipeline đo người cao 1.7m nhưng dáng trong ảnh ~1.5m → flag MISMATCH,
+#     nếu auto_correct bật và đủ tự tin → tự sửa số rồi mới xuất báo cáo.
+vlm_verify:
+  enabled: true             # Bật stage kiểm định
+  device: "auto"            # "auto" | "cuda" | "cpu"
+  max_new_tokens: 512       # Số token VLM sinh tối đa mỗi ảnh
+
+  # Ngưỡng mismatch: chênh lệch phải vượt CẢ % lẫn cm tuyệt đối mới bị flag
+  tolerance_pct: 30         # cho phép sai lệch tối đa 30% so với số đo
+  min_abs_diff_cm: 12       # và chênh tuyệt đối tối thiểu 12cm
+
+  auto_correct: true        # Tự sửa số khi VLM chắc chắn pipeline sai
+  min_confidence_to_correct: 0.65   # Confidence tối thiểu để được sửa
+
+  unload_after: false       # true = giải phóng VRAM ngay sau stage này
+
+# ── Measurement Fusion (MỚI v4) ────────────────────────────────────────────────
+# Cài đặt cho quá trình gộp nhiều phép đo (reference objects + depth model).
+measurement:
+  fusion_mode: "bayesian"              # "bayesian" | "weighted_median"
+  # bayesian        — inverse-variance weighted + MAD outlier rejection (chính xác hơn)
+  # weighted_median — median có trọng số (nhanh, đơn giản hơn)
+
+  flag_disagreement: true              # Đưa ảnh bất đồng vào review queue
+  disagreement_threshold_pct: 30       # Bất đồng >=30% giữa methods → flag
+
+# ── Context-aware Calibration (MỚI v4) ────────────────────────────────────────
+# Calibration tự động theo ngữ cảnh: ngày/đêm, người/xe/không reference.
+# Khi calibrate() nhận ảnh đêm → dùng file calibration riêng, không nhầm
+# calibration ngày (vì model depth hoạt động rất khác trong bóng tối).
+#
+# File calibration tự tạo:
+#   calibration_person_day.json    ← calibration cho người vào ban ngày
+#   calibration_person_night.json  ← calibration cho người vào ban đêm
+#   calibration_vehicle.json       ← calibration cho xe (không phân biệt ngày/đêm)
+#   calibration_no_reference.json  ← calibration khi không detect được người/xe
+calibration:
+  calibration_dir: "calibration_data"
+  # Folder chứa các file calibration JSON (tên theo pattern: {group}_{context}.json)
+  # Nếu folder rỗng hoặc không tồn tại → dùng defaults (identity function)
+
+# ── Water Line Refinement (MỚI v4) ─────────────────────────────────────────────
+water_detection:
+  refine_line: true       # Snap water line vào biên ướt-khô bằng Sobel gradient
+  search_window: 25       # Bán kính tìm kiếm quanh water line mask (px)
+
+# ── Temporal Aggregation (MỚI v4) ──────────────────────────────────────────────
+# Khi batch phân tích nhiều ảnh cùng khu vực (cùng GPS, camera khác góc) → gộp
+# lại bằng trimmed median để giảm nhiễu. Nếu chỉ 1 ảnh tại 1 vị trí → giữ nguyên.
+temporal_agg:
+  enable: false              # Bật khi cần gộp batch nhiều ảnh
+  trim_frac: 0.15           # Loại bỏ 15% giá trị nhỏ nhất + lớn nhất trước khi median
+
+# ── Night / Low-quality Gating (MỚI v4) ────────────────────────────────────────
+# Scene validator tự động phạt + cảnh báo khi ảnh quá tối hoặc quá mờ.
+# Thresholds: brightness < 40 → penalty 0.25; Laplacian < 50 → penalty 0.30.
+# Khi scene score < 0.4 → scene_type = UNCERTAIN + needs_action = true
+scene_validation:
+  # Không cần config thêm — đã nằm trong SceneValidator defaults.
+  # Chỉ cần bật/tắt rule:
+  enable_brightness_check: true
+  enable_blur_check: true
+
+
+# �� Pre-validation (Junk/Dry Filter) (M?I) ��������
+# L?c nhanh ?nh tr??c khi ch?y pipeline ?? tr�nh ng?n t�i nguy�n.
+#  - junk ? reject ngay (kh�ng li�n quan l? l?t: chart/screenshot/meme/indoor)
+#  - dry  ? skip depth estimation (kh� r�o, kh�ng n??c)
+#  - flood/uncertain ? ch?y pipeline b�nh th??ng
+prevalidate:
+  enable: true
+  junk_threshold: 0.80      # confidence > 0.80 �� reject junk
+  dry_threshold: 0.55       # confidence > 0.55 �� coi l� dry outdoor
+  dry_max_water: 5.0        # water ratio (%) d??i ng??ng n�y �� coi l� kh� r�o

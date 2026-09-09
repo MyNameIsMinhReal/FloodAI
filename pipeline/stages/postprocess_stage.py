@@ -6,6 +6,7 @@ Các bước xử lý sau depth estimation:
   - Route prediction (nếu có GPS)
   - Alert system (nếu flood > threshold)
   - Temporal tracking (nếu có nhiều ảnh cùng location)
+  - Disagreement flagging → review queue cho active learner [v4]
 """
 import logging
 from typing import TYPE_CHECKING, Any
@@ -80,6 +81,80 @@ class PostprocessStage:
         log.warning(f"  ⚠ ALERT: {len(critical)} ảnh ngập >= {threshold}!")
         if alert_cfg.get("send_email", False):
             self._send_email_alert(critical, alert_cfg)
+
+    # ── [v4] Disagreement → review queue cho active learner ────────────────
+
+    def check_disagreements(self, state: "PipelineState") -> None:
+        """
+        Quét kết quả depth, tìm các ảnh có bất đồng giữa phương pháp đo →
+        đưa vào review_queue (ActiveLearnerV2) để con người xác minh.
+
+        Ưu tiên review: ảnh ngập sâu (>30cm) + bất đồng lớn → quan trọng
+        hơn ảnh nông có bất đồng nhỏ.
+        """
+        measurement = self.cfg.get("measurement", {})
+        if not measurement.get("flag_disagreement", True):
+            return
+
+        try:
+            from learning.active_learner import ActiveLearnerV2, ReviewCase
+        except ImportError:
+            log.debug("  [Disagreement] ActiveLearnerV2 không sẵn sàng → bỏ qua")
+            return
+
+        reviewer = ActiveLearnerV2(self.cfg)
+        n_added = 0
+
+        for dr in state.depth_results:
+            needs_review = False
+            review_reason = ""
+            water_cm = getattr(dr, "water_height_cm", 0.0) or 0.0
+
+            # ── Case 1: Có FinalMeasurement với needs_review flag ─────
+            fm = getattr(dr, "final_measurement", None)
+            if fm is not None:
+                if getattr(fm, "needs_review", False):
+                    needs_review = True
+                    review_reason = getattr(fm, "review_reason", "method_disagreement")
+
+            # ── Case 2: ReferenceFloodResult (không có FinalMeasurement)
+            #    → dùng standalone assess_disagreement ─────────────────
+            if not needs_review and water_cm > 0:
+                try:
+                    from depth_analysis.measurement_engine import assess_disagreement
+                    flagged, dev_pct, reason = assess_disagreement(dr)
+                    if flagged:
+                        needs_review = True
+                        review_reason = reason or "method_disagreement"
+                except ImportError:
+                    pass
+
+            if not needs_review:
+                continue
+
+            img_path = getattr(dr, "original_path", "") or ""
+            case = ReviewCase(
+                timestamp="",
+                image_path=img_path,
+                predicted_depth=water_cm,
+                predicted_level=getattr(dr, "flood_level", "UNKNOWN"),
+                confidence=getattr(dr, "confidence", 0.0),
+                review_reason=review_reason,
+                priority=2 if water_cm > 30 else 1,
+                score=60.0 + min(40.0, water_cm / 2.0),
+            )
+            reviewer.add_to_queue(case)
+            n_added += 1
+            log.debug(
+                f"  [Disagreement] → review queue: {img_path} "
+                f"({water_cm:.0f}cm, reason={review_reason})"
+            )
+
+        if n_added > 0:
+            log.info(f"  [Disagreement] Đã đưa {n_added} ảnh vào review queue")
+        reviewer.close()
+
+    # ── Email helpers ──────────────────────────────────────────────────────
 
     def _send_email_alert(self, results: list, alert_cfg: dict) -> None:
         """Gửi email alert — cần cấu hình SMTP trong .env."""

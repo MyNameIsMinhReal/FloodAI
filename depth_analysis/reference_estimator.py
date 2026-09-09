@@ -278,6 +278,10 @@ class ReferenceFloodResult:
     depth_flood_pct:    float = 0.0
     notes:              str = ""
     vehicles_detected:  List[dict] = field(default_factory=list)  # VehicleDetection.to_dict()
+    # [v4] Scene quality + context — dùng bởi DepthCalibrator (context-aware)
+    scene_score:        float = 0.5        # 0=bad, 1=good (từ SceneValidator)
+    is_night:           bool  = False      # brightness < 60 → night calibration
+    brightness:         float = 128.0      # avg brightness [0-255]
 
 
 class ReferenceEstimator:
@@ -324,6 +328,14 @@ class ReferenceEstimator:
         self._yolo = self._depth_pipe = self._classifier = None
         self._pose_mdl = self._seg_model = self._seg_proc = None
         self._seg_dev  = "cpu"
+        # Full pipeline config (gán bởi DepthStage._run_estimator: estimator._cfg = self.cfg)
+        # Dùng cho:
+        #   - models.use_sam → SAM2 mask hook trong _measure_objects_local
+        #   - water_detection.refine_line → WaterDetector snap water line
+        #   - models.use_sam / sam_model_type / sam_model_path → SAM segmentor
+        # ⚠ Không nên dùng _cfg cho bất kỳ thứ gì khác — ưu tiên truyền
+        #   qua constructor param nếu cần mở rộng.
+        self._cfg: dict = {}
 
     def _load_yolo(self):
         if self._yolo: return
@@ -341,7 +353,10 @@ class ReferenceEstimator:
         if self._classifier: return
         try:
             from depth_analysis.flood_classifier import FloodClassifier
-            self._classifier = FloodClassifier(dino_model=self.dino_model, device=self.device)
+            self._classifier = FloodClassifier(
+                dino_model=self.dino_model, device=self.device,
+                cfg=self._cfg,  # [v4] pass config → WaterDetector refine_line
+            )
         except Exception as e:
             log.debug(f"  FloodClassifier skip: {e}")
 
@@ -410,6 +425,25 @@ class ReferenceEstimator:
         # Fallback: neu rat nhieu mau nuoc → co the thuc su co lu
         if not has_flood and (lower_pct >= 12.0 or water_pct >= 15.0):
             has_flood = True
+
+        # ── [v4 Gap A] SceneValidator: kiểm tra chất lượng ảnh ────────────
+        # Chạy SAU water mask (cần mask để validate), TRƯỚC YOLO/depth (đắt tiền).
+        # Nếu ảnh quá mờ/tối → gắn scene_score thấp + flag vào result.
+        scene_score_val, is_night_val, brightness_val = 0.5, False, 128.0
+        try:
+            from depth_analysis.scene_validator import SceneValidator
+            _sv = SceneValidator()
+            sv_res = _sv.validate(water_mask=wmask, img_bgr=img_bgr)
+            scene_score_val = sv_res.scene_score
+            brightness_val  = float(np.mean(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)))
+            is_night_val    = brightness_val < 60.0
+            if scene_score_val < 0.4:
+                log.warning(
+                    f"  [Scene] Quality LOW: score={scene_score_val:.2f} "
+                    f"brightness={brightness_val:.0f} — measurements may be inaccurate"
+                )
+        except Exception as _sv_exc:
+            log.debug(f"  [Scene] Validator skip: {_sv_exc}")
 
         # 2. YOLO (can truoc để check camera angle)
         self._load_yolo()
@@ -537,6 +571,14 @@ class ReferenceEstimator:
             is_aerial=is_aerial, angle_factor=angle_factor,
             fov_deg=fov_deg)
 
+        # ── [v4 Gap A] Scene quality penalty ──────────────────────────────
+        # Ảnh mờ/tối → confidence bị phạt thêm (không thay đổi water_cm,
+        # vì con số đo vẫn có giá trị tham khảo).
+        if scene_score_val < 0.4:
+            conf *= 0.70   # phạt nặng khi scene rất xấu
+        elif scene_score_val < 0.6:
+            conf *= 0.88   # phạt nhẹ khi scene hơi xấu
+
         # 12. Vehicle detection (ô tô + xe máy, bỏ qua xe đạp)
         vehicles = []
         try:
@@ -571,6 +613,9 @@ class ReferenceEstimator:
             depth_flood_pct=round(lower_pct, 1),
             notes=notes,
             vehicles_detected=[v.to_dict() for v in vehicles],
+            scene_score=round(scene_score_val, 3),
+            is_night=is_night_val,
+            brightness=round(brightness_val, 1),
         )
         log.info(f"  [{image_path.name}] {level} {water_cm:.0f}cm conf={conf:.2f} "
                  f"aerial={is_aerial}")
@@ -622,7 +667,23 @@ class ReferenceEstimator:
                     if r:
                         out.append(r)
                 except Exception as e:
-                    log.error(f"  FAILED {Path(p).name}: {e}")
+                    # ── [v4 #7] OOM handling: free memory + log chi tiết ──
+                    _is_oom = isinstance(e, (MemoryError,) ) or "out of memory" in str(e).lower()
+                    if _is_oom:
+                        log.error(
+                            f"  OOM {Path(p).name}: GPU RAM hết. "
+                            f"Giảm chunk_size hoặc giảm kích thước ảnh."
+                        )
+                        # Free GPU memory ngay lập tức
+                        try:
+                            import torch
+                            if torch.cuda.is_available():
+                                torch.cuda.empty_cache()
+                        except ImportError:
+                            pass
+                        gc.collect()
+                    else:
+                        log.error(f"  FAILED {Path(p).name}: {e}")
 
             # ── Giải phóng RAM sau mỗi chunk ──────────────────────────
             gc.collect()
@@ -642,6 +703,48 @@ class ReferenceEstimator:
             log.info(f"  Chunk {chunk_idx+1} done: {len(out)} results total, RAM freed")
 
         return out
+
+    def _analyze_chunk_oom_safe(self, chunk, start_idx, total, stop_check=None, max_retries=2):
+        """
+        [v4 #7] Phân tích 1 chunk với OOM retry: nếu OOM xảy ra → giảm batch
+        size (tách chunk thành nửa) và thử lại. Dùng recursion depth limit.
+        """
+        import gc
+        results = []
+        current_chunk = list(chunk)
+
+        for attempt in range(max_retries + 1):
+            try:
+                for i, p in enumerate(current_chunk, start_idx + 1):
+                    if stop_check and stop_check():
+                        return results
+                    log.info(f"  [{i}/{total}] {Path(p).name}")
+                    r = self.analyze(Path(p))
+                    if r:
+                        results.append(r)
+                return results  # success
+            except Exception as e:
+                _is_oom = isinstance(e, MemoryError) or "out of memory" in str(e).lower()
+                if not _is_oom or attempt >= max_retries:
+                    raise
+                # OOM → free memory + split chunk in half
+                log.warning(f"  OOM on chunk (attempt {attempt+1}) — retrying with smaller chunks")
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                except ImportError:
+                    pass
+                gc.collect()
+                mid = len(current_chunk) // 2
+                if mid == 0:
+                    raise  # single image OOM → give up
+                first_half = current_chunk[:mid]
+                second_half = current_chunk[mid:]
+                r1 = self._analyze_chunk_oom_safe(first_half, start_idx, total, stop_check, max_retries - attempt - 1)
+                r2 = self._analyze_chunk_oom_safe(second_half, start_idx + mid, total, stop_check, max_retries - attempt - 1)
+                return r1 + r2
+        return results
 
     def unload_heavy_models(self):
         """
@@ -1739,6 +1842,27 @@ class ReferenceEstimator:
             sub_px = max(0, min(sub_px, bh))
             vis_px = bh - sub_px
             vis_r  = vis_px / max(bh, 1)   # tranh chia 0
+
+            # ── [SAM2] Tinh chỉnh pixel bằng mask chính xác ────────────
+            # Bbox hình chữ nhật chứa background → đếm px sai khi người nghiêng.
+            # SAM mask theo đúng hình dáng object → chính xác hơn rõ rệt.
+            if img_rgb is not None and effective_wl < effective_y2:
+                try:
+                    from depth_analysis.sam_segmentor import refine_submersion_pixels
+                    sub_px_sam, sam_conf = refine_submersion_pixels(
+                        img_rgb, det, effective_y2, effective_wl, y1, sub_px,
+                        cfg=getattr(self, "_cfg", None),
+                    )
+                    if sam_conf > 0 and abs(sub_px_sam - sub_px) > 2:
+                        log.debug(
+                            f"  [SAM] {obj_class}: sub_px {sub_px}→{sub_px_sam} "
+                            f"(mask-based)"
+                        )
+                        sub_px = sub_px_sam
+                        vis_px = bh - sub_px
+                        vis_r  = vis_px / max(bh, 1)
+                except Exception as e_sam:
+                    log.debug(f"  [SAM] hook fail (dùng bbox): {e_sam}")
 
             # ── Tinh water_cm ─────────────────────────────────────────
             # Cong thuc: ref_height × pose_factor × ti_le_ngap
