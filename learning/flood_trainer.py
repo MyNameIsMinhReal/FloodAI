@@ -131,6 +131,12 @@ def _build_trainer(trl_new, sft_trainer_cls, training_args_cls, model, tokenizer
     """
     max_seq = TRAIN_CFG["max_seq_length"]
 
+    trainer_params = inspect.signature(sft_trainer_cls.__init__).parameters
+
+    # Tokenizer/processor param: trl 1.x = "processing_class", trl < 1.x = "tokenizer"
+    tok_key = "processing_class" if "processing_class" in trainer_params else "tokenizer"
+
+    # ── Nhánh mới: SFTConfig (trl >= 0.12) ─────────────────────────────────
     if trl_new and sft_config_cls is not None:
         cfg_params = inspect.signature(sft_config_cls.__init__).parameters
 
@@ -148,9 +154,6 @@ def _build_trainer(trl_new, sft_trainer_cls, training_args_cls, model, tokenizer
             **merged_cfg,
         )
 
-        trainer_params = inspect.signature(sft_trainer_cls.__init__).parameters
-        tok_key = "processing_class" if "processing_class" in trainer_params else "tokenizer"
-
         trainer_kwargs = {
             "model":         model,
             tok_key:         tokenizer,
@@ -163,18 +166,28 @@ def _build_trainer(trl_new, sft_trainer_cls, training_args_cls, model, tokenizer
 
         return sft_trainer_cls(**trainer_kwargs)
 
-    # TRL < 0.12: API cũ
+    # ── Nhánh cũ (TRL < 0.12): dùng TrainingArguments + inspect để tránh
+    #    hardcode "tokenizer="/"max_seq_length=" vốn không còn trong trl mới.
     training_args = training_args_cls(
         output_dir=str(OUTPUT_DIR),
         **{eval_strategy_key: "steps"},
         **merged_cfg,
     )
-    return sft_trainer_cls(
-        model=model, tokenizer=tokenizer,
-        train_dataset=train_dataset, eval_dataset=eval_dataset,
-        dataset_text_field="text", max_seq_length=max_seq,
-        args=training_args, packing=False,
-    )
+    trainer_kwargs = {
+        "model":         model,
+        tok_key:         tokenizer,
+        "train_dataset": train_dataset,
+        "eval_dataset":  eval_dataset,
+        "args":          training_args,
+    }
+    # Chỉ thêm nhứng param mà trainer thực sự hỗ trợ (inspect-based, không hardcode)
+    for key, val in (("dataset_text_field", "text"),
+                     ("max_seq_length", max_seq),
+                     ("packing", False)):
+        if key in trainer_params:
+            trainer_kwargs[key] = val
+
+    return sft_trainer_cls(**trainer_kwargs)
 
 
 def _pick_best_gpu() -> int:
@@ -376,22 +389,40 @@ def train():
     try:
         from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
         from peft import LoraConfig, get_peft_model
-        # TRL >= 0.13: SFTConfig và SFTTrainer nằm trong submodule riêng
-        try:
-            from trl.trainer.sft_config import SFTConfig
-            from trl.trainer.sft_trainer import SFTTrainer
-        except ImportError:
-            # Fallback for older TRL versions (0.12.x)
+
+        # ── Import SFTConfig / SFTTrainer — thử nhiều path để tương thích
+        #    mọi phiên bản TRL (0.12 → 1.x): submodule riêng, rồi top-level.
+        SFTConfig = SFTTrainer = None
+        for cfg_path, tr_path in (
+            # trl >= 1.x: submodule trl.trainer.sft_*  (cùng path là ổn định nhất)
+            ("trl.trainer.sft_config", "trl.trainer.sft_trainer"),
+            # trl top-level exports (1.x đôi khi chỉ có ở đây)
+            ("trl.SFTConfig", "trl.SFTTrainer"),
+        ):
             try:
-                from trl.trainer.sft_trainer import SFTTrainer
+                import importlib
+                SFTConfig = getattr(importlib.import_module(cfg_path), "SFTConfig", None)
+                SFTTrainer = getattr(importlib.import_module(tr_path), "SFTTrainer", None)
+                if SFTConfig is not None and SFTTrainer is not None:
+                    break
+            except (ImportError, AttributeError):
+                SFTConfig = SFTTrainer = None
+
+        if SFTTrainer is None:
+            # Cuối cùng: thử import trực tiếp (bắt mọi exception, không chỉ ImportError)
+            try:
+                from trl import SFTTrainer
+            except Exception:
+                SFTTrainer = None
+            if SFTConfig is None:
                 try:
-                    from trl.trainer.sft_config import SFTConfig
-                except ImportError:
+                    from trl import SFTConfig
+                except Exception:
                     SFTConfig = None
-            except ImportError:
-                # Fallback for even older TRL versions (< 0.12)
-                from trl.trainer.sft_trainer import SFTTrainer
-                SFTConfig = None
+
+        if SFTTrainer is None:
+            raise ImportError("Không import được SFTTrainer từ trl")
+
         from datasets import Dataset
     except (ImportError, RuntimeError) as e:
         log.error(
