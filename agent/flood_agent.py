@@ -1127,6 +1127,7 @@ class AgentMemory:
                 "timestamp": datetime.now().isoformat(timespec="seconds"),
                 "meta":      meta or {},
             })
+        self._save_to_disk()
 
     def add_correction(self, original_level: str, corrected_level: str,
                        original_depth: float, corrected_depth: Optional[float],
@@ -1423,6 +1424,7 @@ class AgentMemory:
                 "action_history":   self.action_history[-100:],
                 "image_history":    self.image_history[-200:],   # giữ 200 ảnh gần nhất
                 "response_patterns": self.response_patterns,
+                "chat_history":     self.chat_history[-100:],     # persist lịch sử hội thoại (để train data thật sau này)
                 "saved_at":         datetime.now().isoformat(timespec="seconds"),
             }
             tmp = self._persist_path.with_suffix(".tmp")
@@ -1441,6 +1443,7 @@ class AgentMemory:
                 self.action_history    = data.get("action_history", [])
                 self.image_history     = data.get("image_history", [])
                 self.response_patterns = data.get("response_patterns", {})
+                self.chat_history = data.get("chat_history", [])
                 n_patterns = len(self.response_patterns)
                 log.info(
                     f"[AgentMemory] Loaded {len(self.correction_log)} corrections, "
