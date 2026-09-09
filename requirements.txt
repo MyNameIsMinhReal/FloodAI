@@ -23,6 +23,15 @@ accelerate>=0.27
 # == Object detection (YOLOv8) ================================================
 ultralytics>=8.0
 
+# == SAM2 (Segment Anything 2) — water mask refinement =======================
+# Cài cho A4000 16GB: pip install segment-anything-2
+# Weight ~2GB, auto-download khi use_sam: true
+segment-anything-2>=2.0
+
+# == Qwen2.5-VL (Vision-Language Model) — cross-verify depth =================
+# Đã có trong transformers>=4.40, không cần cài thêm
+# Model: Qwen/Qwen2.5-VL-3B-Instruct (~6GB, auto-download khi vlm: set)
+
 # == Google Drive upload =======================================================
 google-api-python-client>=2.100
 google-auth-httplib2>=0.2
@@ -62,6 +71,9 @@ flask>=3.0
 python-dotenv>=1.0
 feedparser>=6.0          # RSS feed parsing cho trang tin tức
 peft>=0.10               # LoRA adapter loading (flood-agent-merged)
+
+# == Chat Agent Training (flood_trainer.py) ===================================
+trl>=0.10                # SFTConfig/SFTTrainer cho LoRA fine-tuning
 
 # Geo-localization
 geoclip          # AI visual geo-localization (GPU), ~2GB model download lần đầu
