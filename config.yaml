@@ -374,11 +374,14 @@ vlm_verify:
   device: "auto"            # "auto" | "cuda" | "cpu"
   max_new_tokens: 512       # Số token VLM sinh tối đa mỗi ảnh
 
-  # Ngưỡng mismatch: chênh lệch phải vượt CẢ % lẫn cm tuyệt đối mới bị flag
+# Ngưỡng mismatch: chênh lệch phải vượt CẢ % lẫn cm tuyệt đối mới bị flag
   tolerance_pct: 30         # cho phép sai lệch tối đa 30% so với số đo
   min_abs_diff_cm: 12       # và chênh tuyệt đối tối thiểu 12cm
 
-  auto_correct: true        # Tự sửa số khi VLM chắc chắn pipeline sai
+  # VLM chỉ VERIFY + SUY LUẬN, KHÔNG được tự ý sửa số đo vật lý.
+  # Bật auto_correct CHỈ khi có calibration (calibration_data/*.json đã được
+  # đào tạo từ feedback thật). Mặc định: flag MISMATCH để con người review.
+  auto_correct: false            # [spec] không sửa số khi chưa có calibration
   min_confidence_to_correct: 0.65   # Confidence tối thiểu để được sửa
 
   unload_after: true        # [A4000-16GB] Giải phóng VRAM ngay sau stage này
