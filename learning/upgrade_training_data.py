@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -304,34 +305,132 @@ def export_real_chat() -> List[Dict]:
     return samples
 
 
+def _template_group(ex: Dict) -> str:
+    """Nhóm các mẫu "cùng một template/ý người dùng" để KHÔNG bị tách sang
+    train + eval (data leakage). Nhóm theo (intent, user-text chuẩn hóa).
+
+    - user text chỉ lấy phần "Người dùng nói: ..." (bỏ context auto-gen)
+    - chuẩn hóa: bỏ số, lowercase, bỏ ký tự đặc biệt → 2 biến thể cùng template
+      (chỉ khác số cm/độ tin cậy) sẽ về CÙNG group → cùng 1 phía train/eval.
+    """
+    try:
+        user = ex["messages"][1]["content"]
+        if "Người dùng nói:" in user:
+            user = user.split("Người dùng nói:", 1)[1]
+        user = user.strip().strip('"')
+        user = re.sub(r"\d+", "#", user).lower()
+        user = re.sub(r"[^\w\s\u00e0-\u1ef3]", "", user)
+        user = re.sub(r"\s+", " ", user).strip()
+    except Exception:
+        user = "?"
+    intent = "unknown"
+    try:
+        asst = ex["messages"][2]["content"]
+        m = re.search(r"INTENT:\s*([A-Za-z_]+)", asst)
+        if m:
+            intent = m.group(1)
+    except Exception:
+        pass
+    return f"{intent}::{user}"
+
+
 def save_dataset(examples: List[Dict]) -> None:
+    """Ghi train/eval với split KHÔNG bị data leakage.
+
+    Trước đây: shuffle + split từng mẫu → các biến thể cùng template của
+    upgrade_training_data.py (hoặc flood_data_generator) dễ rơi cả vào train
+    lẫn eval → eval_loss bị đánh giá quá cao (mục 2 trong bản review).
+
+    Bây giờ: gom mẫu theo `_template_group`, shuffle NHÓM, rồi chia nguyên
+    nhóm về 1 phía. Đảm bảo eval có đủ 10 intents và ~10% tổng số.
+    """
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    # Shuffle trước khi split để eval phân bố đều mọi intent/level
+
+    # Loại bỏ mẫu trùng chính xác toàn cục (dedupe an toàn, không làm mất intent)
+    seen: set = set()
+    uniq: List[Dict] = []
+    for ex in examples:
+        key = json.dumps(ex["messages"], ensure_ascii=False, sort_keys=True)
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(ex)
+
+    # Nhóm theo template-family
+    groups: Dict[str, List[Dict]] = {}
+    for ex in uniq:
+        groups.setdefault(_template_group(ex), []).append(ex)
+
     rng = random.Random(2026)
-    shuffled = list(examples)
-    rng.shuffle(shuffled)
-    split = int(len(shuffled) * 0.9)
+    group_ids = sorted(groups.keys())
+    rng.shuffle(group_ids)
+
+    def _intent(gid: str) -> str:
+        return gid.split("::", 1)[0]
+
+    # Chọn nhóm eval: ~10% tổng mẫu, nhưng mỗi intent chiếm tối thiểu 1 nhóm
+    n_total = len(uniq)
+    n_eval_target = max(1, int(n_total * 0.10))
+    eval_gids: List[str] = []
+    eval_count = 0
+    intent_covered: set = set()
+
+    for gid in group_ids:
+        it = _intent(gid)
+        need_cover = it not in intent_covered
+        g_len = len(groups[gid])
+        if need_cover:
+            eval_gids.append(gid)
+            intent_covered.add(it)
+            eval_count += g_len
+        elif eval_count < n_eval_target and eval_count + g_len <= n_total * 0.15:
+            # Chỉ thêm nhóm nếu vẫn giữ eval ≤ 15% tổng (tránh eval phình to)
+            eval_gids.append(gid)
+            eval_count += g_len
+        if eval_count >= n_eval_target:
+            break
+
+    eval_set = set(eval_gids)
+    train_examples = [ex for gid, g in groups.items() if gid not in eval_set for ex in g]
+    eval_examples  = [ex for gid in eval_gids for ex in groups[gid]]
+
+    rng.shuffle(train_examples)
+    rng.shuffle(eval_examples)
+
     with open(TRAIN_FILE, "w", encoding="utf-8") as f:
-        for ex in shuffled[:split]:
+        for ex in train_examples:
             f.write(json.dumps(ex, ensure_ascii=False) + "\n")
     with open(EVAL_FILE, "w", encoding="utf-8") as f:
-        for ex in shuffled[split:]:
+        for ex in eval_examples:
             f.write(json.dumps(ex, ensure_ascii=False) + "\n")
-    print(f"[Upgrade] Tổng: {len(shuffled)}")
-    print(f"[Upgrade] Train: {split} | Eval: {len(shuffled) - split}")
+    print(f"[Upgrade] Tổng (sau dedupe): {len(uniq)} (loại {len(examples) - len(uniq)} trùng)")
+    print(f"[Upgrade] Nhóm template: {len(groups)} | Nhóm eval: {len(eval_gids)}")
+    print(f"[Upgrade] Train: {len(train_examples)} | Eval: {len(eval_examples)}")
+    from collections import Counter
+    print("[Upgrade] Eval intents:", dict(Counter(_intent(g) for g in eval_gids)))
 
 
 def main() -> None:
     args = sys.argv[1:]
     do_gen = any(a in args for a in ("--gen", "--all"))
     do_export = any(a in args for a in ("--export", "--all"))
-    if not do_gen and not do_export:
-        print("Dùng: --gen (thêm mẫu tự nhiên) | --export (hội thoại thật) | --all")
+    do_resplit = "--resplit" in args
+    if not do_gen and not do_export and not do_resplit:
+        print("Dùng: --gen (thêm mẫu tự nhiên) | --export (hội thoại thật) | --all | --resplit")
         return
 
     # Backup tự động nếu chưa có
     backup_train = TRAIN_FILE.with_name(TRAIN_FILE.name + ".bak")
     backup_eval = EVAL_FILE.with_name(EVAL_FILE.name + ".bak")
+
+    if do_resplit and not do_gen and not do_export:
+        # Tái chia train/eval hiện có theo template-family (sửa data leakage),
+        # KHÔNG gen thêm dữ liệu mới.
+        base = _load_jsonl(TRAIN_FILE) + _load_jsonl(EVAL_FILE)
+        print(f"[Upgrade] Resplit hiện có: {len(base)} mẫu (no new data)")
+        save_dataset(base)
+        return
+
     if not backup_train.exists():
         shutil.copyfile(TRAIN_FILE, backup_train)
         shutil.copyfile(EVAL_FILE, backup_eval)

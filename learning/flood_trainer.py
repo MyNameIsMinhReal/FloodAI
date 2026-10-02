@@ -67,14 +67,17 @@ TRAIN_CFG = {
     "lr_scheduler_type":           "cosine",
     "logging_steps":               5,
     "eval_steps":                  20,
-    "save_steps":                  40,
+    "save_steps":                  20,
     "save_total_limit":            3,
     "max_seq_length":              2048,
     "fp16":                        False,
     "bf16":                        True,
     "gradient_checkpointing":      False,
     "optim":                       "adamw_torch",
-    "load_best_model_at_end":      True,
+    "load_best_model_at_end":      True,   # giữ checkpoint tốt nhất theo eval_loss
+    "metric_for_best_model":       "eval_loss",
+    "greater_is_better":           False,
+    "eval_delay":                  0,
     "report_to":                   "none",
 }
 
@@ -109,18 +112,38 @@ def load_jsonl(path: Path):
     return data
 
 
-def format_chat(example: dict, tokenizer) -> dict:
+def _split_prompt_completion(messages: list, tokenizer) -> dict:
+    """Chia messages → (prompt, completion) chuỗi cho TRL prompt-completion dataset.
+
+    - prompt     = apply_chat_template(messages[:-1], add_generation_prompt=True)
+                   (kết thúc bằng header assistant '<|im_start|>assistant\n')
+    - completion = phần còn lại của full conversation (assistant content + <|im_end|>),
+                   lấy = full[len(prompt):] để ĐẢM BẢO prefix → completion_mask chính xác.
+
+    KHÔNG dùng apply_chat_template([assistant]) vì sẽ render thêm header trùng.
+    Lý do format prompt/completion (thay vì messages + completion_only_loss):
+    TRL dùng return_assistant_tokens_mask=True dựa trên template có `{% generation %}`
+    keyword — template Qwen2.5 KHÔNG có → assistant_masks không được sinh → loss trên
+    toàn sequence (bug cũ lặp lại âm thầm). Với prompt/completion chuỗi, TRL tự build
+    completion_mask thủ công ([0]*prompt + [1]*completion) — không phụ thuộc template.
     """
-    Chuyển messages format → tokenized input cho causal LM.
-    Chỉ tính loss trên phần assistant response.
-    """
-    messages = example["messages"]
-    text = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=False,
-    )
-    return {"text": text}
+    prompt = tokenizer.apply_chat_template(
+        messages[:-1], tokenize=False, add_generation_prompt=True)
+    full = tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=False)
+    return {"prompt": prompt, "completion": full[len(prompt):]}
+
+
+def _make_early_stopping(patience: int = 4, min_delta: float = 0.0):
+    """Tạo EarlyStoppingCallback (transformers cung cấp, không cần đúng TRL)."""
+    try:
+        from transformers import EarlyStoppingCallback
+        log.info(f"[EarlyStopping] patience={patience}, min_delta={min_delta}")
+        return [EarlyStoppingCallback(early_stopping_patience=patience,
+                                      early_stopping_delta=min_delta)]
+    except Exception as e:
+        log.warning(f"Không tạo được EarlyStoppingCallback: {e}")
+        return []
 
 
 def _build_trainer(trl_new, sft_trainer_cls, training_args_cls, model, tokenizer,
@@ -142,8 +165,16 @@ def _build_trainer(trl_new, sft_trainer_cls, training_args_cls, model, tokenizer
 
         seq_key = "max_seq_length" if "max_seq_length" in cfg_params else "max_length"
         extra_cfg = {seq_key: max_seq}
-        if "dataset_text_field" in cfg_params:
-            extra_cfg["dataset_text_field"] = "text"
+        # completion_only_loss=True: labels = -100 trên mọi token prompt,
+        # loss CHỈ trên completion. Với dataset prompt/completion chuỗi, TRL
+        # tự build completion_mask ([0]*prompt + [1]*completion) KHÔNG cần
+        # tokenizer template có `{% generation %}` (template Qwen2.5 thiếu).
+        # KHÔNG đặt dataset_text_field ở đây: prompt-completion dataset không dùng.
+        if "completion_only_loss" in cfg_params:
+            extra_cfg["completion_only_loss"] = True
+            log.info("[Loss] completion_only_loss=True → loss chỉ trên completion")
+        else:
+            log.warning("[Loss] SFTConfig thiếu completion_only_loss → TRL tự detect theo prompt/completion")
         if "packing" in cfg_params:
             extra_cfg["packing"] = False
 
@@ -161,6 +192,8 @@ def _build_trainer(trl_new, sft_trainer_cls, training_args_cls, model, tokenizer
             "eval_dataset":  eval_dataset,
             "args":          sft_args,
         }
+        if "callbacks" in trainer_params:
+            trainer_kwargs["callbacks"] = _make_early_stopping()
         if "dataset_text_field" in trainer_params and "dataset_text_field" not in extra_cfg:
             trainer_kwargs["dataset_text_field"] = "text"
 
@@ -168,6 +201,18 @@ def _build_trainer(trl_new, sft_trainer_cls, training_args_cls, model, tokenizer
 
     # ── Nhánh cũ (TRL < 0.12): dùng TrainingArguments + inspect để tránh
     #    hardcode "tokenizer="/"max_seq_length=" vốn không còn trong trl mới.
+    #    TRL cũ không hỗ trợ completion_only_loss; nó có thể hiểu dataset
+    #    prompt/completion chuỗi. Nếu không, gộp prompt+completion thành "text".
+    _cols = getattr(train_dataset, "column_names", []) if train_dataset is not None else []
+    if "prompt" in _cols and "completion" in _cols:
+        log.warning("[Loss] TRL cũ: SFTTrainer có thể không tự mask completion → chuyển sang text (loss toàn sequence)")
+        def _to_text(ex):
+            return {"text": ex["prompt"] + " " + ex["completion"]}
+        if train_dataset is not None:
+            train_dataset = train_dataset.map(_to_text, remove_columns=["prompt", "completion"])
+        if eval_dataset is not None:
+            eval_dataset = eval_dataset.map(_to_text, remove_columns=["prompt", "completion"])
+
     training_args = training_args_cls(
         output_dir=str(OUTPUT_DIR),
         **{eval_strategy_key: "steps"},
@@ -180,7 +225,10 @@ def _build_trainer(trl_new, sft_trainer_cls, training_args_cls, model, tokenizer
         "eval_dataset":  eval_dataset,
         "args":          training_args,
     }
-    # Chỉ thêm nhứng param mà trainer thực sự hỗ trợ (inspect-based, không hardcode)
+    if "callbacks" in trainer_params:
+        trainer_kwargs["callbacks"] = _make_early_stopping()
+    # TRL cũ: nếu dataset đã convert thành text thì chỉ cần dataset_text_field.
+    # TRL mới (nhánh trên) đã truyền args.ds_text_field nên không cần ở đây.
     for key, val in (("dataset_text_field", "text"),
                      ("max_seq_length", max_seq),
                      ("packing", False)):
@@ -188,6 +236,47 @@ def _build_trainer(trl_new, sft_trainer_cls, training_args_cls, model, tokenizer
             trainer_kwargs[key] = val
 
     return sft_trainer_cls(**trainer_kwargs)
+
+
+def _parse_cli_overrides() -> dict:
+    """Đọc các override từ CLI: --model, --lora-rank, --epochs, --batch, --seq.
+    Cho phép benchmark nhiều cấu hình mà KHÔNG cần sửa code (fix review #1, #5)."""
+    args = sys.argv[1:]
+    out = {}
+    for flag, key, cast in (
+        ("--model", "model", str),
+        ("--lora-rank", "lora_rank", int),
+        ("--epochs", "epochs", int),
+        ("--batch", "batch_size", int),
+        ("--seq", "max_seq_length", int),
+    ):
+        if flag in args:
+            i = args.index(flag)
+            if i + 1 < len(args):
+                try:
+                    out[key] = cast(args[i + 1])
+                except ValueError:
+                    log.warning(f"Ignore invalid {flag}: {args[i+1]}")
+    return out
+
+
+def _apply_cli_overrides(overrides: dict, vram_gb: float, use_gpu: bool):
+    """Ghi override vào TRAIN_CFG / LORA_CFG dựa trên CLI (nếu có)."""
+    if "lora_rank" in overrides:
+        r = overrides["lora_rank"]
+        LORA_CFG["r"] = r
+        LORA_CFG["lora_alpha"] = 2 * r
+        log.info(f"[CLI] LoRA rank override → r={r}, alpha={2*r}")
+    if "epochs" in overrides:
+        TRAIN_CFG["num_train_epochs"] = overrides["epochs"]
+        log.info(f"[CLI] Epochs override → {overrides['epochs']}")
+    if "batch_size" in overrides:
+        TRAIN_CFG["per_device_train_batch_size"] = overrides["batch_size"]
+        TRAIN_CFG["per_device_eval_batch_size"] = overrides["batch_size"]
+        log.info(f"[CLI] Batch size override → {overrides['batch_size']}")
+    if "max_seq_length" in overrides:
+        TRAIN_CFG["max_seq_length"] = overrides["max_seq_length"]
+        log.info(f"[CLI] Max seq length override → {overrides['max_seq_length']}")
 
 
 def _pick_best_gpu() -> int:
@@ -378,15 +467,16 @@ def train():
     else:
         log.info(f"CUDA_VISIBLE_DEVICES={_os.environ['CUDA_VISIBLE_DEVICES']} (từ môi trường)")
 
+    cli = _parse_cli_overrides()
+    use_gpu, model_name, vram_gb = _detect_device(torch)
+    if "model" in cli:
+        model_name = cli["model"]
+        log.info(f"[CLI] Model override → {model_name}")
+    # _apply_cli_overrides() được gọi SAU khối VRAM override (bên dưới) để
+    # CLI luôn thắng; chỉ model được áp trước vì cần cho load tokenizer/model.
+
     try:
         import torch
-    except ImportError:
-        log.error("Thiếu torch. Chạy: pip install torch")
-        return
-
-    use_gpu, model_name, vram_gb = _detect_device(torch)
-
-    try:
         from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
         from peft import LoraConfig, get_peft_model
 
@@ -445,13 +535,21 @@ def train():
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    def _apply_template(ex):
-        return tokenizer.apply_chat_template(
-            ex["messages"], tokenize=False, add_generation_prompt=False
-        )
-
-    train_dataset = Dataset.from_dict({"text": [_apply_template(e) for e in train_raw]})
-    eval_dataset  = Dataset.from_dict({"text": [_apply_template(e) for e in eval_raw]})
+# QUAN TRỌNG (fix completion-only loss):
+    # - KHÔNG pre-apply_chat_template thành cột "text" → TRL coi là language modeling →
+    #   loss trên TOÀN BỘ sequence (bug cũ).
+    # - KHÔNG dùng cột messages + completion_only_loss=True: cách này dựa vào
+    #   tokenizer template có keyword `{% generation %}` để sinh assistant_tokens_mask;
+    #   template Qwen2.5 KHÔNG có → TRL âm thầm fallback về loss toàn sequence.
+    # - ĐÚNG: chia thành cột `prompt`/`completion` (chuỗi). TRL detect đây là
+    #   prompt-completion dataset → tự build completion_mask thủ công ([0]*prompt +
+    #   [1]*completion) → labels = -100 trên mọi token prompt, loss CHỈ trên completion.
+    train_dataset = Dataset.from_dict([
+        _split_prompt_completion(e["messages"], tokenizer) for e in train_raw
+    ])
+    eval_dataset = Dataset.from_dict([
+        _split_prompt_completion(e["messages"], tokenizer) for e in eval_raw
+    ])
 
     model = _load_model(torch, AutoModelForCausalLM, model_name, use_gpu)  # noqa: F821
     model.config.use_cache = False
@@ -480,11 +578,8 @@ def train():
     _trl_new  = _trl_ver >= (0, 12)   # SFTConfig thay TrainingArguments
     _tf_new   = _tf_ver  >= (4, 46)   # eval_strategy thay evaluation_strategy
 
-    # warmup_ratio deprecated → tính warmup_steps thủ công
-    n_steps_per_epoch = max(1, len(train_dataset) //
-                            TRAIN_CFG["per_device_train_batch_size"])
-    total_steps = n_steps_per_epoch * TRAIN_CFG["num_train_epochs"]
-    warmup_steps = max(1, int(total_steps * TRAIN_CFG["warmup_ratio"]))
+    # warmup_ratio deprecated → tính warmup_steps sau khi đã apply VRAM/CLI overrides
+    # (batch size quyết định số steps/epoch → phải tính sau override, không phải trước)
 
     # Override config theo FREE VRAM thực tế (quan trọng trên server dùng chung)
     if use_gpu:
@@ -543,6 +638,9 @@ def train():
             TRAIN_CFG["per_device_train_batch_size"] = 1
             log.info(f"[Config] {vram_gb:.0f}GB free → seq=256, epochs=2 (minimal)")
 
+    # CLI overrides (epochs/batch/seq/lora-rank) áp SAU VRAM block → luôn thắng
+    _apply_cli_overrides(cli, vram_gb, use_gpu)
+
     cpu_overrides = {} if use_gpu else {
         "per_device_train_batch_size": 1,
         "per_device_eval_batch_size":  1,
@@ -561,6 +659,11 @@ def train():
     # Build config dict — loại bỏ các key không còn dùng
     exclude = {"max_seq_length", "warmup_ratio"}
     merged_cfg = {k: v for k, v in TRAIN_CFG.items() if k not in exclude}
+    # Tính warmup_steps dựa trên batch size CUỐI CÙNG (sau override)
+    n_steps_per_epoch = max(1, len(train_dataset) //
+                            TRAIN_CFG["per_device_train_batch_size"])
+    total_steps = n_steps_per_epoch * TRAIN_CFG["num_train_epochs"]
+    warmup_steps = max(1, int(total_steps * TRAIN_CFG["warmup_ratio"]))
     merged_cfg["warmup_steps"] = warmup_steps
     merged_cfg.update(cpu_overrides)
     eval_strategy_key = "eval_strategy" if _tf_new else "evaluation_strategy"
