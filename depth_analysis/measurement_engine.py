@@ -16,6 +16,7 @@ Final result = weighted median (robust hon mean).
 """
 
 import logging
+import math
 from dataclasses import dataclass, field
 from typing import Any, List, Tuple, Optional
 
@@ -32,6 +33,9 @@ class MeasurementVote:
     water_cm:    float
     confidence:  float   # 0-1
     notes:       str = ""
+    # ── [v5] Tiered hierarchy ──────────────────────────────────────
+    is_metric:   bool = False   # True: có reference object thật (person/cua_nha/vehicle)
+    bbox_h_px:   float = 0.0    # chiều cao bbox (px) → w ∝ sqrt(bbox_height)
 
 
 @dataclass
@@ -143,22 +147,46 @@ class MeasurementEngine:
                 confidence=0.0, votes=votes,
             )
 
-        self._apply_priority_weights(valid_votes)
+        # ══ [v5] Tiered hierarchy ══════════════════════════════════════
+        # Tier 1 (metric reference): CÓ reference object thật (person,
+        #   cua_nha, vehicle) → CHỈ dùng metric votes để tính cm.
+        #   Non-metric (DINOv2, Color Water, Depth, puddle) KHÔNG BAO GIỜ
+        #   được vote cm tranh chấp với object thật → loại hoàn toàn.
+        # Tier 2 (fallback): KHÔNG có reference object (chỉ có nước/cây)
+        #   → dùng ước lượng tương đối (color + dino + depth) với
+        #   confidence bị giới hạn ≤ 0.35 để cảnh báo người dùng.
+        metric_votes  = [v for v in valid_votes if v.is_metric]
+        non_metric    = [v for v in valid_votes if not v.is_metric]
+        tier = "tier1_metric" if metric_votes else "tier2_fallback"
+        fusion_pool   = metric_votes if metric_votes else non_metric
+
+        self._apply_priority_weights(fusion_pool)
+        if tier == "tier1_metric":
+            self._apply_resolution_weights(fusion_pool)
 
         # === Fusion: Bayesian (mặc định) hoặc weighted median ===
-        if self.fusion_mode == "bayesian" and len(valid_votes) >= 2:
-            water_cm, ci_low, ci_high, dominant = self._bayesian_fusion(valid_votes)
+        if self.fusion_mode == "bayesian" and len(fusion_pool) >= 2:
+            water_cm, ci_low, ci_high, dominant = self._bayesian_fusion(fusion_pool)
         else:
-            water_cm, ci_low, ci_high, dominant = self._weighted_median(valid_votes)
+            water_cm, ci_low, ci_high, dominant = self._weighted_median(fusion_pool)
 
         level, desc = classify_level(water_cm)
-        confidence  = self._calc_final_confidence(valid_votes, water_cm)
-        confidence  = self._bonus_agreement(valid_votes, water_cm, confidence)
+        confidence  = self._calc_final_confidence(fusion_pool, water_cm)
+        confidence  = self._bonus_agreement(fusion_pool, water_cm, confidence)
+
+        # Tier 2 fallback: chỉ là ước lượng tương đối → cap confidence thấp
+        if tier == "tier2_fallback":
+            confidence = min(confidence, 0.35)
 
         # ── [v4] Disagreement → flag cho review queue ──────────────────────
-        spread = self._vote_spread(valid_votes)
+        spread = self._vote_spread(fusion_pool)
         needs_review, review_reason = False, ""
-        if len(valid_votes) >= 2:
+        if tier == "tier2_fallback":
+            # Không có reference object → measurement kém tin cậy → review
+            needs_review   = True
+            review_reason  = "no_metric_reference"
+            confidence     = min(confidence, 0.30)
+        elif len(fusion_pool) >= 2:
             spread_thresh = max(20.0, water_cm * 0.35)
             if spread > spread_thresh:
                 needs_review = True
@@ -167,8 +195,8 @@ class MeasurementEngine:
 
         log.info(
             f"  Measurement: {water_cm:.0f}cm [{ci_low:.0f}-{ci_high:.0f}] "
-            f"| {level} | conf={confidence:.2f} "
-            f"| {len(valid_votes)} votes | dominant={dominant} "
+            f"| {level} | conf={confidence:.2f} | tier={tier} "
+            f"| {len(fusion_pool)} votes | dominant={dominant} "
             f"| fusion={self.fusion_mode}"
         )
 
@@ -179,19 +207,24 @@ class MeasurementEngine:
             flood_level      = level,
             flood_level_desc = desc,
             confidence       = round(confidence, 3),
-            votes            = valid_votes,
+            votes            = fusion_pool,
             dominant_source  = dominant,
-            notes            = self._generate_notes(valid_votes, water_cm, level),
+            notes            = self._generate_notes(fusion_pool, water_cm, level),
             needs_review     = needs_review,
             review_reason    = review_reason,
             method_spread_cm = round(spread, 1),
         )
 
-    # ------------------------------------------------------------------
+    # ── [v5] Tiered hierarchy ──────────────────────────────────────────
+    # Tier 2 non-metric sources (relative estimates) NEVER vote cm when
+    # Tier 1 metric reference objects exist → they are dropped in measure().
+    _NONMETRIC_KEYWORDS = frozenset({"color_water", "depth_map", "dino_prior", "puddle"})
+
+    # (keyword_in_source, scale, weak_sources_to_suppress)
+    # [FIX v5] cua_nha khong suppress person: ca hai deu la metric reference.
     _PRIORITY_MAP = [
-        # (keyword_in_source, scale, weak_sources_to_suppress)
-        ("cua_nha", 0.60, frozenset({"person", "color_water", "depth_map", "dino_prior"})),
-        ("person",  0.45, frozenset({"color_water", "depth_map", "dino_prior"})),
+        ("person",  0.85, frozenset({"color_water", "depth_map", "dino_prior"})),
+        ("cua_nha", 0.85, frozenset({"color_water", "depth_map", "dino_prior"})),
     ]
     _VEHICLE_CLASSES = frozenset({"motorcycle", "bicycle", "car", "truck", "bus"})
 
@@ -200,7 +233,7 @@ class MeasurementEngine:
             if any(key in s for s in sources):
                 return scale, weak
         if any(cls in s for s in sources for cls in self._VEHICLE_CLASSES):
-            return 0.70, frozenset({"depth_map", "dino_prior"})
+            return 0.85, frozenset({"color_water", "depth_map", "dino_prior"})
         return 1.0, frozenset()
 
     def _apply_priority_weights(self, valid_votes: List[MeasurementVote]) -> None:
@@ -208,8 +241,24 @@ class MeasurementEngine:
         sources = {v.source for v in valid_votes}
         scale, weak = self._detect_priority(sources)
         for v in valid_votes:
-            if v.source in weak:
+            if v.source in weak and not v.is_metric:
                 v.confidence *= scale
+
+    def _apply_resolution_weights(self, metric_votes: List[MeasurementVote]) -> None:
+        """
+        [v5] w ∝ sqrt(bbox_height): object càng lớn trong ảnh (gần camera)
+        → thay đổi 1-2px box height ảnh hưởng ít hơn → đáng tin hơn.
+        Object nhỏ (xa) → sai số 2px có thể = 10-20cm → giảm trọng số.
+        """
+        bbs = [v.bbox_h_px for v in metric_votes if v.bbox_h_px > 0]
+        if not bbs:
+            return
+        max_bh = float(max(bbs))
+        for v in metric_votes:
+            if v.bbox_h_px > 0:
+                r = math.sqrt(v.bbox_h_px / max_bh)   # 0 → near-0, big → near-1
+                r = max(r, 0.15)                       # floor: không triệt tiêu hẳn
+                v.confidence *= r
 
     def _bonus_agreement(
         self, valid_votes: List[MeasurementVote], water_cm: float, confidence: float
@@ -250,11 +299,17 @@ class MeasurementEngine:
             conf *= 0.85
 
         source = f"yolo_{cls}"
+        bbox_h = 0.0
+        bbox = obj.get("bbox") or []
+        if len(bbox) >= 4:
+            bbox_h = max(float(bbox[3]) - float(bbox[1]), 1.0)
         return MeasurementVote(
             source    = source,
             water_cm  = round(max(0, water_cm), 1),
             confidence= round(min(1.0, conf), 3),
             notes     = f"YOLO {cls} | pose={obj.get('pose_type','?')}",
+            is_metric = True,
+            bbox_h_px = round(bbox_h, 1),
         )
 
     def _vote_from_color(self, water_result, img_h: int) -> Optional[MeasurementVote]:
@@ -314,36 +369,53 @@ class MeasurementEngine:
         self, depth_norm: np.ndarray, water_result, img_h: int
     ) -> Optional[MeasurementVote]:
         """
-        Vote tu depth map.
+        Vote tu depth map (Tier 2 — chi fallback khi khong co reference object).
+
         Depth map cho biet cau truc 3D, ho tro uoc tinh muc nuoc.
+        NHUNG Depth Anything V2 chi cho depth TUONG DOI (khong co metric scale)
+        → day KHONG phai nguon metric. Chi dung o Tier 2 voi confidence thap,
+        khong bao gio duoc phep bau cm tranh voi reference object thật.
+
+        [FIX v5] Bug cu: water_thresh = np.percentile(lower, 70) roi
+        water_pct_d = (lower > thresh).mean() → LUON bang ~0.30 (dinh nghia
+        percentile) → est_cm LUON ~15cm bat ke anh ngap hay khong.
+        Moi: so sanh nua duoi (dat/nuoc gan camera) voi nua tren (background
+        xa) → ty le "gan hon background" thay doi theo noi dung that.
         """
         h, w = depth_norm.shape
+        if h < 4:
+            return None
 
-        # Lay vung nuoi duoi (50% duoi anh - thuong la nuoc)
-        lower = depth_norm[h // 2:, :]
+        lower = depth_norm[h // 2:, :]   # dat + nuoc (gan camera)
+        upper = depth_norm[:h // 2, :]   # background (xa)
 
-        # Phân tích depth distribution cua vung duoi
-        # Vung nuoc: depth cao (gan camera), texture thap
-        water_thresh = np.percentile(lower, 70)
-        water_pct_d  = float((lower > water_thresh).mean())
+        bg_med = float(np.median(upper))
+        if bg_med < 1e-6:
+            return None
+
+        # Va: voi depth map chuan hoa (0=xa, 1=gan) — water/ground gan camera
+        # hon background → phan ben duoi "gan" phai vượt background.
+        water_pct_d = float((lower > bg_med + 0.05).mean())
 
         if water_pct_d < 0.1:
             return None
 
-        # Depth map rất rough — không thể phân biệt nước nông lan rộng vs nước sâu
+        # Depth relative, khong metric → uoc luong rat thô, cap thap
         est_cm = 50.0 * water_pct_d
         est_cm = max(0, min(60, est_cm))
 
-        conf = min(0.30, water_pct_d * 0.5)
+        # Confidence thấp hơn nữa — relative depth không có metric scale
+        conf = min(0.22, water_pct_d * 0.35)
 
         if water_result and water_result.water_area_pct > 5:
-            conf = min(0.40, conf + 0.10)
+            conf = min(0.30, conf + 0.08)
 
         return MeasurementVote(
             source    = "depth_map",
             water_cm  = round(est_cm, 1),
             confidence= round(conf, 3),
-            notes     = f"Depth: water_pct={water_pct_d:.1%}",
+            notes     = f"Depth: water_pct={water_pct_d:.1%} vs bg="
+                        f"{bg_med:.2f}",
         )
 
     def _vote_from_dino(
@@ -395,19 +467,27 @@ class MeasurementEngine:
         vals = np.array([v.water_cm for v in votes], dtype=np.float64)
 
         # ── Bước 1: MAD outlier rejection ──────────────────────────────
+        # [FIX v5] Không dùng MAD "thuần" để loại vote — nó giết nhầm
+        # đáp án đúng: YOLO person chest-deep 120cm (đúng) nhưng depth=15,
+        # dino=20, color=25 → median~22.5, MAD nhỏ → 120 bị reject → về ~20cm.
+        # Mới: keep mọi vote, dùng outlier bound MỀM (giảm trọng số, không loại)
+        # và ưu tiên metric votes cao confidence.
         med = float(np.median(vals))
         mad = float(np.median(np.abs(vals - med)))
-        # MAD=1.4826 ≈ std của phân phối chuẩn; floor để không chia 0
         sigma_mad = max(1.4826 * mad, 5.0)
-        keep_idx = [
-            i for i, v in enumerate(votes)
-            if abs(v.water_cm - med) <= 3.0 * sigma_mad
+        n = len(votes)
+        bounds = [
+            abs(v.water_cm - med) <= 3.0 * sigma_mad * (1.0 + v.confidence)
+            for v in votes
         ]
-        # Giữ tối thiểu 1 vote (nếu tất cả đều là "outlier" thì giữ hết)
-        kept = [votes[i] for i in keep_idx] or votes
+        kept   = [v for v, keep in zip(votes, bounds) if keep]
+        # Nếu cluster quá cứng nhắc (mọi vote lệch nhau) → giữ hết
+        if not kept:
+            kept = votes
 
         # ── Bước 2: inverse-variance weights ───────────────────────────
         # σ_i = base × (1 − conf) + floor  → conf=1 → σ=8cm; conf=0.3 → σ≈26cm
+        # (w ∝ sqrt(bbox_height) đã áp trong _apply_resolution_weights)
         weights, weighted_sum = [], 0.0
         for v in kept:
             sigma = 8.0 * (1.0 - v.confidence) + 4.0

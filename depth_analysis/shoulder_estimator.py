@@ -64,6 +64,15 @@ DEFAULT_HEIGHT_CM  = 165.0  # [IMPROVE] Trung bình VN ~165cm (nam 168, nữ 158
 DEFAULT_HEIGHT_MIN = 120.0  # [IMPROVE] Cho phép trẻ em thấp hơn
 DEFAULT_HEIGHT_MAX = 200.0
 
+# ── [v5] Upper Body Anatomical Ruler ─────────────────────────────────
+# Đo px_per_cm TỪ PHẦN TRÊN CƠ THỂ (luôn nổi trên mặt nước).
+# Bao giờ dùng bbox (bh/DEFAULT) cũng sai khi người ngập 1 phần: bbox chỉ
+# bao phần nổi → px_per_cm bị co → height bị đội lên tới DEFAULT_HEIGHT_MAX.
+HEAD_TO_CLAVICLE_CM = 25.0   # đỉnh đầu → mỏm vai (acromion) ≈ 25cm
+BIACROMIAL_CM       = 39.0   # rộng 2 mỏm vai ≈ 38-40cm
+PX_PER_CM_MIN       = 0.30   # ngưỡng hợp lệ px/cm
+PX_PER_CM_MAX       = 15.0
+
 # Ngưỡng confidence keypoint YOLO-Pose
 KP_CONF_THRESH = 0.30
 KP_CONF_HIGH   = 0.55   # confident cao — dùng cho ensemble
@@ -391,8 +400,21 @@ class ShoulderWidthEstimator:
             except Exception:
                 pass
 
-        # px_per_cm baseline từ bbox (assume DEFAULT_HEIGHT_CM = full height)
-        px_per_cm_base = bh / DEFAULT_HEIGHT_CM
+        # [FIX v5] Upper Body Anatomical Ruler thay cho px_per_cm từ bbox.
+        # px_per_cm_base = bh / DEFAULT_HEIGHT_CM — SAI khi người ngập một phần:
+        #   bbox chỉ bao phần NỔI trên mặt nước (y2 = mực nước) → bh bị co
+        #   xuống → px_per_cm quá nhỏ (sai 2-3 lần) → các method như
+        #   _estimate_head_to_hip / _estimate_from_head_size lấy pixel chia
+        #   ngược cho px_per_cm này → chiều cao luôn bị đội lên chạm trần
+        #   DEFAULT_HEIGHT_MAX (200cm).
+        # Mới: đo px_per_cm từ upper body (đầu→vai 25cm / biacromial 39cm)
+        #   — phàn trên cơ thể LUÔN nổi trên nước, không bị ảnh hưởng bởi
+        #   ngập → tỉ lệ pixel/cm chính xác tại đúng cự ly đó.
+        px_per_cm_anatomy = self._anatomical_px_per_cm(keypoints)
+        if px_per_cm_anatomy is not None:
+            px_per_cm_base = px_per_cm_anatomy
+        else:
+            px_per_cm_base = bh / DEFAULT_HEIGHT_CM   # fallback khi không có kpts
 
         # Perspective scale từ depth_norm + vanishing point
         depth_scale = self._depth_scale(depth_norm, bbox, vp_result) if depth_norm is not None else 1.0
@@ -984,6 +1006,62 @@ class ShoulderWidthEstimator:
             confidence          = round(conf, 3),
             notes               = f"methods={'+'.join(methods)} inflate={inflate_factor:.2f}",
         )
+
+    # ── [v5] Upper Body Anatomical Ruler ───────────────────────────────
+    def _anatomical_px_per_cm(self, keypoints: Optional[np.ndarray]) -> Optional[float]:
+        """
+        Đo px_per_cm từ PHẦN TRÊN CƠ THỂ — vùng LUÔN nổi trên mặt nước.
+
+        Phục vụ đề xuất "Upper Body Anatomical Ruler":
+          - đầu → vai (đỉnh đầu→acromion) ≈ 25cm
+          - chiều rộng 2 mỏm vai (biacromial) ≈ 39cm
+        Không phụ thuộc bbox → không bị sai khi người ngập một phần
+        (bbox chỉ bao phần nổi → bh/165 bị co 2-3 lần).
+
+        Args:
+            keypoints: (17, 3) [x, y, conf] or None
+
+        Returns:
+            px_per_cm (pixels per cm) tại cự ly đó, None nếu không đủ tin cậy.
+        """
+        if keypoints is None or keypoints.shape[0] < 17:
+            return None
+
+        # 1) Biacromial width → px_per_cm = width_px / 39cm
+        shoulder_est = None
+        ls_c, rs_c = _kpt(keypoints, KP_LEFT_SHLD)[2], _kpt(keypoints, KP_RIGHT_SHLD)[2]
+        if ls_c >= KP_CONF_THRESH and rs_c >= KP_CONF_THRESH:
+            width_px = abs(_kpt(keypoints, KP_RIGHT_SHLD)[0] - _kpt(keypoints, KP_LEFT_SHLD)[0])
+            if width_px >= 8:
+                shoulder_est = (width_px / BIACROMIAL_CM, min(ls_c, rs_c))
+
+        # 2) Đầu → vai ≈ 25cm
+        head_est = None
+        head_y, head_conf = None, 0.0
+        for idx in (KP_NOSE, KP_LEFT_EYE, KP_RIGHT_EYE, KP_LEFT_EAR, KP_RIGHT_EAR):
+            x, y, c = _kpt(keypoints, idx)
+            if c >= KP_CONF_THRESH:
+                if head_y is None or y < head_y:
+                    head_y, head_conf = y, c
+        sh_y, sh_conf = None, 0.0
+        for idx in (KP_LEFT_SHLD, KP_RIGHT_SHLD):
+            _, y, c = _kpt(keypoints, idx)
+            if c >= KP_CONF_THRESH:
+                if sh_y is None or y < sh_y:
+                    sh_y, sh_conf = y, c
+        if head_y is not None and sh_y is not None and (sh_y - head_y) >= 5:
+            head_est = ((sh_y - head_y) / HEAD_TO_CLAVICLE_CM,
+                        min(head_conf, sh_conf))
+
+        candidates = [c for c in (shoulder_est, head_est) if c]
+        if not candidates:
+            return None
+
+        best = max(candidates, key=lambda c: c[1])   # chọn nguồn conf cao nhất
+        px_per_cm = best[0]
+        if not (PX_PER_CM_MIN <= px_per_cm <= PX_PER_CM_MAX):
+            return None
+        return px_per_cm
 
     # ── Depth scale ───────────────────────────────────────────────────────
     def _depth_scale(self, depth_norm: np.ndarray, bbox: List[int], vp_result: Optional[dict] = None) -> float:

@@ -16,6 +16,7 @@ Cac bug da fix:
 """
 
 import logging
+import math
 from collections import Counter
 from dataclasses import dataclass, field, asdict
 
@@ -2018,10 +2019,16 @@ class ReferenceEstimator:
         """
         Tong hop ket qua cuoi cung tu nhieu nguon.
 
-        Uu tien nguon (tu cao đến thap):
-          1. Local-measured objects (co local water contact)  → tin cay nhat
-          2. Global water line estimate
-          3. Color water area estimate                        → it tin cay nhat
+        [v5] Tiered hierarchy:
+          Tier 1 (metric reference): co doi tuong that (person/cua_nha/vehicle)
+            do duoc → CHI dung yolo_cm. Non-metric (DINOv2 classification,
+            color 2D area, depth relative) KHONG bao gio vote cm tranh chap.
+          Tier 2 (fallback): khong co doi tuong that → chi dung wl + area
+            relative, confidence <= 0.35 de canh bao nguoi dung.
+
+        Resolution weighting: w ∝ sqrt(bbox_height) — doi tuong gan camera
+        (bbox lon) quyet dinh, doi tuong xa (bbox nho, sai 2px = 10-20cm)
+        it anh huong.
 
         Aerial correction:
           - Anh tu tren cao: visibility cao khong co nghia la khong ngap
@@ -2052,9 +2059,19 @@ class ReferenceEstimator:
 
             if persons:
                 # Co person: dung person lam primary, vehicle lam sanity check
-                p_confs  = sum(o.confidence * max(o.local_wl_conf, 0.15) for o in persons)
+                # [v5] Resolution weighting: w ∝ sqrt(bbox_height) — object
+                # lớn (gần camera) đáng tin hơn object nhỏ (xa, sai 2px=10cm+).
+                def _res_w(o):
+                    if not o.bbox:
+                        return 1.0
+                    _, y1, _, y2 = o.bbox
+                    return math.sqrt(max(float(y2 - y1), 1.0))
+                res_p = [_res_w(p) for p in persons]
+                max_res_p = max(res_p) if res_p else 1.0
+                p_confs  = sum(o.confidence * max(o.local_wl_conf, 0.15)
+                               * (rw / max_res_p) for o, rw in zip(persons, res_p))
                 p_cm     = sum(o.water_height_cm * o.confidence * max(o.local_wl_conf, 0.15)
-                               for o in persons) / max(p_confs, 1e-6)
+                               * (rw / max_res_p) for o, rw in zip(persons, res_p)) / max(p_confs, 1e-6)
                 # FIX: Loai outlier truoc khi tinh median
                 # Person voi visibility cao (> 60%) -> water_cm phai thap
                 # Person voi visibility < 30% -> co the ngap nhieu
@@ -2080,9 +2097,11 @@ class ReferenceEstimator:
 
                 # Use median person estimate for multi-person robustness
                 person_median = float(np.median([o.water_height_cm for o in persons]))
-                # Default keeps the estimate defined when no vehicle adjustment
-                # is applied (for example, with three or more persons).
-                yolo_cm = person_median
+                # [v5] Default uses resolution-weighted p_cm (w ∝ sqrt(bbox_h))
+                # so object gần camera (bbox lớn) quyết định chính, object xa
+                # (bbox nhỏ, sai 2px=10cm+) ít ảnh hưởng.
+                # median chỉ thắng khi đông người (>=3) → MAD majority.
+                yolo_cm = p_cm if len(persons) < 3 else person_median
 
                 if len(persons) >= 3:
                     # ── [IMPROVE] MAD-based outlier detection ────────────
@@ -2128,24 +2147,28 @@ class ReferenceEstimator:
                                                 f"(median={height_median:.0f}cm)")
                 else:
                     if vehicles:
-                        v_confs = sum(o.confidence * max(o.local_wl_conf, 0.15) for o in vehicles)
+                        v_confs = sum(o.confidence * max(o.local_wl_conf, 0.15) * _res_w(o)
+                                      for o in vehicles)
                         v_cm    = sum(o.water_height_cm * o.confidence * max(o.local_wl_conf, 0.15)
-                                      for o in vehicles) / max(v_confs, 1e-6)
+                                      * _res_w(o) for o in vehicles) / max(v_confs, 1e-6)
                         if v_cm > person_median * 1.8:
                             v_cm = person_median * 1.3
                         # majority: persons quyết định, vehicles chỉ thả once
-                        yolo_cm = 0.85 * person_median + 0.15 * v_cm
-                    else:
-                        yolo_cm = person_median
+                        yolo_cm = 0.85 * yolo_cm + 0.15 * v_cm
 
                 total_w = p_confs + 0.1
                 log.debug(f"  Person-first: person_avg={p_cm:.0f}cm median={person_median:.0f}cm yolo={yolo_cm:.0f}cm")
             else:
                 # Khong co person: dung vehicle
-                total_w = sum(o.confidence * max(o.local_wl_conf, 0.1) for o in reliable)
+                # [v5] Resolution weighting: w ∝ sqrt(bbox_height)
+                res_v  = [max(float(o.bbox[3] - o.bbox[1]), 1.0) if o.bbox else 1.0
+                          for o in reliable]
+                max_rv = max(res_v) if res_v else 1.0
+                total_w = sum(o.confidence * max(o.local_wl_conf, 0.1)
+                              * (rw / max_rv) for o, rw in zip(reliable, res_v))
                 yolo_cm = sum(
                     o.water_height_cm * o.confidence * max(o.local_wl_conf, 0.1)
-                    for o in reliable
+                    * (rw / max_rv) for o, rw in zip(reliable, res_v)
                 ) / max(total_w, 1e-6)
                 water_cms = [o.water_height_cm for o in reliable if o.water_height_cm > 0]
                 if len(water_cms) >= 2:
@@ -2199,28 +2222,30 @@ class ReferenceEstimator:
         #   - Area weight: proportional lower_pct (zone confidence)
         # → Nguon tot hon duoc uu tien, khong phai chi dem so object.
 
+        # ══ [v5] Tiered hierarchy fusion ═════════════════════════════════
+        # Tier 1 (metric reference): có reference objects đo được (yolo_cm>0)
+        #   → CHỈ dùng yolo_cm. KHÔNG trộn non-metric wl_cm/area_cm dù ít dù
+        #   nhiều — DINOv2 / Color Water / Depth chỉ cho ước lượng tương đối.
+        # Tier 2 (fallback): KHÔNG có reference object → dùng wl+area tương
+        #   đối, confidence bị giới hạn ≤ 0.35 để cảnh báo người dùng.
         if yolo_cm > 0 and total_w > 0:
-            yolo_quality = min(1.0, total_w * 1.5)   # 0.13 object → 0.20, 0.67 → 1.0
+            yolo_quality = min(1.0, total_w * 1.5)
+            water_cm = yolo_cm
+            conf = min(0.92, 0.65 + yolo_quality * 0.30)
         else:
             yolo_quality = 0.0
-
-        wl_quality    = wl_conf                          # 0-1
-        area_quality  = min(1.0, lower_pct / 15.0)     # 15% area → 1.0
-
-        raw_w_yolo = yolo_quality * 0.65                 # max 65% YOLO
-        raw_w_wl   = wl_quality   * 0.25                 # max 25% water line
-        raw_w_area = area_quality * 0.10                 # max 10% color area
-
-        total_raw = raw_w_yolo + raw_w_wl + raw_w_area
-        if total_raw > 0.01:
-            w_yolo = raw_w_yolo / total_raw
-            w_wl   = raw_w_wl   / total_raw
-            w_area = raw_w_area / total_raw
-        else:
-            w_yolo, w_wl, w_area = 0.0, 0.4, 0.6
-
-        water_cm = w_yolo * yolo_cm + w_wl * wl_cm + w_area * area_cm
-        conf = min(0.92, wl_conf * 0.35 + yolo_quality * 0.50 + area_quality * 0.15)
+            wl_quality   = wl_conf
+            area_quality = min(1.0, lower_pct / 15.0)
+            raw_w_wl   = wl_quality   * 0.70
+            raw_w_area = area_quality * 0.30
+            total_raw  = raw_w_wl + raw_w_area
+            if total_raw > 0.01:
+                w_wl   = raw_w_wl / total_raw
+                w_area = raw_w_area / total_raw
+            else:
+                w_wl, w_area = 0.4, 0.6
+            water_cm = w_wl * wl_cm + w_area * area_cm
+            conf = min(0.35, wl_conf * 0.25 + area_quality * 0.10)
 
         # Aerial correction: tu tren cao → actual water sau hon ve be ngoai
         # angle_factor đã ap dung trong _measure_objects_local roi,

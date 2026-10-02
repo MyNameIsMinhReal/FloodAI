@@ -52,6 +52,17 @@ KP = {
     "left_ankle": 15, "right_ankle": 16,
 }
 
+# ── [v5] Upper Body Anatomical Ruler constants ─────────────────────
+# Chiều cao người trung bình (Việt Nam ~165cm)
+PERSON_HEIGHT_CM = 165.0
+# Khoảng cách đỉnh đầu → mỏm vai (acromion) người VN trưởng thành ≈ 25cm
+HEAD_TO_CLAVICLE_CM = 25.0
+# Chiều rộng 2 mỏm vai (biacromial) người VN ≈ 38-40cm
+BIACROMIAL_CM = 39.0
+# Ngưỡng hợp lệ cho px_per_cm (0.3 ~ rất xa, 15 ~ rất gần)
+PX_PER_CM_MIN, PX_PER_CM_MAX = 0.3, 15.0
+KP_CONF_MIN = 0.30
+
 
 @dataclass
 class PersonResult:
@@ -266,6 +277,67 @@ class PersonSegmentor:
         # Mặc định: đứng hoặc đi bộ
         return "standing_person"
 
+    # ── [v5] Upper Body Anatomical Ruler ─────────────────────────────
+    @staticmethod
+    def _anatomical_px_per_cm(kps: Optional[Dict]) -> Optional[float]:
+        """
+        Tính px_per_cm TỪ PHẦN TRÊN CƠ THỂ (luôn nổi trên mặt nước).
+
+        Dùng tỉ lệ nhân trắc học bất biến ở upper body:
+          - Đầu → vai (đỉnh đầu→mỏm vai) ≈ 25cm
+          - Chiều rộng 2 mỏm vai (biacromial) ≈ 39cm
+
+        Trả về px_per_cm thực tế tại cự ly đó, None nếu không đủ keypoints
+        tin cậy. KHÔNG dùng bbox vì bbox bị co ngắn khi người ngập.
+        """
+        if not kps:
+            return None
+
+        def _kp(name: str) -> Optional[Tuple[float, float, float]]:
+            d = kps.get(name)
+            if not d or not isinstance(d, dict):
+                return None
+            return (float(d.get("x", 0)), float(d.get("y", 0)), float(d.get("conf", 0)))
+
+        # 1) Biacromial width (2 mỏm vai) → px_per_cm = width_px / 39cm
+        ls = _kp("left_shoulder")
+        rs = _kp("right_shoulder")
+        shoulder_est = None
+        if ls and rs and ls[2] >= KP_CONF_MIN and rs[2] >= KP_CONF_MIN:
+            width_px = abs(rs[0] - ls[0])
+            if width_px >= 8:
+                shoulder_est = (width_px / BIACROMIAL_CM,
+                                min(ls[2], rs[2]))
+
+        # 2) Đỉnh đầu → vai ≈ 25cm
+        head_est = None
+        head_y, head_conf = None, 0.0
+        for name in ("nose", "left_eye", "right_eye", "left_ear", "right_ear"):
+            k = _kp(name)
+            if k and k[2] >= KP_CONF_MIN:
+                if head_y is None or k[1] < head_y:
+                    head_y, head_conf = k[1], k[2]
+        sh_y, sh_conf = None, 0.0
+        for name in ("left_shoulder", "right_shoulder"):
+            k = _kp(name)
+            if k and k[2] >= KP_CONF_MIN:
+                if sh_y is None or k[1] < sh_y:
+                    sh_y, sh_conf = k[1], k[2]
+        if head_y is not None and sh_y is not None and (sh_y - head_y) >= 5:
+            head_est = ((sh_y - head_y) / HEAD_TO_CLAVICLE_CM,
+                        min(head_conf, sh_conf))
+
+        # Ưu tiên biacromial (đáng tin hơn), falls back đầu→vai
+        candidates = [c for c in (shoulder_est, head_est) if c]
+        if not candidates:
+            return None
+
+        best = max(candidates, key=lambda c: c[1])  # conf cao nhất
+        px_per_cm = best[0]
+        if not (PX_PER_CM_MIN <= px_per_cm <= PX_PER_CM_MAX):
+            return None
+        return px_per_cm
+
     def _estimate_water_depth(
         self,
         bbox: List[int],
@@ -274,31 +346,52 @@ class PersonSegmentor:
         img_h: int,
     ) -> Optional[float]:
         """
-        Ước lượng chiều sâu nước ở người dùng keypoints hoặc bbox.
+        Ước lượng chiều sâu nước ở người bằng Upper Body Anatomical Ruler.
 
-        Logic:
-          - Nếu có keypoints: tìm keypoint thấp nhất còn hiện (không bị che nước)
-            → so với chiều cao người ước tính
-          - Nếu không có: dùng vị trí y đáy bbox so với y mực nước
+        [FIX v5] Bug cũ (luôn ra 8-15cm):
+          - Bbox khi người ngập CHỈ bao phần nổi trên mặt nước
+            (y2 ≈ mực nước, không phải chân). person_h_px = phần nổi.
+          - Nước chỉ chạm vài hàng pixel đáy bbox
+            → highest_water_row ≈ person_h_px → water_pct ≈ 6%
+            → 0.06 × 165 = ~10cm BẤT KỂ ngập đến hông (80cm) hay cổ (130cm).
+          - Biến kps được truyền vào nhưng hoàn toàn bị bỏ qua.
+
+        Công thức mới (độc lập bbox, dùng upper body luôn nổi):
+          1. px_per_cm từ phần trên cơ thể (đầu→vai 25cm / biacromial 39cm)
+          2. y_ground = y_head + 165 × px_per_cm  (vị trí chân ảo)
+          3. water_depth_cm = (y_ground − y_waterline) / px_per_cm
+
+        Returns:
+            cm độ ngập, None nếu không đủ dữ liệu.
         """
         x1, y1, x2, y2 = bbox
-        person_h_px = y2 - y1
-        if person_h_px < 10:
+        if y2 - y1 < 10:
             return None
 
-        # Chiều cao người trung bình (Việt Nam ~165cm)
-        PERSON_HEIGHT_CM = 165.0
+        px_per_cm = self._anatomical_px_per_cm(kps)
+        if px_per_cm is None:
+            return None
 
-        # Tìm y mực nước (y cao nhất có nước trong vùng người)
+        # Đỉnh đầu (dùng keypoint; fallback top bbox)
+        head_y = y1
+        for name in ("nose", "left_eye", "right_eye", "left_ear", "right_ear"):
+            d = (kps or {}).get(name)
+            if d and isinstance(d, dict) and d.get("conf", 0) >= KP_CONF_MIN:
+                head_y = min(float(d.get("y", y1)), head_y)
+
+        # Vị trí chân ảo: y_head + 165cm × px_per_cm
+        y_ground = head_y + PERSON_HEIGHT_CM * px_per_cm
+
+        # Tìm y mực nước (y nhỏ nhất có nước trong vùng người)
         person_water = water_mask[y1:y2, x1:x2]
         water_rows = np.where((person_water > 0).any(axis=1))[0]
         if len(water_rows) == 0:
             return None
+        waterline_y = y1 + float(water_rows.min())  # row nước cao nhất
 
-        highest_water_row = water_rows.min()  # relative to y1
-        # Tính cm: pixel cao hơn → nước cao hơn → sâu hơn
-        water_pct = 1.0 - (highest_water_row / person_h_px)
-        return round(water_pct * PERSON_HEIGHT_CM, 1)
+        # Nước ngập thực tế
+        water_depth_cm = (y_ground - waterline_y) / px_per_cm
+        return round(max(0.0, water_depth_cm), 1)
 
     @staticmethod
     def _bbox_to_mask(bbox: List[int], h: int, w: int) -> np.ndarray:
