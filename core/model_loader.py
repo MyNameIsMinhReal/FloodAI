@@ -404,7 +404,7 @@ def _loader_vlm(config: dict) -> Any:
     import torch
     from transformers import AutoProcessor
 
-    name = config.get("model_name", "Qwen/Qwen2.5-VL-7B-Instruct")
+    name = config.get("model_name", "Qwen/Qwen2.5-VL-3B-Instruct")
     pref = str(config.get("device_pref", "auto")).lower()
     if pref == "cpu":
         device = torch.device("cpu")
@@ -420,8 +420,12 @@ def _loader_vlm(config: dict) -> Any:
     )
 
     model = None
-    for cls_name in ("Qwen2_5_VLForConditionalGeneration",
-                     "Qwen2VLForConditionalGeneration"):
+    for cls_name in (
+        "Qwen2_5_VLForConditionalGeneration",
+        "Qwen2VLForConditionalGeneration",
+        "AutoModelForImageTextToText",
+        "AutoModelForVision2Seq",
+    ):
         try:
             import transformers as tf
             cls = getattr(tf, cls_name, None)
@@ -432,8 +436,7 @@ def _loader_vlm(config: dict) -> Any:
         except Exception as exc:
             log.debug(f"  [vlm] {cls_name} fail: {exc}")
     if model is None:
-        from transformers import AutoModelForVision2Seq
-        model = AutoModelForVision2Seq.from_pretrained(name, torch_dtype=dtype)
+        raise RuntimeError(f"Không thể load VLM model: {name}")
 
     model.to(device)
     model.eval()
@@ -441,7 +444,10 @@ def _loader_vlm(config: dict) -> Any:
     # Warm singleton verifier để stage dùng lại (không load 2 lần)
     try:
         from depth_analysis.vlm_verifier import get_vlm_verifier
-        verifier = get_vlm_verifier()
+        verifier = get_vlm_verifier({
+            "models": {"vlm": name},
+            "vlm_verify": {"device": pref, "enabled": True},
+        })
         verifier._model, verifier._processor, verifier._device = \
             model, processor, device
     except Exception as exc:

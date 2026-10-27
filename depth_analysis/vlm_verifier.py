@@ -79,17 +79,18 @@ class VLMVerifier:
         cfg = cfg or {}
         self.cfg = cfg
         vcfg: Dict[str, Any] = cfg.get("vlm_verify", {}) or {}
-        # Chuỗi rỗng trong config = chưa cấu hình → giữ nguyên để stage check
+        # Mặc định dùng Qwen/Qwen2.5-VL-3B-Instruct nếu vlm_verify.enabled=True
+        default_vlm = "Qwen/Qwen2.5-VL-3B-Instruct" if vcfg.get("enabled", True) else ""
         self.model_name: str = (
             (cfg.get("models", {}) or {}).get("vlm")
             or vcfg.get("model")
-            or ""
+            or default_vlm
         )
         self.device_pref: str   = vcfg.get("device", "auto")
         self.max_new_tokens:int = int(vcfg.get("max_new_tokens", 512))
         self.tolerance_pct: float   = float(vcfg.get("tolerance_pct", 30))
         self.min_abs_diff_cm: float = float(vcfg.get("min_abs_diff_cm", 12))
-        self.auto_correct: bool     = bool(vcfg.get("auto_correct", True))
+        self.auto_correct: bool     = bool(vcfg.get("auto_correct", False))
         self.min_conf_to_fix: float = float(vcfg.get("min_confidence_to_correct", 0.65))
 
         self._model = None
@@ -159,9 +160,13 @@ class VLMVerifier:
 
     def _load_architecture(self, torch, dtype):
         name = self.model_name
-        # 1) Qwen2.5-VL / Qwen2-VL (ưu tiên — class riêng, hỗ trợ tốt box ảo)
-        for cls_path in ("Qwen2_5_VLForConditionalGeneration",
-                         "Qwen2VLForConditionalGeneration"):
+        # 1) Qwen2.5-VL / Qwen2-VL / AutoModelForImageTextToText
+        for cls_path in (
+            "Qwen2_5_VLForConditionalGeneration",
+            "Qwen2VLForConditionalGeneration",
+            "AutoModelForImageTextToText",
+            "AutoModelForVision2Seq",
+        ):
             try:
                 import transformers as tf
                 cls = getattr(tf, cls_path, None)
@@ -170,9 +175,7 @@ class VLMVerifier:
                 return cls.from_pretrained(name, torch_dtype=dtype)
             except Exception as exc:
                 log.debug(f"  [VLMVerifier] {cls_path} fail: {exc}")
-        # 2) Generic vision-to-text
-        from transformers import AutoModelForVision2Seq
-        return AutoModelForVision2Seq.from_pretrained(name, torch_dtype=dtype)
+        raise RuntimeError(f"Không tìm thấy class kiến trúc phù hợp để load VLM: {name}")
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
@@ -520,8 +523,13 @@ _inst_lock = threading.Lock()
 
 def get_vlm_verifier(cfg: Optional[dict] = None) -> VLMVerifier:
     global _instance
-    if _instance is None:
-        with _inst_lock:
-            if _instance is None:
-                _instance = VLMVerifier(cfg)
+    with _inst_lock:
+        if _instance is None:
+            _instance = VLMVerifier(cfg)
+        elif cfg and (not _instance.cfg or not _instance.model_name):
+            # Nếu trước đó singleton được tạo rỗng (cfg=None), cập nhật lại từ cfg mới
+            _old_model, _old_proc, _old_dev = _instance._model, _instance._processor, _instance._device
+            _instance = VLMVerifier(cfg)
+            if _old_model is not None:
+                _instance._model, _instance._processor, _instance._device = _old_model, _old_proc, _old_dev
     return _instance

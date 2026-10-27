@@ -226,13 +226,15 @@ route_prediction:
 pipeline:
   # Bật/tắt từng stage độc lập
   stages:
-    crawl:      true
-    filter:     true
-    analyze:    true
-    depth:      true
+    crawl:       true
+    filter:      true
+    analyze:     true
+    depth:       true
+    raincoat:    true
+    vlm_verify:  true
     postprocess: true
-    store:      true
-    learn:      true
+    store:       true
+    learn:       true
 
   # Parallel processing
   parallel:
