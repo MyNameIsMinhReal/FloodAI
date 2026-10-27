@@ -323,7 +323,7 @@ class LLMEnhancer:
         # Optional loading features.  Keep these attributes initialized so
         # backends that do not expose their configuration in __init__ remain
         # type-safe and use the existing non-quantized/non-speculative path.
-        self._use_quantization: bool = False
+        self._use_quantization: bool = bool(kwargs_quant) if (kwargs_quant := True) else True
         self._quantization_bits: int = 4
         self._quantization_config: Any = None
         self._use_speculative: bool = False
@@ -435,13 +435,14 @@ class LLMEnhancer:
                         device_map=device_map,
                         trust_remote_code=True,
                     )
-                except ImportError:
-                    log.warning("[LLM] BitsAndBytesConfig not available, loading without quantization")
+                except Exception as quant_exc:
+                    log.warning(f"[LLM] 4-bit quantization load failed ({quant_exc}), trying bfloat16/float16 with device_map='auto'")
+                    torch.cuda.empty_cache()
                     self._quantization_config = None
                     self._model = model_cls.from_pretrained(
                         load_target,
                         torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
-                        device_map=device_map,
+                        device_map="auto",
                         trust_remote_code=True,
                     )
             else:

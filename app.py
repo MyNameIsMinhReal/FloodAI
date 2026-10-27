@@ -103,13 +103,13 @@ _infer_lock     = threading.Lock()  # serialise inference
 
 
 def _resolve_llm_model_source() -> str:
-    """Ưu tiên: flood-agent-merged → flood-agent-lora → models.vlm trong config.yaml."""
-    merged_p = BASE_DIR / "models" / "flood-agent-merged"
-    if (merged_p / "config.json").exists():
-        return str(merged_p)
+    """Ưu tiên: flood-agent-lora (nhẹ, load 4-bit nhanh) → flood-agent-merged → models.vlm trong config.yaml."""
     lora_p = BASE_DIR / "models" / "flood-agent-lora"
     if (lora_p / "adapter_config.json").exists():
         return str(lora_p)
+    merged_p = BASE_DIR / "models" / "flood-agent-merged"
+    if (merged_p / "config.json").exists():
+        return str(merged_p)
     try:
         cfg_path = BASE_DIR / "config.yaml"
         if cfg_path.exists():
@@ -128,9 +128,24 @@ def _load_llm_bg():
         from learning.flood_llm import LLMEnhancer
         model_src = _resolve_llm_model_source()
         log.info(f"[LLM] Loading VLM/LLM from: {model_src}")
-        _llm = LLMEnhancer.from_lora_dir(model_src, max_new_tokens=512, temperature=0.7)
+        try:
+            _llm = LLMEnhancer.from_lora_dir(model_src, max_new_tokens=512, temperature=0.7)
+        except Exception as first_exc:
+            log.warning(f"[LLM] Primary model {model_src} failed ({first_exc}), clearing CUDA cache and falling back to {DEFAULT_VL_MODEL}")
+            try:
+                import gc
+                import torch
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
+            if model_src != DEFAULT_VL_MODEL:
+                _llm = LLMEnhancer.from_lora_dir(DEFAULT_VL_MODEL, max_new_tokens=512, temperature=0.7)
+            else:
+                raise
         _llm_ready = True
-        log.info(f"[LLM] {model_src} loaded ✓ (is_vl={getattr(_llm, '_is_vl', False)})")
+        log.info(f"[LLM] Model loaded ✓ (is_vl={getattr(_llm, '_is_vl', False)})")
     except Exception as exc:
         _llm_error = str(exc)
         log.warning(f"[LLM] load failed: {exc}")
