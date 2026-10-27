@@ -599,7 +599,7 @@
             </div>
 
             <!-- Chat Messages Log Container -->
-            <div id="chatMessages" class="flex-grow overflow-y-auto space-y-3 p-2 text-xs">
+            <div id="chatMessages" class="flex-grow min-h-0 overflow-y-auto space-y-3 p-2 text-xs">
                 <div class="bg-teal-50 dark:bg-slate-800 p-3 rounded-2xl border border-teal-100 dark:border-slate-700 max-w-[85%] text-slate-700 dark:text-slate-200 space-y-1">
                     <p class="font-bold text-teal-600 dark:text-teal-400">Xin chào! Tôi là Trợ lý FloodAI GIRC.</p>
                     <p>Bạn có thể hỏi thông tin sơ tán, kỹ năng an toàn thiên tai, hoặc bấm biểu tượng 📷 để gửi ảnh ngập lụt cho tôi phân tích trực tiếp!</p>
@@ -607,20 +607,20 @@
             </div>
 
             <!-- Selected chat image badge -->
-            <div id="chatImageBadge" class="hidden px-2.5 py-1 mb-1 bg-teal-50 dark:bg-slate-800 border border-teal-200 dark:border-slate-700 rounded-lg text-[11px] flex items-center justify-between text-teal-700 dark:text-teal-300">
+            <div id="chatImageBadge" class="hidden flex-shrink-0 px-2.5 py-1 mb-1 bg-teal-50 dark:bg-slate-800 border border-teal-200 dark:border-slate-700 rounded-lg text-[11px] flex items-center justify-between text-teal-700 dark:text-teal-300">
                 <span id="chatImageName" class="truncate"><i class="fa-solid fa-image mr-1"></i> Đã chọn ảnh</span>
                 <button type="button" onclick="clearChatImage()" class="text-rose-500 font-bold ml-2">✕</button>
             </div>
 
             <!-- Quick Suggestions -->
-            <div class="py-2 flex gap-1.5 overflow-x-auto text-[11px]">
-                <button onclick="sendQuickQuery('Điểm sơ tán an toàn Thái Nguyên ở đâu?')" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 px-2.5 py-1 rounded-full whitespace-nowrap border border-slate-200 dark:border-slate-700">📍 Điểm sơ tán?</button>
-                <button onclick="sendQuickQuery('Xử lý khẩn cấp khi nước dâng tràn vào nhà?')" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 px-2.5 py-1 rounded-full whitespace-nowrap border border-slate-200 dark:border-slate-700">⚡ An toàn điện?</button>
-                <button onclick="sendQuickQuery('Số điện thoại cứu hộ Thái Nguyên?')" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 px-2.5 py-1 rounded-full whitespace-nowrap border border-slate-200 dark:border-slate-700">📞 SĐT Cứu hộ?</button>
+            <div class="py-2 flex-shrink-0 flex gap-1.5 overflow-x-auto text-[11px]">
+                <button onclick="sendQuickQuery('Điểm sơ tán an toàn Thái Nguyên ở đâu?')" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 px-2.5 py-1.5 rounded-full whitespace-nowrap border border-slate-200 dark:border-slate-700">📍 Điểm sơ tán?</button>
+                <button onclick="sendQuickQuery('Xử lý khẩn cấp khi nước dâng tràn vào nhà?')" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 px-2.5 py-1.5 rounded-full whitespace-nowrap border border-slate-200 dark:border-slate-700">⚡ An toàn điện?</button>
+                <button onclick="sendQuickQuery('Số điện thoại cứu hộ Thái Nguyên?')" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 px-2.5 py-1.5 rounded-full whitespace-nowrap border border-slate-200 dark:border-slate-700">📞 SĐT Cứu hộ?</button>
             </div>
 
             <!-- Chat Input Box -->
-            <form onsubmit="handleChatSubmit(event)" class="flex gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+            <form onsubmit="handleChatSubmit(event)" class="flex flex-shrink-0 gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
                 <input type="file" id="chatImageInput" accept="image/*" onchange="onChatImageSelected(event)" class="hidden" />
                 <button type="button" onclick="document.getElementById('chatImageInput').click()" title="Đính kèm ảnh lũ lụt" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-teal-600 dark:text-teal-400 px-3 py-2 rounded-xl text-xs border border-slate-300 dark:border-slate-700 transition">
                     <i class="fa-solid fa-camera"></i>
@@ -996,8 +996,10 @@
             if (homeMapInstance) return;
             homeMapInstance = L.map('homeMiniMap', { zoomControl: false }).setView([21.5928, 105.8442], 12);
 
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap'
+            // Esri World Imagery: 100% pure satellite photos, completely free of any text, borders, or disputed labels
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 19,
+                attribution: '© Satellite Imagery - FloodAI GIRC Thái Nguyên'
             }).addTo(homeMapInstance);
 
             homeMarkersGroup = L.layerGroup().addTo(homeMapInstance);
@@ -1022,9 +1024,33 @@
         function initFullScreenMap() {
             fullMapInstance = L.map('fullScreenMap').setView([21.5928, 105.8442], 13);
 
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap - FloodAI GIRC Thái Nguyên'
-            }).addTo(fullMapInstance);
+            // Satellite Imagery without any political labels or borders
+            const satellitePure = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 19,
+                attribution: '© Ảnh Vệ Tinh (Không nhãn) - FloodAI GIRC'
+            });
+
+            // Modern Clean Map (No Labels)
+            const cleanLightNoLabels = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
+                subdomains: 'abcd',
+                maxZoom: 19,
+                attribution: '© Bản đồ Số Sạch - FloodAI GIRC'
+            });
+
+            // Dark Mode Map (No Labels)
+            const darkNoLabels = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
+                subdomains: 'abcd',
+                maxZoom: 19,
+                attribution: '© Bản đồ Đêm - FloodAI GIRC'
+            });
+
+            satellitePure.addTo(fullMapInstance);
+
+            L.control.layers({
+                "🛰️ Ảnh Vệ Tinh Thuần (Không nhãn)": satellitePure,
+                "🗺️ Bản đồ Địa vật Sạch (Không chữ)": cleanLightNoLabels,
+                "🌙 Bản đồ Đêm (Không chữ)": darkNoLabels
+            }, null, { position: 'bottomleft' }).addTo(fullMapInstance);
 
             mapMarkersGroup = L.layerGroup().addTo(fullMapInstance);
             renderMapMarkers('all');
