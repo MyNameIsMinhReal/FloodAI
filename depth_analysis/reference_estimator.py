@@ -190,14 +190,40 @@ def _iou(b1: list, b2: list) -> float:
     return inter / max((b1[2]-b1[0])*(b1[3]-b1[1]) + (b2[2]-b2[0])*(b2[3]-b2[1]) - inter, 1)
 
 
+def _compute_raincoat_upper_mask(img_rgb: np.ndarray, hsv: Optional[np.ndarray] = None) -> np.ndarray:
+    """
+    Tạo binary mask (0/255) cho vùng nghi là áo mưa ở 55% phía trên ảnh
+    (saturation cao + texture thấp = bề mặt vải đồng nhất).
+    """
+    if hsv is None:
+        hsv = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HSV)
+    raincoat_mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
+    for lo, hi in _RAINCOAT_HSV:
+        raincoat_mask = cv2.bitwise_or(raincoat_mask, cv2.inRange(hsv, lo, hi))
+
+    gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+    lap = cv2.Laplacian(gray, cv2.CV_64F)
+    lap_abs = np.abs(lap).astype(np.float32)
+    lap_blur = cv2.GaussianBlur(lap_abs, (15, 15), 0)
+    low_texture = (lap_blur < 15).astype(np.uint8)
+
+    is_raincoat = cv2.bitwise_and(raincoat_mask, low_texture * 255)
+
+    # Chỉ loại áo mưa ở NỬA TRÊN ảnh (55% trên cùng)
+    h_img = hsv.shape[0]
+    upper_zone = np.zeros(hsv.shape[:2], dtype=np.uint8)
+    upper_zone[:int(h_img * 0.55), :] = 255
+    return cv2.bitwise_and(is_raincoat, upper_zone)
+
+
 def _water_mask(img_rgb: np.ndarray) -> np.ndarray:
     """
-    Tao binary mask cho vung nuoc.
+    Tao binary mask cho vung nuoc (ket hop HSV + multi-space WaterDetector v3/v4).
 
     Cai tien:
-    - Loai ao mua (saturation cao + texture thap = vai đồng nhat)
-    - Nuoc that: saturation thap, co texture ripple
-    - Ao mua: saturation cao (>130), mau đồng nhat, nam phia tren anh
+    - Ket hop HSV truyen thong voi WaterDetector (HSV + LAB + YCbCr + NormRGB + Texture + NDWI)
+    - Loai ao mua (saturation cao + texture thap = vai đồng nhat) o 55% tren anh
+    - Loai bong ram & cay xanh
     """
     hsv  = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HSV)
     mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
@@ -206,33 +232,18 @@ def _water_mask(img_rgb: np.ndarray) -> np.ndarray:
     for lo, hi in _WATER_HSV:
         mask = cv2.bitwise_or(mask, cv2.inRange(hsv, lo, hi))
 
-    # Buoc 2: Tao raincoat mask (ao mua = loai ra)
-    raincoat_mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
-    for lo, hi in _RAINCOAT_HSV:
-        raincoat_mask = cv2.bitwise_or(raincoat_mask, cv2.inRange(hsv, lo, hi))
+    # Buoc 1b: Ket hop multi-space WaterDetector (bat nuoc bun vang, xam, ban dem, puddle)
+    try:
+        from depth_analysis.water_detector import WaterDetector
+        _wd = WaterDetector(min_area_pct=2.0, temporal_smooth=False)
+        wdr = _wd.detect(img_rgb, use_segmentation=False)
+        if wdr.water_mask is not None and wdr.water_mask.shape == mask.shape:
+            mask = cv2.bitwise_or(mask, wdr.water_mask)
+    except Exception as _wde:
+        log.debug(f"  _water_mask WaterDetector fallback: {_wde}")
 
-    # Buoc 3: Loai vung raincoat co texture thap (vai đồng nhat)
-    # Nuoc that co texture (ripple), ao mua khong co texture
-    gray     = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
-    lap      = cv2.Laplacian(gray, cv2.CV_64F)
-    lap_abs  = np.abs(lap).astype(np.float32)
-    # Lam mo để lay texture local
-    lap_blur = cv2.GaussianBlur(lap_abs, (15, 15), 0)
-    # Vung texture thap (<15): kha nang cao la vai/be mat phang
-    low_texture = (lap_blur < 15).astype(np.uint8)
-
-    # Ao mua = raincoat_mask AND low_texture
-    is_raincoat = cv2.bitwise_and(raincoat_mask, low_texture * 255)
-
-    # Chi loai ao mua o NUA TREN anh (55% tren cung).
-    # Phan duoi la vung nuoc lu — neu loai o day se mat water pixels
-    # quan trong (nuoc gan nguoi mac ao mua co the co mau xanh phan chieu).
-    h_img = hsv.shape[0]
-    upper_zone = np.zeros(hsv.shape[:2], dtype=np.uint8)
-    upper_zone[:int(h_img * 0.55), :] = 255
-    is_raincoat = cv2.bitwise_and(is_raincoat, upper_zone)
-
-    # Loai raincoat khoi water mask
+    # Buoc 2-3: Tao raincoat mask o 55% tren anh va loai khoi water mask
+    is_raincoat = _compute_raincoat_upper_mask(img_rgb, hsv=hsv)
     mask = cv2.bitwise_and(mask, cv2.bitwise_not(is_raincoat))
 
     # Buoc 4: Morphology cleanup
@@ -328,6 +339,9 @@ class ReferenceEstimator:
         self.use_segformer = use_segformer
         self._yolo = self._depth_pipe = self._classifier = None
         self._pose_mdl = self._seg_model = self._seg_proc = None
+        self._water_det = None
+        self._water_seg = None
+        self._last_seg_result = None
         self._seg_dev  = "cpu"
         # Full pipeline config (gán bởi DepthStage._run_estimator: estimator._cfg = self.cfg)
         # Dùng cho:
@@ -337,6 +351,16 @@ class ReferenceEstimator:
         # ⚠ Không nên dùng _cfg cho bất kỳ thứ gì khác — ưu tiên truyền
         #   qua constructor param nếu cần mở rộng.
         self._cfg: dict = {}
+
+    def _get_water_detector(self):
+        if self._water_det is None:
+            from depth_analysis.water_detector import WaterDetector
+            min_area = float(self._cfg.get("water_detection", {}).get("min_water_area", 2.0))
+            self._water_det = WaterDetector(
+                min_area_pct=min(min_area, 3.0),
+                temporal_smooth=False,
+            )
+        return self._water_det
 
     def _load_yolo(self):
         if self._yolo: return
@@ -356,7 +380,7 @@ class ReferenceEstimator:
             from depth_analysis.flood_classifier import FloodClassifier
             self._classifier = FloodClassifier(
                 dino_model=self.dino_model, device=self.device,
-                cfg=self._cfg,  # [v4] pass config → WaterDetector refine_line
+                cfg=self._cfg,  # [v4] pass config → WaterDetector refine_line & ResNet
             )
         except Exception as e:
             log.debug(f"  FloodClassifier skip: {e}")
@@ -370,23 +394,24 @@ class ReferenceEstimator:
             log.debug(f"  PoseAnalyzer skip: {e}")
 
     def _load_segformer(self):
-        if self._seg_model: return
+        if self._water_seg is not None or self._seg_model is not None:
+            return
         try:
-            import torch
-            from transformers import SegformerImageProcessor, SegformerForSemanticSegmentation
-            dev = "cuda" if (self.device == "auto" and torch.cuda.is_available()) else "cpu"
-            mid = "nvidia/segformer-b0-finetuned-ade-512-512"
-            self._seg_proc  = SegformerImageProcessor.from_pretrained(mid)
-            self._seg_model = SegformerForSemanticSegmentation.from_pretrained(mid)
-            # Keep the dynamically loaded Transformers model opaque to static
-            # type checkers; some versions expose an incomplete ``to`` stub.
-            seg_model = self._seg_model
-            if seg_model is None:
-                raise RuntimeError("SegFormer model failed to load")
-            # Resolve dynamically so type checkers do not bind the incomplete
-            # Transformers stub to the wrong callable signature.
-            getattr(seg_model, "to")(torch.device(dev))
-            self._seg_model.eval(); self._seg_dev = dev
+            from depth_analysis.water_segmentor import WaterSegmentor
+            seg_cfg = (
+                self._cfg.get("models", {}).get("segformer")
+                or self._cfg.get("ground_detection", {}).get("model")
+                or "models/flood_segnet_b2"
+            )
+            self._water_seg = WaterSegmentor(
+                model_type="segformer",
+                segformer_model=str(seg_cfg),
+                device=self.device,
+            )
+            self._water_seg._load()
+            self._seg_model = self._water_seg._model
+            self._seg_proc  = self._water_seg._processor
+            self._seg_dev   = self._water_seg._seg_device
         except Exception as e:
             log.debug(f"  SegFormer skip: {e}")
 
@@ -412,8 +437,26 @@ class ReferenceEstimator:
             pil_img = Image.fromarray(img_rgb)
             log.debug(f"  Undistort: FOV={fov_deg:.0f}°")
 
-        # 1. Water color + surface water check
-        wmask     = _water_mask(img_rgb)
+        # 1. Multi-space WaterDetector + HSV water color + surface water check
+        wdr = None
+        try:
+            wdr = self._get_water_detector().detect(img_rgb, use_segmentation=False)
+        except Exception as _wde:
+            log.debug(f"  WaterDetector skip: {_wde}")
+
+        # Ket hop HSV mask truyen thong va WaterDetector mask (loai ao mua 55% tren)
+        hsv_img = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HSV)
+        wmask = np.zeros((h, w), dtype=np.uint8)
+        for lo, hi in _WATER_HSV:
+            wmask = cv2.bitwise_or(wmask, cv2.inRange(hsv_img, lo, hi))
+        if wdr is not None and wdr.water_mask is not None and wdr.water_mask.shape == (h, w):
+            wmask = cv2.bitwise_or(wmask, wdr.water_mask)
+        raincoat_upper = _compute_raincoat_upper_mask(img_rgb, hsv=hsv_img)
+        wmask = cv2.bitwise_and(wmask, cv2.bitwise_not(raincoat_upper))
+        k_morph = np.ones((9, 9), np.uint8)
+        wmask = cv2.morphologyEx(wmask, cv2.MORPH_CLOSE, k_morph)
+        wmask = cv2.morphologyEx(wmask, cv2.MORPH_OPEN,  k_morph)
+
         water_pct = float(wmask.sum()/255) / (h*w) * 100
         lower_pct = float(wmask[int(h*0.4):].sum()/255) / max(wmask[int(h*0.4):].size, 1) * 100
 
@@ -421,10 +464,15 @@ class ReferenceEstimator:
         has_surface_water, surf_conf, color_water_lower = self._has_surface_water(
             img_rgb, wmask, h, w)
 
-        # has_flood: can CA mau nuoc VA dau hieu be mat nuoc thuc
-        has_flood = (lower_pct >= 5.0 or water_pct >= 8.0) and has_surface_water
-        # Fallback: neu rat nhieu mau nuoc → co the thuc su co lu
-        if not has_flood and (lower_pct >= 12.0 or water_pct >= 15.0):
+        wdr_has_water = bool(wdr and wdr.has_water)
+        # has_flood: can mau nuoc + dau hieu be mat nuoc HOAC WaterDetector v3/v4 xac nhan
+        has_flood = (lower_pct >= 5.0 or water_pct >= 8.0) and (has_surface_water or wdr_has_water)
+        # Fallback: neu rat nhieu mau nuoc hoac WaterDetector tu tin cao → co lu
+        if not has_flood and (
+            lower_pct >= 12.0
+            or water_pct >= 15.0
+            or (wdr is not None and wdr.has_water and wdr.confidence >= 0.55)
+        ):
             has_flood = True
 
         # ── [v4 Gap A] SceneValidator: kiểm tra chất lượng ảnh ────────────
@@ -479,7 +527,7 @@ class ReferenceEstimator:
 
         # 5. Kiem tra kho hoan toan
         # Neu TAT CA objects đều 100% visible + khong co nuoc be mat → NO_FLOOD
-        if valid_dets and not has_surface_water:
+        if valid_dets and not has_surface_water and not wdr_has_water:
             all_visible = all(
                 (d["bbox"][3] - d["bbox"][1]) / h > 0.05  # object khong bi cat
                 for d in valid_dets
@@ -489,15 +537,17 @@ class ReferenceEstimator:
                 has_flood = False
                 log.info("  No surface water + all objects visible → NO_FLOOD")
 
-        # 6. DINOv2
+        # 6. DINOv2 + ResNet + Color Ensemble (luon chay khi use_dino=True de cuu sot nuoc)
         flood_prob = 0.5
-        if self.use_dino and has_flood:
+        if self.use_dino:
             self._load_classifier()
             if self._classifier:
                 try:
-                    r = self._classifier.classify(image_path)
+                    r = self._classifier.classify(img_rgb, precomputed_wdr=wdr)
                     flood_prob = r.flood_prob
-                    if not has_flood and r.has_flood: has_flood = True
+                    if not has_flood and r.has_flood:
+                        has_flood = True
+                        log.info(f"  FloodClassifier rescued missed flood (prob={flood_prob:.2f})")
                 except Exception:
                     flood_prob = min(0.8, water_pct / 12.0)
 
@@ -529,8 +579,44 @@ class ReferenceEstimator:
         except Exception as e:
             log.warning(f"  Depth fail: {e}"); return None
 
-        # 8. SegFormer
-        seg_wl_y, seg_road_pct, _ = self._run_segformer(img_rgb, h, w)
+        # 8. SegFormer (ho tro ca fine-tuned binary SegFormer va ADE20K SegFormer)
+        seg_wl_y, seg_road_pct, seg_water_pct = self._run_segformer(img_rgb, h, w)
+        seg_res = self._last_seg_result
+        if seg_res is not None and seg_res.model_used != "color_fallback":
+            try:
+                from depth_analysis.water_segmentor import fuse_water_masks
+                is_ft = bool(
+                    getattr(seg_res, "is_finetuned", False)
+                    or seg_res.model_used in ("segformer_finetuned", "segformer-finetuned")
+                )
+                fuse_w = (0.65, 0.35) if is_ft else (0.45, 0.55)
+                fused_wmask = fuse_water_masks(
+                    seg_res.water_mask,
+                    wmask,
+                    img_rgb=img_rgb,
+                    weights=fuse_w,
+                    dry_road_mask=seg_res.dry_road_mask,
+                    depth_map=depth_r,
+                    confident_bg_mask=getattr(seg_res, "confident_bg_mask", None),
+                )
+                # Dam bao khong lay lai vung ao mua phia tren
+                wmask = cv2.bitwise_and(fused_wmask, cv2.bitwise_not(raincoat_upper))
+                water_pct = float(wmask.sum() / 255) / (h * w) * 100
+                lower_pct = (
+                    float(wmask[int(h * 0.4):].sum() / 255)
+                    / max(wmask[int(h * 0.4):].size, 1) * 100
+                )
+                if not has_flood and (
+                    (is_ft and seg_water_pct >= 4.0)
+                    or (seg_water_pct >= 6.0 and lower_pct >= 5.0)
+                ):
+                    has_flood = True
+                    log.info(
+                        f"  SegFormer ({seg_res.model_used}) detected flood: "
+                        f"seg_water={seg_water_pct:.1f}% lower={lower_pct:.1f}%"
+                    )
+            except Exception as _fe:
+                log.debug(f"  SegFormer mask fuse skip: {_fe}")
 
         # 8b. Phat hien cua nha (reference uu tien cao nhat) — khong can YOLO
         try:
@@ -754,7 +840,7 @@ class ReferenceEstimator:
         YOLO và Pose vẫn giữ vì nhỏ và load nhanh.
         """
         import gc
-        for attr in ("_depth_pipe", "_classifier", "_seg_model", "_seg_proc"):
+        for attr in ("_depth_pipe", "_classifier", "_seg_model", "_seg_proc", "_water_seg", "_last_seg_result"):
             if getattr(self, attr, None) is not None:
                 try:
                     m = getattr(self, attr)
@@ -1362,11 +1448,26 @@ class ReferenceEstimator:
         return out
 
     def _run_segformer(self, img_rgb, h, w):
-        if not self.use_segformer: return h, 0.0, 0.0
+        self._last_seg_result = None
+        if not self.use_segformer:
+            return h, 0.0, 0.0
         self._load_segformer()
+        if self._water_seg is not None:
+            try:
+                seg_res = self._water_seg.segment(img_rgb)
+                self._last_seg_result = seg_res
+                road_pct = 0.0
+                if seg_res.dry_road_mask is not None and seg_res.dry_road_mask.size > 0:
+                    road_pct = float((seg_res.dry_road_mask > 0).mean() * 100.0)
+                return seg_res.water_line_y, road_pct, seg_res.water_pct
+            except Exception as e:
+                log.debug(f"  SegFormer (WaterSegmentor): {e}")
+                return h, 0.0, 0.0
+
         seg_model = self._seg_model
         seg_proc = self._seg_proc
-        if seg_model is None or seg_proc is None: return h, 0.0, 0.0
+        if seg_model is None or seg_proc is None:
+            return h, 0.0, 0.0
         try:
             import torch
             inp = seg_proc(images=Image.fromarray(img_rgb), return_tensors="pt")
@@ -1491,10 +1592,27 @@ class ReferenceEstimator:
             wl_y    = int(0.55 * wl_y + 0.45 * tex_wl_y)
             wl_conf = min(0.70, wl_conf + 0.15)
 
-        # Tin hieu 4: SegFormer
-        if wl_conf < 0.50 and seg_wl_y and seg_wl_y < h*0.92:
-            wl_y    = int(0.6*wl_y + 0.4*seg_wl_y)
-            wl_conf = min(0.65, wl_conf + 0.12)
+        # Tin hieu 4: SegFormer (uu tien cao hon neu la model fine-tuned cho lu lut)
+        seg_res = getattr(self, "_last_seg_result", None)
+        is_ft_seg = bool(
+            seg_res
+            and (
+                getattr(seg_res, "is_finetuned", False)
+                or seg_res.model_used in ("segformer_finetuned", "segformer-finetuned")
+            )
+            and seg_res.water_pct >= 3.0
+        )
+        if seg_wl_y and seg_wl_y < h * 0.92:
+            if is_ft_seg:
+                if wl_conf < 0.70:
+                    wl_y    = int(0.45 * wl_y + 0.55 * seg_wl_y) if wl_y < h else int(seg_wl_y)
+                    wl_conf = min(0.88, max(wl_conf, seg_res.confidence) + 0.12)
+                else:
+                    wl_y    = int(0.70 * wl_y + 0.30 * seg_wl_y)
+                    wl_conf = min(0.92, wl_conf + 0.05)
+            elif wl_conf < 0.55:
+                wl_y    = int(0.60 * wl_y + 0.40 * seg_wl_y)
+                wl_conf = min(0.70, wl_conf + 0.12)
 
         # SegFormer road penalty
         if seg_road_pct > 30.0:
@@ -1590,6 +1708,19 @@ class ReferenceEstimator:
                     )
                     wl_y    = new_wl
                     wl_conf = min(wl_conf, 0.35)
+
+        # ── [v4] Snap water line vao mep ngang uot-kho (Sobel + color jump) ──
+        if has_flood and int(h * 0.10) < wl_y < h - 5:
+            refine_enabled = bool(
+                getattr(self, "_cfg", {}).get("water_detection", {}).get("refine_line", True)
+            )
+            if refine_enabled:
+                try:
+                    from depth_analysis.water_detector import refine_water_line
+                    img_bgr_for_refine = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
+                    wl_y, _snap_str = refine_water_line(img_bgr_for_refine, wl_y, search_window=18)
+                except Exception as _re_exc:
+                    log.debug(f"  WL refine skip: {_re_exc}")
 
         return wl_y, round(wl_conf, 3)
 

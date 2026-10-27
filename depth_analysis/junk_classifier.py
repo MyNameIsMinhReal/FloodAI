@@ -26,8 +26,8 @@ from PIL import Image
 log = logging.getLogger(__name__)
 
 
-class ImageType(Enum):
-    """Loại ảnh sau khi pre-validate."""
+class ImageType(str, Enum):
+    """Loại ảnh sau khi pre-validate (kế thừa str để tương thích so sánh với 'junk'/'dry')."""
     FLOOD     = "flood"      # có nước/ngập → chạy pipeline
     DRY       = "dry"        # outdoor khô ráo → skip depth
     JUNK      = "junk"       # không liên quan → reject
@@ -97,12 +97,12 @@ class JunkClassifier:
     SOLID_COLOR_VAR = 60.0       # độ lệch chuẩn thấp → screenshot/solid
     TEXT_EDGE_DENSITY = 0.42     # mật độ cạnh cao > này → văn bản/chart
     LOW_EDGE_DENSITY = 0.02      # quá ít cạnh → mờ/nhiễu
-    WATER_HSV_BLUE = ((95, 60, 40), (140, 255, 255))   # nước xanh
-    WATER_HSV_BROWN = ((0, 60, 60), (25, 255, 255))    # nước bùn nâu
+    WATER_HSV_BLUE = ((60, 20, 30), (140, 255, 255))    # nước xanh / xanh lục nhạt / cyan
+    WATER_HSV_BROWN = ((0, 28, 25), (38, 255, 245))     # nước bùn nâu / đất sét vàng / lũ đêm
 
     def __init__(self, junk_threshold: float = 0.80,
                  dry_threshold: float = 0.55,
-                 dry_max_water: float = 5.0):
+                 dry_max_water: float = 4.5):
         self.junk_threshold = junk_threshold
         self.dry_threshold = dry_threshold
         self.dry_max_water = dry_max_water
@@ -202,9 +202,10 @@ class JunkClassifier:
                                       "màu đồng nhất, có thể là screenshot",
                                       edge_density=edges["density"])
 
-        # Nước ít → có thể dry outdoor hoặc flood nhẹ
-        # Không thấy nước đáng kể → dry outdoor (nếu có cảnh outdoor)
-        if self._looks_outdoor(bgr):
+        # Nước ít → chỉ kết luận DRY khi hoàn toàn không có dấu hiệu nước (< 1.5%)
+        # Nếu water_ratio nằm trong vùng nghi ngờ [1.5%, dry_max_water) → trả UNCERTAIN
+        # để tránh bỏ sót ảnh ngập đô thị (nước xám/phản chiếu/nhiều cây xanh).
+        if water_ratio < 1.5 and self._looks_outdoor(bgr):
             return JunkClassification(ImageType.DRY, self._clip(self.dry_threshold),
                                       "dry_outdoor",
                                       "outdoor khô ráo, không nước",
@@ -236,10 +237,34 @@ class JunkClassifier:
 
     def _water_ratio(self, bgr: np.ndarray) -> float:
         hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
-        total = max(1, hsv.shape[0] * hsv.shape[1])
+        h, w = hsv.shape[:2]
+        total = max(1, h * w)
         mask_blue = cv2.inRange(hsv, *self.WATER_HSV_BLUE)
         mask_brown = cv2.inRange(hsv, *self.WATER_HSV_BROWN)
-        water = cv2.bitwise_or(mask_blue, mask_brown)
+        # Loai cay xanh tuoi (H ∈ [38, 82], S > 65) khoi mask_blue/brown
+        veg_mask = cv2.inRange(hsv, (38, 65, 35), (82, 255, 255))
+        water = cv2.bitwise_and(cv2.bitwise_or(mask_blue, mask_brown), cv2.bitwise_not(veg_mask))
+
+        # Bo sung: nuoc ngap do thi mau xam đục / phan chieu troi am u o 55% duoi anh
+        # (S thap < 45, V trung binh [35, 210], be mat muot it canh sac)
+        y_start = int(h * 0.45)
+        lower_hsv = hsv[y_start:, :]
+        lower_bgr = bgr[y_start:, :]
+        if lower_hsv.size > 0:
+            gray_low = cv2.cvtColor(lower_bgr, cv2.COLOR_BGR2GRAY).astype(np.float32)
+            gx = cv2.Sobel(gray_low, cv2.CV_32F, 1, 0, ksize=3)
+            gy = cv2.Sobel(gray_low, cv2.CV_32F, 0, 1, ksize=3)
+            grad = cv2.magnitude(gx, gy)
+            # Mat nuoc muot (nhung khong phang tuyet doi nhu UI solid color)
+            smooth_water = (
+                (lower_hsv[:, :, 1] < 45)
+                & (lower_hsv[:, :, 2] >= 35)
+                & (lower_hsv[:, :, 2] <= 210)
+                & (grad > 1.0)
+                & (grad < 16.0)
+            ).astype(np.uint8) * 255
+            water[y_start:, :] = cv2.bitwise_or(water[y_start:, :], smooth_water)
+
         return float(cv2.countNonZero(water)) / total * 100.0
 
     def _looks_outdoor(self, bgr: np.ndarray) -> bool:

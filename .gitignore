@@ -33,7 +33,9 @@ _upload_tmp/
 learning/_live_results/
 learning/_live_tmp/
 learning/models/
-models/
+models/*
+!models/flood_segnet_b2/
+!models/flood_segnet_b2/**
 
 # ── Dataset (không vào repo) ──────────────────────────────────────────────────
 datasets/

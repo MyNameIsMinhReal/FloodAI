@@ -186,7 +186,7 @@ class AsyncFloodPipeline:
 
         log.info(
             "AsyncFloodPipeline initialized — "
-            "flow: analyze → [depth ‖ raincoat] → route → postprocess → store → learn"
+            "flow: analyze → [depth ‖ raincoat] → vlm_verify → route → postprocess → store → learn"
         )
 
     def _init_stages(self):
@@ -195,16 +195,18 @@ class AsyncFloodPipeline:
         from pipeline.stages.analyze_stage    import AnalyzeStage
         from pipeline.stages.depth_stage      import DepthStage
         from pipeline.stages.raincoat_stage   import RaincoatStage
+        from pipeline.stages.vlm_verify_stage import VLMVerifyStage
         from pipeline.stages.postprocess_stage import PostprocessStage
         from pipeline.stages.store_stage      import StoreStage
         from pipeline.stages.learn_stage      import LearnStage
 
-        self.analyzer  = AnalyzeStage(self.cfg)
-        self.depth     = DepthStage(self.cfg)
-        self.raincoat  = RaincoatStage(self.cfg)
-        self.postproc  = PostprocessStage(self.cfg)
-        self.storage   = StoreStage(self.cfg)
-        self.learner   = LearnStage(self.cfg)
+        self.analyzer   = AnalyzeStage(self.cfg)
+        self.depth      = DepthStage(self.cfg)
+        self.raincoat   = RaincoatStage(self.cfg)
+        self.vlm_verify = VLMVerifyStage(self.cfg)
+        self.postproc   = PostprocessStage(self.cfg)
+        self.storage    = StoreStage(self.cfg)
+        self.learner    = LearnStage(self.cfg)
         self._stages_initialized = True
 
     def _setup_event_handlers(self):
@@ -280,6 +282,12 @@ class AsyncFloodPipeline:
                 state = await self._async_stage("depth", self._stage_depth, state)
             if not self.cfg.get("skip_raincoat", False):
                 state = await self._async_stage("raincoat", self._stage_raincoat, state)
+
+        # Stage 3.5: VLM Verify (kiểm định chéo trước khi routing & xuất)
+        if not self.cfg.get("skip_vlm_verify", False):
+            state = await self._async_stage("vlm_verify", self._stage_vlm_verify, state)
+        else:
+            log.info("  [SKIP] VLM verify stage bị tắt trong config.")
 
         # Stage 4: Confidence routing
         state = await self._async_stage("confidence_routing", self._stage_routing, state)
@@ -390,6 +398,12 @@ class AsyncFloodPipeline:
         )
         state.depth_results = depth_results
         return state
+
+    async def _stage_vlm_verify(self, state: PipelineState) -> PipelineState:
+        if not state.depth_results:
+            return state
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.vlm_verify.run, state)
 
     async def _stage_routing(self, state: PipelineState) -> PipelineState:
         """

@@ -39,6 +39,8 @@ class FloodClassification:
     scene_type:       str   = ""     # "vegetation"/"building_gate"/"dry_outdoor"
     vegetation_pct:   float = 0.0    # % diện tích thực vật phát hiện được
     has_puddle:       bool  = False  # phát hiện vũng nước nhỏ (PUDDLE level)
+    water_mask:       Optional[np.ndarray] = None  # mask nước từ WaterDetector v3/v4
+    water_line_y:     int   = 0      # water line từ WaterDetector
 
 
 class FloodClassifier:
@@ -46,23 +48,32 @@ class FloodClassifier:
         self,
         dino_model:      str   = DEFAULT_DINO_MODEL,
         flood_threshold: float = 0.45,
-        min_water_area:  float = 0.04,
+        min_water_area:  float = 0.03,
         device:          str   = "auto",
         resnet_path:     str   = "",            # path đến .pth, "" = tắt
         resnet_labels:   Optional[list] = None, # ["dry","flood","heavy_flood"]
-        ensemble_weights: Optional[dict] = None, # {"color":0.45,"dino":0.25,"resnet":0.20}
-        cfg:             Optional[dict] = None,  # [v4] pipeline config → WaterDetector options
+        ensemble_weights: Optional[dict] = None, # {"color":0.55,"dino":0.30,"resnet":0.15}
+        cfg:             Optional[dict] = None,  # [v4] pipeline config → WaterDetector & model options
     ):
-        self.dino_model       = dino_model
-        self.flood_threshold  = flood_threshold
-        self.min_water_area   = min_water_area
-        self.device           = device
-        self.resnet_path      = resnet_path
-        self.resnet_labels    = resnet_labels or ["dry", "flood", "heavy_flood"]
-        self.ensemble_weights = ensemble_weights or {
-            "color": 0.45, "dino": 0.25, "resnet": 0.20
-        }
         self._cfg             = cfg or {}
+        models_cfg            = self._cfg.get("models", {}) or {}
+        wc_cfg                = self._cfg.get("water_color", {}) or {}
+
+        self.dino_model       = dino_model or models_cfg.get("dino", DEFAULT_DINO_MODEL)
+        self.flood_threshold  = flood_threshold
+        self.min_water_area   = wc_cfg.get("min_water_area", min_water_area)
+        self.device           = device
+        self.resnet_path      = resnet_path or models_cfg.get("flood_resnet", "")
+        self.resnet_labels    = (
+            resnet_labels
+            or models_cfg.get("flood_resnet_labels")
+            or ["dry", "flood", "heavy_flood"]
+        )
+        self.ensemble_weights = (
+            ensemble_weights
+            or models_cfg.get("ensemble_weights")
+            or {"color": 0.55, "dino": 0.30, "resnet": 0.15}
+        )
         self._extractor: Any = None
         self._model: Any     = None
         self._water_detector = None  # lazy load
@@ -71,14 +82,15 @@ class FloodClassifier:
     def _get_water_detector(self):
         if self._water_detector is None:
             from depth_analysis.water_detector import WaterDetector
-            wd_cfg = self._cfg.get("water_detection", {})
+            wd_cfg = self._cfg.get("water_detection", {}) or {}
+            wc_cfg = self._cfg.get("water_color", {}) or {}
             self._water_detector = WaterDetector(
                 min_water_area=self.min_water_area,
-                use_reflection=True,
-                use_texture=True,
-                use_lab=True,
-                use_ycbcr=True,
-                use_norm_rgb=True,
+                use_reflection=wc_cfg.get("use_reflection", True),
+                use_texture=wc_cfg.get("use_texture", True),
+                use_lab=wc_cfg.get("use_lab", True),
+                use_ycbcr=wc_cfg.get("use_ycbcr", True),
+                use_norm_rgb=wc_cfg.get("use_norm_rgb", True),
                 refine_line=wd_cfg.get("refine_line", True),
             )
         return self._water_detector
@@ -99,8 +111,9 @@ class FloodClassifier:
         inputs = {k: v.to(self._device) for k, v in inputs.items()}
         with torch.no_grad():
             out = self._model(**inputs)
-            cls = out.last_hidden_state[:, 0, :].cpu().numpy()
-        return cls[0]
+            # Trả về toàn bộ sequence (CLS + spatial patch tokens): shape (1 + N_patches, D)
+            tokens = out.last_hidden_state[0].cpu().numpy()
+        return tokens
 
     def _get_resnet(self):
         """Lazy-load ResNet-18. Trả về None nếu không config hoặc load thất bại."""
@@ -164,46 +177,90 @@ class FloodClassifier:
 
     def _dino_flood_score(self, features: np.ndarray) -> float:
         """
-        Ước lượng flood probability từ DINOv2 embedding.
-        [CẢI TIẾN v3]: Calibration tốt hơn, tránh bias về phía trung tính.
-
-        DINOv2 không được train cho flood detection nên chỉ dùng làm
-        signal phụ trợ, không phải primary evidence.
-        Score thực sự có nghĩa khi color/water evidence đã mạnh.
+        Ước lượng flood probability từ DINOv2 spatial patch tokens + CLS token.
+        [CẢI TIẾN v5]:
+          - Sử dụng tính chất tương đồng ngữ nghĩa không gian (spatial self-similarity)
+            của DINOv2 patch tokens ở nửa dưới ảnh: mặt nước tạo ra bề mặt đồng nhất
+            ngữ nghĩa theo phương ngang (horizontal coherence) và tách biệt rõ với
+            nửa trên (công trình/cây cối/bầu trời).
+          - Vẫn tương thích ngược nếu truyền vào vector 1D (CLS token đơn lẻ).
         """
-        fn   = features / (np.linalg.norm(features) + 1e-8)
-        mean = float(fn.mean())
-        std  = float(fn.std())
-        pos  = float((fn > 0.08).mean())
-        neg  = float((fn < -0.08).mean())
-        # Phân phối embedding lũ: mean âm, std cao, neg/pos ratio lớn
-        asymmetry = neg / max(pos, 0.01)
-        score = (
-            0.25 * max(0, -mean * 8)        # mean âm → nước tối
-            + 0.20 * min(1, std * 2.5)      # std cao → nhiều đặc trưng
-            + 0.35 * min(1, asymmetry / 3)  # asymmetry cao → cảnh lũ
-            + 0.20 * min(1, neg * 5)        # nhiều activation âm
-        )
-        # Giảm weight: DINOv2 không được train cho flood
-        # → cap score ở 0.7 để không override color evidence
-        return float(np.clip(score * 0.85, 0.0, 0.70))
+        if features.ndim == 2 and features.shape[0] >= 16:
+            # Hỗ trợ mọi biến thể DINOv2: (K^2, D), (1 + K^2, D) có CLS, hoặc (1 + 4 + K^2, D) có registers
+            side = int(np.sqrt(features.shape[0]))
+            n_patches = side * side
+            patches = features[-n_patches:]  # lấy đúng K×K spatial patch tokens ở cuối
+            # Chuẩn hóa L2 từng patch vector
+            norms = np.linalg.norm(patches, axis=1, keepdims=True) + 1e-8
+            p_norm = patches / norms
 
-    def classify(self, image_path: Path) -> FloodClassification:
+            if side >= 4:
+                grid = p_norm.reshape(side, side, -1)
+                lower = grid[side // 2:, :, :]   # nửa dưới ảnh
+                upper = grid[:side // 2, :, :]   # nửa trên ảnh
+
+                # 1. Horizontal semantic coherence ở nửa dưới (mặt nước liền mạch ngang)
+                horiz_sim = float(np.sum(lower[:, :-1, :] * lower[:, 1:, :], axis=-1).mean())
+
+                # 2. Độ tập trung ngữ nghĩa (homogeneity) của nửa dưới quanh tâm vùng dưới
+                lower_flat = lower.reshape(-1, lower.shape[-1])
+                lower_proto = lower_flat.mean(axis=0)
+                lower_proto /= (np.linalg.norm(lower_proto) + 1e-8)
+                lower_homog = float((lower_flat @ lower_proto).mean())
+
+                # 3. Độ tương phản ngữ nghĩa giữa nửa trên (nhà/cây/trời) và nửa dưới (mặt nước)
+                upper_flat = upper.reshape(-1, upper.shape[-1])
+                upper_proto = upper_flat.mean(axis=0)
+                upper_proto /= (np.linalg.norm(upper_proto) + 1e-8)
+                vert_contrast = float(1.0 - np.clip(np.dot(upper_proto, lower_proto), -1.0, 1.0))
+
+                # Quy đổi về [0, 1]
+                coh_score   = float(np.clip((horiz_sim - 0.35) / 0.45, 0.0, 1.0))
+                homog_score = float(np.clip((lower_homog - 0.40) / 0.45, 0.0, 1.0))
+                cont_score  = float(np.clip(vert_contrast / 0.70, 0.0, 1.0))
+
+                raw_score = 0.45 * coh_score + 0.35 * homog_score + 0.20 * cont_score
+                return float(np.clip(raw_score * 0.85, 0.05, 0.78))
+
+            features = features[0]
+
+        # Fallback cho vector 1D (CLS token)
+        fn = features / (np.linalg.norm(features) + 1e-8)
+        kurt = float(np.mean(fn ** 4) / (np.mean(fn ** 2) ** 2 + 1e-12))
+        peak_ratio = float((np.abs(fn) > 0.09).mean())
+        score = 0.50 * min(1.0, kurt / 6.0) + 0.50 * min(1.0, peak_ratio * 4.0)
+        return float(np.clip(score * 0.75, 0.10, 0.70))
+
+    def classify(
+        self,
+        image_path: Path | str | np.ndarray,
+        precomputed_wdr: Any = None,
+    ) -> FloodClassification:
+        img_name = "ndarray_image"
         try:
-            img_bgr = cv2.imread(str(image_path))
-            if img_bgr is None: raise ValueError("Cannot read")
-            img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-            pil_img = Image.fromarray(img_rgb)
+            if isinstance(image_path, np.ndarray):
+                img_rgb = image_path
+                pil_img = Image.fromarray(img_rgb)
+            else:
+                img_name = Path(image_path).name
+                img_bgr = cv2.imread(str(image_path))
+                if img_bgr is None:
+                    raise ValueError("Cannot read")
+                img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+                pil_img = Image.fromarray(img_rgb)
         except Exception as e:
-            log.warning(f"  Cannot open {Path(image_path).name}: {e}")
+            log.warning(f"  Cannot open {img_name}: {e}")
             return FloodClassification(
                 has_flood=False, flood_prob=0.0, water_area_pct=0.0,
                 road_dry=True, confidence="LOW", reason="Cannot read image"
             )
 
-        # === 1. WaterDetector v3 — phân tích màu đa chiều ===
-        wd  = self._get_water_detector()
-        wdr = wd.detect(img_rgb)
+        # === 1. WaterDetector v3/v4 — phân tích màu đa chiều (dùng lại nếu đã tính) ===
+        if precomputed_wdr is not None:
+            wdr = precomputed_wdr
+        else:
+            wd  = self._get_water_detector()
+            wdr = wd.detect(img_rgb)
         cp  = wdr.color_profile
 
         water_pct = wdr.water_area_pct / 100.0  # convert % → ratio
@@ -277,14 +334,18 @@ class FloodClassifier:
         if wdr.water_level_pct > 0.85 and not wdr.has_reflection and water_pct < 0.3:
             spatial_penalty = 0.15  # water line rất cao + không có reflection → suspicious
 
-        # === Ensemble weights — đọc từ config, fallback về default ===
-        # Khi ResNet load được: color(0.45) + dino(0.25) + resnet(0.20) + channel_bonus
-        # Khi ResNet KHÔNG có: color(0.55) + dino(0.30) + channel_bonus  (giữ nguyên v3)
-        ew = self.ensemble_weights
+        # === Ensemble weights — đọc từ config + tự động chuẩn hóa tổng = 1.0 ===
+        ew = self.ensemble_weights or {}
+        w_color  = float(ew.get("color",  0.55))
+        w_dino   = float(ew.get("dino",   0.30))
+        w_resnet = float(ew.get("resnet", 0.15)) if has_resnet else 0.0
+        total_w  = w_color + w_dino + w_resnet
+        if total_w > 0:
+            w_color  /= total_w
+            w_dino   /= total_w
+            w_resnet /= total_w
+
         if has_resnet:
-            w_color  = ew.get("color",  0.45)
-            w_dino   = ew.get("dino",   0.25)
-            w_resnet = ew.get("resnet", 0.20)
             combined = (
                 w_color  * color_score * turbidity_mult
                 + w_dino   * dino_score
@@ -292,18 +353,17 @@ class FloodClassifier:
                 + channel_bonus
             ) - spatial_penalty
             log.debug(
-                f"  [ensemble-v4] color={color_score:.2f}×{turbidity_mult:.2f} "
+                f"  [ensemble-v5] color={color_score:.2f}×{turbidity_mult:.2f} "
                 f"dino={dino_score:.2f} resnet={resnet_score:.2f} → {combined:.2f}"
             )
         else:
-            # Fallback v3: ResNet không có, giữ nguyên trọng số cũ
             combined = (
-                0.55 * color_score * turbidity_mult
-                + 0.30 * dino_score
+                w_color * color_score * turbidity_mult
+                + w_dino * dino_score
                 + channel_bonus
             ) - spatial_penalty
             log.debug(
-                f"  [ensemble-v3] color={color_score:.2f}×{turbidity_mult:.2f} "
+                f"  [ensemble-v5-no-resnet] color={color_score:.2f}×{turbidity_mult:.2f} "
                 f"dino={dino_score:.2f} → {combined:.2f}"
             )
 
@@ -358,7 +418,7 @@ class FloodClassifier:
             reason = f"Borderline{puddle_tag}: nước={water_pct:.1%}, score={combined:.2f}"
 
         log.info(
-            f"  {Path(image_path).name}: {'LŨ' if has_flood else 'KHÔNG LŨ'} "
+            f"  {img_name}: {'LŨ' if has_flood else 'KHÔNG LŨ'} "
             f"(prob={combined:.2f}, màu={cp.dominant_name_vi}, đục={cp.turbidity:.2f}"
             + (f", resnet={resnet_score:.2f}" if has_resnet else "")
             + ")"
@@ -383,6 +443,8 @@ class FloodClassifier:
             scene_type       = nw_scene_type,
             vegetation_pct   = round(wdr.scene_context.get("vegetation_pct", 0.0) * 100, 2),
             has_puddle       = wdr.has_puddle,
+            water_mask       = wdr.water_mask,
+            water_line_y     = wdr.water_line_y,
         )
 
     def _check_road_dry(self, img_rgb: np.ndarray, water_pct: float) -> bool:

@@ -79,11 +79,22 @@ class WaterDetectionResult:
     has_puddle:      bool  = False   # phát hiện vũng nước nhỏ (< 15cm) trên mặt đất
     puddle_area_pct: float = 0.0     # % diện tích vũng nước trong ảnh
 
+    @property
+    def water_ratio(self) -> float:
+        """Tỉ lệ phần trăm diện tích nước (0-100%)."""
+        return float(self.water_area_pct)
+
+    @property
+    def has_water(self) -> bool:
+        """Có phát hiện vùng nước đáng kể hay không."""
+        return bool((self.water_type != "none" and self.water_area_pct >= 2.0) or self.has_puddle)
+
 
 def refine_water_line(
     img_bgr: np.ndarray,
     initial_y: int,
     search_window: int = 25,
+    search_band: Optional[int] = None,
 ) -> Tuple[int, float]:
     """
     [v4] Snap water line vào biên ướt-khô thật bằng gradient ngang.
@@ -102,6 +113,8 @@ def refine_water_line(
         (refined_y, snap_strength 0-1)
         snap_strength thấp = không có cạnh rõ → giữ initial_y.
     """
+    if search_band is not None:
+        search_window = search_band
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     h, w = gray.shape[:2]
 
@@ -139,7 +152,11 @@ class WaterDetector:
         use_norm_rgb:   bool  = True,
         use_segmentation: bool = False,  # [IMPROVE] Semantic segmentation refinement
         refine_line:    bool  = True,    # [v4] Snap water line vào biên ướt-khô
+        temporal_smooth: bool = False,   # Chỉ bật cho chuỗi frame video liên tiếp
+        min_area_pct:   Optional[float] = None,
     ):
+        if min_area_pct is not None:
+            min_water_area = min_area_pct / 100.0 if min_area_pct > 1.0 else min_area_pct
         self.min_water_area = min_water_area
         self.use_reflection = use_reflection
         self.use_texture    = use_texture
@@ -148,10 +165,16 @@ class WaterDetector:
         self.use_norm_rgb   = use_norm_rgb
         self.use_segmentation = use_segmentation
         self.refine_line    = refine_line
-        # [IMPROVE] Temporal smoothing state
+        self.temporal_smooth = temporal_smooth
+        # [IMPROVE] Temporal smoothing state & cached segmentor
         self._prev_mask: Optional[np.ndarray] = None
+        self._segmentor = None
 
-    def detect(self, img_rgb: np.ndarray) -> WaterDetectionResult:
+    def detect(
+        self,
+        img_rgb: np.ndarray,
+        use_segmentation: Optional[bool] = None,
+    ) -> WaterDetectionResult:
         h, w    = img_rgb.shape[:2]
         img_bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
         hsv     = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
@@ -255,20 +278,21 @@ class WaterDetector:
         )
 
         # [IMPROVE] Semantic segmentation refinement (optional, GPU-powered):
-        # Su dung WaterSegmentor de refine mask → giam false positives cho
-        # scene khong co nuoc (cay, nha, duong khong ngap).
+        # Sử dụng WaterSegmentor để fuse mask (seg | (color & edge)) và loại shadow.
         seg_conf = 0.0
-        if self.use_segmentation:
+        do_seg = self.use_segmentation if use_segmentation is None else use_segmentation
+        if do_seg:
             try:
-                from depth_analysis.water_segmentor import WaterSegmentor
-                # WaterSegmentor does not expose a ``get_instance`` class
-                # method; create the segmentor through its public constructor.
-                _seg = WaterSegmentor()
-                seg_result = _seg.segment(img_bgr)
+                from depth_analysis.water_segmentor import WaterSegmentor, fuse_water_masks
+                if self._segmentor is None:
+                    self._segmentor = WaterSegmentor()
+                # Truyền đúng img_rgb (RGB) thay vì img_bgr
+                seg_result = self._segmentor.segment(img_rgb)
                 if seg_result is not None and seg_result.water_area_pct > 0.01:
-                    # Chi giu seg_mask nam trong color_mask (intersection)
-                    refined = cv2.bitwise_and(filtered, seg_result.water_mask)
-                    # Neu seg_toi uu: dung seg_mask, nguoc lai giu filtered
+                    refined = fuse_water_masks(
+                        seg_mask=seg_result.water_mask,
+                        color_mask=filtered,
+                    )
                     if refined.sum() > 0:
                         filtered = refined
                         seg_conf = seg_result.confidence
@@ -278,17 +302,16 @@ class WaterDetector:
             except Exception as e:
                 log.debug(f"  Seg skip: {e}")
 
-        # [IMPROVE] Temporal consistency (cho video sequence):
-        # Lissant mask voi frame truoc de giam jitter.
-        if self._prev_mask is not None and self._prev_mask.shape == filtered.shape:
-            # EMA: 70% current + 30% previous
-            curr = filtered.astype(np.float32) / 255.0
-            prev = self._prev_mask.astype(np.float32) / 255.0
-            smoothed = curr * 0.7 + prev * 0.3
-            filtered = (smoothed > 0.4).astype(np.uint8) * 255
-            ch["temporal_smooth"] = 1.0
-
-        self._prev_mask = filtered.copy()
+        # [IMPROVE] Temporal consistency (chỉ bật khi xử lý chuỗi video liên tiếp):
+        if self.temporal_smooth:
+            if self._prev_mask is not None and self._prev_mask.shape == filtered.shape:
+                # EMA: 70% current + 30% previous
+                curr = filtered.astype(np.float32) / 255.0
+                prev = self._prev_mask.astype(np.float32) / 255.0
+                smoothed = curr * 0.7 + prev * 0.3
+                filtered = (smoothed > 0.4).astype(np.uint8) * 255
+                ch["temporal_smooth"] = 1.0
+            self._prev_mask = filtered.copy()
 
         water_area_pct = float(filtered.sum() / 255) / (h * w)
 
@@ -459,7 +482,11 @@ class WaterDetector:
         mh   = min(top.shape[0], bot.shape[0])
         t_r  = cv2.resize(top, (w, mh))
         b_r  = cv2.resize(bot, (w, mh))
-        corr = np.corrcoef(t_r.flatten().astype(float), b_r.flatten().astype(float))[0,1]
+        tf   = t_r.flatten().astype(float)
+        bf   = b_r.flatten().astype(float)
+        if tf.std() < 1e-5 or bf.std() < 1e-5:
+            return False
+        corr = np.corrcoef(tf, bf)[0, 1]
         return bool(corr > 0.28)
 
     # ─── [MỚI v4] Shadow, NDWI, Fragmentation ────────────────────────────────

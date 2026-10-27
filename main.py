@@ -48,7 +48,7 @@ def run_pipeline(args, cfg: dict):
     # Hiện tại chưa có module nào gọi get_cache(), giữ lại để tương lai
     # cache depth/segmentation results giữa các batch.
     from utils.memory_manager import IntermediateCache, log_memory
-    IntermediateCache.instance(max_entries=cfg.get("cache_max_entries", 200))
+    cache = IntermediateCache.instance(max_entries=cfg.get("cache_max_entries", 200))
     log_memory("startup")
 
     # ── Model Versioning ──────────────────────────────────────────────────────

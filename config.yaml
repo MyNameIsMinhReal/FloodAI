@@ -130,8 +130,9 @@ output:
 # ── Ground Detection (SegFormer) ─────────────────────────────────────────
 ground_detection:
   enable:      true
-  model:       "nvidia/segformer-b0-finetuned-ade-512-512"
-  # Cac model khac (chinh xac hon, lon hon):
+  model:       "models/flood_segnet_b2"
+  # Cac model khac (hoac fallback khi chua co model fine-tuned):
+  #   "nvidia/segformer-b0-finetuned-ade-512-512"
   #   "nvidia/segformer-b2-finetuned-ade-512-512"   (~85MB)
   #   "nvidia/segformer-b4-finetuned-ade-512-512"   (~175MB)
   road_threshold: 0.15     # > 15% road pixels = anh duong kho
@@ -284,9 +285,14 @@ models:
   # Trọng số ensemble — tổng phải = 1.0 (channel_bonus tính thêm ngoài)
   # color: WaterDetector, dino: DINOv2, resnet: ResNet-18
   ensemble_weights:
-    color:  0.45
-    dino:   0.25
-    resnet: 0.15      # [A4000-16GB] SAM2 bù lại, giảm ResNet từ 0.20 → 0.15
+    color:  0.55
+    dino:   0.30
+    resnet: 0.15      # [A4000-16GB] Tổng = 1.00 (0.55 + 0.30 + 0.15)
+
+  # Water Segmentation (SegFormer fine-tuned 2-class hoặc ADE20K pretrained)
+  # Đặt đường dẫn model fine-tuned tại đây (VD: "models/flood_segnet_b2")
+  # Nếu thư mục local chưa có sẽ tự fallback về ground_detection.model
+  segformer: "models/flood_segnet_b2"
 
 # ── Filter Toggles (MỚI) ─────────────────────────────────────────────────────
 enable_filters:
