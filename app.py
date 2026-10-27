@@ -226,12 +226,38 @@ REWRITE_SYS = (
     "Không thêm thông tin ngoài bài gốc. Không dùng bullet points."
 )
 CHAT_SYS = (
-    "Bạn là FloodAgent — chuyên gia AI về lũ lụt và thiên tai, hỗ trợ tiếng Việt.\n"
+    "Bạn là FloodAgent — chuyên gia AI về lũ lụt và cứu hộ khẩn cấp thuộc Hệ thống FloodAI GIRC Thái Nguyên.\n"
     "Nhiệm vụ: tư vấn an toàn lũ lụt, giải thích nguyên nhân thiên tai, "
-    "hướng dẫn ứng phó khẩn cấp, phân tích ảnh lũ nếu được gửi kèm.\n"
-    "Trả lời ngắn gọn, rõ ràng, ưu tiên an toàn tính mạng. "
-    "KHÔNG dùng format INTENT:/DEPTH_HINT: — chỉ viết câu trả lời tự nhiên."
+    "hướng dẫn ứng phó cứu hộ khẩn cấp, phân tích hiện trạng ngập lũ nếu có ảnh gửi kèm.\n"
+    "QUY TẮC BẮT BUỘC:\n"
+    "- LUÔN LUÔN trả lời 100% bằng TIẾNG VIỆT tự nhiên, chuẩn mực, rõ ràng.\n"
+    "- TUYỆT ĐỐI KHÔNG dùng tiếng Trung, chữ Hán, tiếng Nga hay bất kỳ từ ngữ ngoại lai nào.\n"
+    "- Trả lời ngắn gọn, thiết thực, ưu tiên bảo vệ an toàn tính mạng con người.\n"
+    "- KHÔNG dùng format INTENT:/DEPTH_HINT: — chỉ viết câu trả lời tự nhiên."
 )
+
+
+def _clean_vietnamese_reply(text: str) -> str:
+    """Xóa bỏ hoặc dịch các cụm từ tiếng Trung/ngoại lai nếu mô hình gốc bị code-switching."""
+    import re
+    replacements = {
+        "原地等待救援": "ở nguyên vị trí an toàn chờ cứu hộ",
+        "等待救援": "chờ lực lượng cứu hộ",
+        "注意安全": "chú ý an toàn",
+        "撤离": "sơ tán khẩn cấp",
+        "水位": "mực nước",
+        "洪水": "ngập lụt",
+        "危险": "nguy hiểm",
+        "安全": "an toàn",
+        "救援": "cứu hộ",
+    }
+    for k, v in replacements.items():
+        text = text.replace(k, v)
+    # Loại bỏ triệt để các ký tự chữ Hán (CJK) nếu còn sót lại
+    text = re.sub(r'[\u4e00-\u9fff]+', '', text)
+    # Dọn dẹp khoảng trắng thừa
+    text = re.sub(r' +', ' ', text)
+    return text.strip()
 
 
 def _summarize(title: str, body: str) -> str:
@@ -421,7 +447,7 @@ def _analyze_image(image_b64: str) -> str:
                 q_tag = "✅" if scene_sc >= 0.6 else "⚠" if scene_sc >= 0.4 else "❌"
                 lines.append(f"- Chất lượng ảnh: {q_tag} {scene_sc:.0%}")
             if is_night is not None:
-                lines.append(f"- режим照明: {'đêm' if is_night else 'ngày'}")
+                lines.append(f"- Điều kiện ánh sáng: {'Ban đêm' if is_night else 'Ban ngày'}")
             if needs_rev:
                 lines.append(f"- ⚠ Cần xác minh: bất đồng đo lường (spread={spread:.0f}cm)" if spread else "- ⚠ Cần xác minh: bất đồng đo lường")
             if vehs:
@@ -915,6 +941,7 @@ def api_chat_message():
         if "INTENT:" in reply:
             from learning.flood_llm import _parse_llm_output
             reply = _parse_llm_output(reply).response or reply
+        reply = _clean_vietnamese_reply(reply)
     except Exception as exc:
         return jsonify({"error": f"Lỗi inference: {exc}"}), 500
 
