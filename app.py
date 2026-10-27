@@ -89,24 +89,48 @@ if not _admin_pass:
 ADMIN_PASS_HASH = hashlib.sha256(_admin_pass.encode()).hexdigest()
 GOOGLE_MAPS_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
 MERGED_MODEL    = str(BASE_DIR / "models" / "flood-agent-merged")
+LORA_MODEL      = str(BASE_DIR / "models" / "flood-agent-lora")
+DEFAULT_VL_MODEL = "Qwen/Qwen2.5-VL-3B-Instruct"
 _IMG_PATTERNS   = ("*.jpg", "*.png")
 
-# ── LLM Singleton ─────────────────────────────────────────────────────────────
+# ── LLM / VLM Singleton ───────────────────────────────────────────────────────
 _llm            = None
 _llm_ready      = False
 _llm_loading    = False
 _llm_error: str = ""
 _llm_lock       = threading.Lock()
-_infer_lock     = threading.Lock()  # serialise inference (CPU model)
+_infer_lock     = threading.Lock()  # serialise inference
+
+
+def _resolve_llm_model_source() -> str:
+    """Ưu tiên: flood-agent-merged → flood-agent-lora → models.vlm trong config.yaml."""
+    merged_p = BASE_DIR / "models" / "flood-agent-merged"
+    if (merged_p / "config.json").exists():
+        return str(merged_p)
+    lora_p = BASE_DIR / "models" / "flood-agent-lora"
+    if (lora_p / "adapter_config.json").exists():
+        return str(lora_p)
+    try:
+        cfg_path = BASE_DIR / "config.yaml"
+        if cfg_path.exists():
+            raw_cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+            vlm_name = (raw_cfg.get("models", {}) or {}).get("vlm") or raw_cfg.get("vlm_model")
+            if vlm_name:
+                return str(vlm_name)
+    except Exception:
+        pass
+    return DEFAULT_VL_MODEL
 
 
 def _load_llm_bg():
     global _llm, _llm_ready, _llm_loading, _llm_error
     try:
         from learning.flood_llm import LLMEnhancer
-        _llm = LLMEnhancer.from_lora_dir(MERGED_MODEL, max_new_tokens=512, temperature=0.7)
+        model_src = _resolve_llm_model_source()
+        log.info(f"[LLM] Loading VLM/LLM from: {model_src}")
+        _llm = LLMEnhancer.from_lora_dir(model_src, max_new_tokens=512, temperature=0.7)
         _llm_ready = True
-        log.info("[LLM] flood-agent-merged loaded ✓")
+        log.info(f"[LLM] {model_src} loaded ✓ (is_vl={getattr(_llm, '_is_vl', False)})")
     except Exception as exc:
         _llm_error = str(exc)
         log.warning(f"[LLM] load failed: {exc}")
@@ -127,13 +151,13 @@ def get_llm():
     return _llm if _llm_ready else None
 
 
-def llm_infer(messages: list, max_new_tokens: Optional[int] = None) -> str:
-    """Thread-safe inference. Raises on error."""
+def llm_infer(messages: list, max_new_tokens: Optional[int] = None, image=None) -> str:
+    """Thread-safe inference (supports text-only and multimodal image+text for Qwen-VL)."""
     llm = get_llm()
     if llm is None:
         raise RuntimeError("Model chưa sẵn sàng")
     with _infer_lock:
-        return llm._infer(messages, max_new_tokens=max_new_tokens)
+        return llm._infer(messages, max_new_tokens=max_new_tokens, image=image)
 
 
 # ── News Cache ─────────────────────────────────────────────────────────────────
@@ -624,7 +648,15 @@ def api_chat_message():
         hist = _sessions.setdefault(sid, [])
 
     content = user_msg
+    pil_img = None
     if image_b64:
+        try:
+            import base64
+            import io
+            from PIL import Image as _PILImage
+            pil_img = _PILImage.open(io.BytesIO(base64.b64decode(image_b64))).convert("RGB")
+        except Exception as _img_exc:
+            log.debug(f"[chat] decode PIL image failed: {_img_exc}")
         analysis = _analyze_image(image_b64)
         content  = (analysis + ("\n" + user_msg if user_msg else "")).strip()
 
@@ -634,7 +666,7 @@ def api_chat_message():
     messages.append({"role": "user", "content": content})
 
     try:
-        reply = llm_infer(messages, max_new_tokens=256)
+        reply = llm_infer(messages, max_new_tokens=256, image=pil_img)
         # Strip structured format if model still outputs it
         if "INTENT:" in reply:
             from learning.flood_llm import _parse_llm_output

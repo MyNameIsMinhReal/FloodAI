@@ -2,10 +2,10 @@
 """
 learning/flood_trainer.py
 ==========================
-Fine-tune Qwen2.5 với LoRA trên training data flood.
+Fine-tune Qwen2.5-VL / Qwen2-VL với LoRA trên training data flood.
 
 Chạy trên GPU server:
-  pip install transformers peft datasets accelerate bitsandbytes trl
+  pip install transformers peft datasets accelerate bitsandbytes trl qwen-vl-utils
   python -m learning.flood_trainer
 
 Sau khi train xong, copy thư mục models/flood-agent-lora/ về máy.
@@ -43,15 +43,17 @@ log = logging.getLogger("flood_trainer")
 BASE_DIR   = Path(__file__).parent
 ROOT_DIR   = BASE_DIR.parent
 
-# Model constants theo VRAM
-MODEL_0_5B = "Qwen/Qwen2.5-0.5B-Instruct"   # < 6GB VRAM hoặc CPU
-MODEL_1_5B = "Qwen/Qwen2.5-1.5B-Instruct"   # 6–10GB VRAM  (RTX 5050 8GB → chọn đây)
-MODEL_3B   = "Qwen/Qwen2.5-3B-Instruct"     # 10–20GB VRAM
-MODEL_7B   = "Qwen/Qwen2.5-7B-Instruct"     # 20–35GB VRAM
-MODEL_14B  = "Qwen/Qwen2.5-14B-Instruct"    # 35–55GB VRAM  (bf16 full, không cần QLoRA)
-MODEL_32B  = "Qwen/Qwen2.5-32B-Instruct"    # 55GB+ VRAM    (QLoRA 4-bit ≈ 20GB, còn 60GB cho batch lớn)
-MODEL_72B  = "Qwen/Qwen2.5-72B-Instruct"    # 80GB+ VRAM    (QLoRA 4-bit ≈ 40GB, cần A100/H100)
-BASE_MODEL = MODEL_0_5B                      # default, ghi đè khi detect GPU
+# Model constants theo VRAM (Qwen-VL series)
+MODEL_2B   = "Qwen/Qwen2-VL-2B-Instruct"      # < 6GB VRAM hoặc CPU
+MODEL_3B   = "Qwen/Qwen2.5-VL-3B-Instruct"    # 6–13GB VRAM  (RTX 5050 8GB → chọn đây)
+MODEL_7B   = "Qwen/Qwen2.5-VL-7B-Instruct"    # 13–30GB VRAM
+MODEL_32B  = "Qwen/Qwen2.5-VL-32B-Instruct"   # 30–70GB VRAM  (QLoRA 4-bit ≈ 20GB)
+MODEL_72B  = "Qwen/Qwen2.5-VL-72B-Instruct"   # 70GB+ VRAM    (QLoRA 4-bit ≈ 40GB, cần A100/H100)
+# Backward-compatible aliases
+MODEL_0_5B = MODEL_2B
+MODEL_1_5B = MODEL_2B
+MODEL_14B  = MODEL_7B
+BASE_MODEL = MODEL_3B                         # default Qwen2.5-VL-3B-Instruct, ghi đè khi detect GPU
 
 TRAIN_FILE = BASE_DIR / "training_data" / "flood_conversations.jsonl"
 EVAL_FILE  = BASE_DIR / "training_data" / "flood_conversations_eval.jsonl"
@@ -296,16 +298,64 @@ def _pick_best_gpu() -> int:
         return 0
 
 
+def _is_vl_model(model_name: str) -> bool:
+    """Kiểm tra model có phải Vision-Language (Qwen2.5-VL / Qwen2-VL) hay không."""
+    low = str(model_name).lower()
+    if "-vl" in low or "_vl" in low or "vl-" in low:
+        return True
+    cfg_file = Path(model_name) / "config.json"
+    if cfg_file.exists():
+        try:
+            cfg_data = json.loads(cfg_file.read_text(encoding="utf-8"))
+            mtype = str(cfg_data.get("model_type", "")).lower()
+            if "vl" in mtype or "vision" in mtype:
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def _resolve_model_cls(model_name: str):
+    """Chọn đúng class HuggingFace cho Qwen2.5-VL / Qwen2-VL hoặc CausalLM."""
+    import transformers
+    from transformers import AutoModelForCausalLM
+
+    if not _is_vl_model(model_name):
+        return AutoModelForCausalLM
+
+    low = str(model_name).lower()
+    if "qwen2.5-vl" in low or "qwen2_5_vl" in low:
+        cls = getattr(transformers, "Qwen2_5_VLForConditionalGeneration", None)
+        if cls is not None:
+            return cls
+    if "qwen2-vl" in low or "qwen2_vl" in low:
+        cls = getattr(transformers, "Qwen2VLForConditionalGeneration", None)
+        if cls is not None:
+            return cls
+
+    for cls_name in (
+        "Qwen2_5_VLForConditionalGeneration",
+        "Qwen2VLForConditionalGeneration",
+        "AutoModelForImageTextToText",
+        "AutoModelForVision2Seq",
+    ):
+        cls = getattr(transformers, cls_name, None)
+        if cls is not None:
+            return cls
+
+    return AutoModelForCausalLM
+
+
 def _detect_device(torch) -> tuple[bool, str, float]:
-    """Phát hiện GPU/CPU và chọn model. CUDA_VISIBLE_DEVICES đã được set trước khi torch init."""
+    """Phát hiện GPU/CPU và chọn model Qwen-VL. CUDA_VISIBLE_DEVICES đã được set trước khi torch init."""
     global _USE_BF16_FULL, LORA_CFG
 
     if not torch.cuda.is_available():
         log.warning("=" * 60)
         log.warning("Không có GPU — chạy trên CPU (chậm, mất 1-4 giờ).")
-        log.warning("Model cố định: Qwen2.5-0.5B (nhỏ nhất)")
+        log.warning(f"Model cố định: {MODEL_2B} (nhỏ nhất)")
         log.warning("=" * 60)
-        return False, MODEL_0_5B, 0.0
+        return False, MODEL_2B, 0.0
 
     # Sau khi set CUDA_VISIBLE_DEVICES, chỉ có 1 GPU → luôn là index 0
     gpu_name = torch.cuda.get_device_name(0)
@@ -322,69 +372,54 @@ def _detect_device(torch) -> tuple[bool, str, float]:
     # Dung lượng disk tối thiểu để download (bf16 weights, chưa tính overhead)
     # QLoRA 4-bit chiếm khoảng 50% so với bf16
     MODEL_DISK_REQ = {
-        MODEL_72B: 150, MODEL_32B: 65, MODEL_14B: 30,
-        MODEL_7B: 15,   MODEL_3B: 7,   MODEL_1_5B: 3, MODEL_0_5B: 1,
+        MODEL_72B: 150, MODEL_32B: 65,
+        MODEL_7B: 16,   MODEL_3B: 8,   MODEL_2B: 5,
     }
 
-    # ── Chọn model theo free VRAM ─────────────────────────────────────────────
-    # QLoRA 4-bit: VRAM ≈ params × 0.5 bytes + LoRA overhead + activations
-    # bf16 full  : VRAM ≈ params × 2 bytes  (không dùng BitsAndBytesConfig)
-    #
-    # VRAM thresholds (dư thoải mái cho batch lớn + activations):
-    #   ≥ 70 GB → 72B QLoRA  (~40GB weights + 30GB activations/batch)
-    #   ≥ 50 GB → 32B QLoRA  (~20GB weights + 30GB cho batch lớn)
-    #   ≥ 30 GB → 14B bf16   (~28GB weights, không cần QLoRA)
-    #   ≥ 16 GB → 14B QLoRA  (~7GB  weights + overhead)
-    #   ≥ 13 GB → 7B  bf16   (~14GB weights)
-    #   ≥ 7 GB  → 3B  (QLoRA hoặc bf16)
-    #   ≥ 4 GB  → 1.5B
-    #   < 4 GB  → 0.5B
+    # ── Chọn model Qwen-VL theo free VRAM ────────────────────────────────────
+    #   ≥ 70 GB → Qwen2.5-VL-72B QLoRA (~40GB weights + 30GB activations/batch)
+    #   ≥ 45 GB → Qwen2.5-VL-32B QLoRA (~20GB weights + 25GB cho batch lớn)
+    #   ≥ 18 GB → Qwen2.5-VL-7B  bf16  (~16GB weights, không cần QLoRA)
+    #   ≥ 12 GB → Qwen2.5-VL-7B  QLoRA (~6GB weights + overhead)
+    #   ≥ 6 GB  → Qwen2.5-VL-3B  QLoRA (~3GB weights, phù hợp GPU 8GB)
+    #   < 6 GB  → Qwen2-VL-2B    QLoRA
     if free_gb >= 70:
         model_name = MODEL_72B
         _USE_BF16_FULL = False          # QLoRA 4-bit (bf16 thuần cần >140GB)
         LORA_CFG["r"]          = 128
         LORA_CFG["lora_alpha"] = 256
-        log.info(f"[Config] {free_gb:.0f}GB free → 72B QLoRA | LoRA r=128")
-    elif free_gb >= 50:
+        log.info(f"[Config] {free_gb:.0f}GB free → Qwen2.5-VL-72B QLoRA | LoRA r=128")
+    elif free_gb >= 45:
         model_name = MODEL_32B
-        _USE_BF16_FULL = False          # QLoRA 4-bit (~20GB weights, dư 30GB cho batch)
+        _USE_BF16_FULL = False          # QLoRA 4-bit (~20GB weights)
         LORA_CFG["r"]          = 128
         LORA_CFG["lora_alpha"] = 256
-        log.info(f"[Config] {free_gb:.0f}GB free → 32B QLoRA | LoRA r=128")
-    elif free_gb >= 30:
-        model_name = MODEL_14B
-        _USE_BF16_FULL = True           # bf16 thuần (~28GB), không cần QLoRA
-        LORA_CFG["r"]          = 64
-        LORA_CFG["lora_alpha"] = 128
-        log.info(f"[Config] {free_gb:.0f}GB free → 14B bf16-full | LoRA r=64")
-    elif free_gb >= 16:
-        model_name = MODEL_14B
-        _USE_BF16_FULL = False          # QLoRA 4-bit (~7GB weights)
-        LORA_CFG["r"]          = 64
-        LORA_CFG["lora_alpha"] = 128
-        log.info(f"[Config] {free_gb:.0f}GB free → 14B QLoRA | LoRA r=64")
-    elif free_gb >= 13:
+        log.info(f"[Config] {free_gb:.0f}GB free → Qwen2.5-VL-32B QLoRA | LoRA r=128")
+    elif free_gb >= 18:
         model_name = MODEL_7B
-        _USE_BF16_FULL = True           # bf16 thuần (~14GB)
+        _USE_BF16_FULL = True           # bf16 thuần (~16GB), không cần QLoRA
         LORA_CFG["r"]          = 64
         LORA_CFG["lora_alpha"] = 128
-        log.info(f"[Config] {free_gb:.0f}GB free → 7B bf16-full | LoRA r=64")
-    elif free_gb >= 7:
+        log.info(f"[Config] {free_gb:.0f}GB free → Qwen2.5-VL-7B bf16-full | LoRA r=64")
+    elif free_gb >= 12:
+        model_name = MODEL_7B
+        _USE_BF16_FULL = False          # QLoRA 4-bit (~6GB weights)
+        LORA_CFG["r"]          = 64
+        LORA_CFG["lora_alpha"] = 128
+        log.info(f"[Config] {free_gb:.0f}GB free → Qwen2.5-VL-7B QLoRA | LoRA r=64")
+    elif free_gb >= 6:
         model_name = MODEL_3B
         _USE_BF16_FULL = False
-        log.info(f"[Config] {free_gb:.0f}GB free → 3B QLoRA | LoRA r=32")
-    elif free_gb >= 4:
-        model_name = MODEL_1_5B
-        _USE_BF16_FULL = False
-        log.info(f"[Config] {free_gb:.0f}GB free → 1.5B QLoRA | LoRA r=32")
+        log.info(f"[Config] {free_gb:.0f}GB free → Qwen2.5-VL-3B QLoRA | LoRA r=32")
     else:
-        model_name = MODEL_0_5B
+        model_name = MODEL_2B
         _USE_BF16_FULL = False
-        log.info(f"[Config] {free_gb:.0f}GB free → 0.5B QLoRA | LoRA r=32")
+        log.info(f"[Config] {free_gb:.0f}GB free → Qwen2-VL-2B QLoRA | LoRA r=32")
 
     # ── Kiểm tra disk và fallback ─────────────────────────────────────────────
-    fallback_order = [model_name, MODEL_32B, MODEL_14B, MODEL_7B,
-                      MODEL_3B, MODEL_1_5B, MODEL_0_5B]
+    fallback_order = list(dict.fromkeys([
+        model_name, MODEL_32B, MODEL_7B, MODEL_3B, MODEL_2B,
+    ]))
     for candidate in fallback_order:
         cached = cache_dir / f"models--{candidate.replace('/', '--')}"
         if cached.exists():
@@ -392,12 +427,13 @@ def _detect_device(torch) -> tuple[bool, str, float]:
                 log.info(f"Model {model_name} chưa cache, dùng {candidate} (đã có sẵn)")
                 model_name = candidate
             break
-        if disk_free_gb >= MODEL_DISK_REQ[candidate] + 5:
+        req_gb = MODEL_DISK_REQ.get(candidate, 8)
+        if disk_free_gb >= req_gb + 5:
             if candidate != model_name:
                 log.warning(f"Disk không đủ cho {model_name} → fallback {candidate}")
                 model_name = candidate
             break
-        log.warning(f"Disk không đủ cho {candidate} ({MODEL_DISK_REQ[candidate]}GB cần) → thử nhỏ hơn")
+        log.warning(f"Disk không đủ cho {candidate} ({req_gb}GB cần) → thử nhỏ hơn")
 
     log.info(
         f"✓ Model cuối cùng: {model_name} "
@@ -467,17 +503,9 @@ def train():
     else:
         log.info(f"CUDA_VISIBLE_DEVICES={_os.environ['CUDA_VISIBLE_DEVICES']} (từ môi trường)")
 
-    cli = _parse_cli_overrides()
-    use_gpu, model_name, vram_gb = _detect_device(torch)
-    if "model" in cli:
-        model_name = cli["model"]
-        log.info(f"[CLI] Model override → {model_name}")
-    # _apply_cli_overrides() được gọi SAU khối VRAM override (bên dưới) để
-    # CLI luôn thắng; chỉ model được áp trước vì cần cho load tokenizer/model.
-
     try:
         import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
+        from transformers import AutoProcessor, AutoTokenizer, TrainingArguments
         from peft import LoraConfig, get_peft_model
 
         # ── Import SFTConfig / SFTTrainer — thử nhiều path để tương thích
@@ -517,10 +545,18 @@ def train():
     except (ImportError, RuntimeError) as e:
         log.error(
             f"Thiếu hoặc lỗi thư viện: {e}\n"
-            "Chạy: pip install transformers peft datasets accelerate trl\n"
+            "Chạy: pip install transformers peft datasets accelerate trl qwen-vl-utils\n"
             "Nếu lỗi encoding: set PYTHONUTF8=1 && python -m learning.flood_trainer"
         )
         return
+
+    cli = _parse_cli_overrides()
+    use_gpu, model_name, vram_gb = _detect_device(torch)
+    if "model" in cli:
+        model_name = cli["model"]
+        log.info(f"[CLI] Model override → {model_name}")
+    # _apply_cli_overrides() được gọi SAU khối VRAM override (bên dưới) để
+    # CLI luôn thắng; chỉ model được áp trước vì cần cho load tokenizer/model.
 
     if not TRAIN_FILE.exists():
         log.error(f"Không tìm thấy training data: {TRAIN_FILE}")
@@ -531,7 +567,19 @@ def train():
     eval_raw  = load_jsonl(EVAL_FILE) if EVAL_FILE.exists() else train_raw[:20]
     log.info(f"Train: {len(train_raw)} | Eval: {len(eval_raw)}")
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    processor = None
+    if _is_vl_model(model_name):
+        try:
+            processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
+            tokenizer = getattr(processor, "tokenizer", None)
+        except Exception as e:
+            log.warning(f"Không load được AutoProcessor cho {model_name} ({e}), dùng AutoTokenizer")
+            tokenizer = None
+    else:
+        tokenizer = None
+
+    if tokenizer is None:
+        tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
@@ -551,7 +599,9 @@ def train():
         _split_prompt_completion(e["messages"], tokenizer) for e in eval_raw
     ])
 
-    model = _load_model(torch, AutoModelForCausalLM, model_name, use_gpu)  # noqa: F821
+    model_cls = _resolve_model_cls(model_name)
+    log.info(f"Model class: {model_cls.__name__} (is_vl={_is_vl_model(model_name)})")
+    model = _load_model(torch, model_cls, model_name, use_gpu)
     model.config.use_cache = False
     model = get_peft_model(model, LoraConfig(**LORA_CFG))
     # Báo Trainer rằng model tự quản lý device_map → không wrap DataParallel
@@ -684,6 +734,7 @@ def train():
         merged_cfg=merged_cfg,
         eval_strategy_key=eval_strategy_key,
         inspect=inspect,
+        sft_config_cls=SFTConfig,
     )
 
     if not use_gpu:
@@ -695,6 +746,11 @@ def train():
     log.info(f"Lưu LoRA adapter → {OUTPUT_DIR}")
     trainer.save_model(str(OUTPUT_DIR))
     tokenizer.save_pretrained(str(OUTPUT_DIR))
+    if processor is not None:
+        try:
+            processor.save_pretrained(str(OUTPUT_DIR))
+        except Exception as e:
+            log.warning(f"Không lưu được processor: {e}")
 
     log.info("=== Training hoàn thành! ===")
     log.info(f"Adapter saved: {OUTPUT_DIR}")
@@ -716,7 +772,7 @@ def merge_and_save():
     Sau đó có thể convert sang GGUF bằng llama.cpp.
     """
     try:
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from transformers import AutoProcessor, AutoTokenizer
         from peft import PeftModel
         import torch
     except ImportError as e:
@@ -735,14 +791,22 @@ def merge_and_save():
     else:
         actual_base_model = BASE_MODEL
 
-    log.info(f"Loading base model: {actual_base_model}")
-    base_model = AutoModelForCausalLM.from_pretrained(
+    model_cls = _resolve_model_cls(actual_base_model)
+    log.info(f"Loading base model: {actual_base_model} ({model_cls.__name__})")
+    base_model = model_cls.from_pretrained(
         actual_base_model,
         torch_dtype=torch.float16,
         device_map="cpu",
         trust_remote_code=True,
     )
     tokenizer = AutoTokenizer.from_pretrained(str(OUTPUT_DIR), trust_remote_code=True)
+    processor = None
+    if _is_vl_model(actual_base_model):
+        try:
+            proc_src = str(OUTPUT_DIR) if (OUTPUT_DIR / "preprocessor_config.json").exists() else actual_base_model
+            processor = AutoProcessor.from_pretrained(proc_src, trust_remote_code=True)
+        except Exception as e:
+            log.warning(f"Không load được AutoProcessor khi merge ({e})")
 
     log.info(f"Loading LoRA adapter: {OUTPUT_DIR}")
     model = PeftModel.from_pretrained(base_model, str(OUTPUT_DIR))
@@ -763,6 +827,11 @@ def merge_and_save():
     else:
         log.error("Model does not have save_pretrained method")
     tokenizer.save_pretrained(str(merged_dir))
+    if processor is not None:
+        try:
+            processor.save_pretrained(str(merged_dir))
+        except Exception as e:
+            log.warning(f"Không lưu được processor vào {merged_dir}: {e}")
 
     log.info("=== Merge xong! ===")
     log.info("")

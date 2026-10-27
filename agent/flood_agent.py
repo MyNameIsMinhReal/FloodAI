@@ -2318,22 +2318,28 @@ class FloodAgent:
         self._register_default_events()
 
     def _init_llm(self):
-        """Load LLMEnhancer nếu model đã fine-tune tồn tại."""
+        """Load LLMEnhancer (Qwen2.5-VL / LoRA / GGUF) nếu khả dụng."""
         try:
             from pathlib import Path as _Path
-            merged_dir = _Path(__file__).parent.parent / "models" / "flood-agent-merged"
-            gguf_path  = _Path(__file__).parent.parent / "models" / "flood-agent-q4.gguf"
+            root_dir   = _Path(__file__).parent.parent
+            merged_dir = root_dir / "models" / "flood-agent-merged"
+            lora_dir   = root_dir / "models" / "flood-agent-lora"
+            gguf_path  = root_dir / "models" / "flood-agent-q4.gguf"
 
             if gguf_path.exists():
                 from learning.flood_llm import LLMEnhancer
                 self._llm = LLMEnhancer.from_gguf(str(gguf_path))
                 log.info("[Agent] LLM loaded: GGUF (CPU fast mode)")
-            elif merged_dir.exists():
+            elif (merged_dir / "config.json").exists():
                 from learning.flood_llm import LLMEnhancer
                 self._llm = LLMEnhancer.from_lora_dir(str(merged_dir))
-                log.info("[Agent] LLM loaded: merged model")
+                log.info("[Agent] VLM/LLM loaded: merged model")
+            elif (lora_dir / "adapter_config.json").exists():
+                from learning.flood_llm import LLMEnhancer
+                self._llm = LLMEnhancer.from_lora_dir(str(lora_dir))
+                log.info("[Agent] VLM/LLM loaded: LoRA adapter")
             else:
-                log.info("[Agent] Không tìm thấy LLM model — dùng FeedbackParser")
+                log.info("[Agent] Không tìm thấy local LLM/VLM checkpoint — dùng FeedbackParser")
         except Exception as e:
             log.warning(f"[Agent] Không load được LLM: {e} — fallback FeedbackParser")
 
@@ -2567,12 +2573,18 @@ class FloodAgent:
         """
         self.memory.add_message("user", user_text)
 
-        # Dùng LLM nếu có, fallback về FeedbackParser
+        # Dùng LLM/VLM nếu có, fallback về FeedbackParser
         if self._llm is not None:
+            last_img = (
+                self.memory.last_images[0]
+                if getattr(self.memory, "last_images", None)
+                else None
+            )
             parsed = self._llm.parse_intent(
                 user_text,
                 self.memory.last_result,
                 chat_history=self.memory.get_recent_history(6),
+                image=last_img,
             )
             self._llm_response_hint = parsed.response or ""
         else:

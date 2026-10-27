@@ -63,6 +63,76 @@ def _get_device() -> str:
         pass
     return "cpu"
 
+
+def _inspect_model_target(model_path: str) -> tuple[bool, Optional[str]]:
+    """
+    Phát hiện xem `model_path` có phải là Vision-Language model (Qwen2.5-VL / Qwen2-VL)
+    và có phải là thư mục LoRA adapter chưa merge hay không.
+
+    Returns:
+        (is_vl, base_model_for_lora)
+        - base_model_for_lora != None nếu model_path chỉ chứa adapter_config.json (chưa merge).
+    """
+    import json as _json
+    p = Path(model_path)
+    base_model_for_lora: Optional[str] = None
+    target_id = str(model_path)
+
+    if p.exists() and p.is_dir():
+        adapter_cfg = p / "adapter_config.json"
+        cfg_file    = p / "config.json"
+        if adapter_cfg.exists() and not cfg_file.exists():
+            try:
+                data = _json.loads(adapter_cfg.read_text(encoding="utf-8"))
+                base_model_for_lora = data.get("base_model_name_or_path")
+                if base_model_for_lora:
+                    target_id = str(base_model_for_lora)
+            except Exception:
+                pass
+        elif cfg_file.exists():
+            try:
+                data = _json.loads(cfg_file.read_text(encoding="utf-8"))
+                mtype = str(data.get("model_type", "")).lower()
+                if "vl" in mtype or "vision" in mtype:
+                    return True, None
+            except Exception:
+                pass
+
+    low = target_id.lower()
+    is_vl = ("-vl" in low) or ("_vl" in low) or ("vl-" in low)
+    return is_vl, base_model_for_lora
+
+
+def _resolve_hf_model_cls(model_id_or_path: str, is_vl: bool):
+    """Chọn đúng class HuggingFace cho Qwen2.5-VL / Qwen2-VL hoặc CausalLM."""
+    import transformers
+    from transformers import AutoModelForCausalLM
+
+    if not is_vl:
+        return AutoModelForCausalLM
+
+    low = str(model_id_or_path).lower()
+    if "qwen2.5-vl" in low or "qwen2_5_vl" in low:
+        cls = getattr(transformers, "Qwen2_5_VLForConditionalGeneration", None)
+        if cls is not None:
+            return cls
+    if "qwen2-vl" in low or "qwen2_vl" in low:
+        cls = getattr(transformers, "Qwen2VLForConditionalGeneration", None)
+        if cls is not None:
+            return cls
+
+    for cls_name in (
+        "Qwen2_5_VLForConditionalGeneration",
+        "Qwen2VLForConditionalGeneration",
+        "AutoModelForImageTextToText",
+        "AutoModelForVision2Seq",
+    ):
+        cls = getattr(transformers, cls_name, None)
+        if cls is not None:
+            return cls
+
+    return AutoModelForCausalLM
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SYSTEM PROMPT  (giống với flood_data_generator.py)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -247,6 +317,8 @@ class LLMEnhancer:
         self._device        = device or _get_device()
         self._model: Any    = None
         self._tokenizer: Any = None
+        self._processor: Any = None
+        self._is_vl: bool   = False
         self._gpu_id: Any   = None
         # Optional loading features.  Keep these attributes initialized so
         # backends that do not expose their configuration in __init__ remain
@@ -297,7 +369,7 @@ class LLMEnhancer:
 
     def _load_transformers(self):
         try:
-            from transformers import AutoModelForCausalLM, AutoTokenizer
+            from transformers import AutoModelForCausalLM, AutoProcessor, AutoTokenizer
             import torch
         except ImportError:
             raise ImportError(
@@ -306,12 +378,38 @@ class LLMEnhancer:
             )
         if not self.model_path:
             raise ValueError("Cần chỉ định model_path cho backend transformers")
-        
+
+        is_vl, base_model_for_lora = _inspect_model_target(self.model_path)
+        self._is_vl = is_vl
+        load_target = base_model_for_lora or self.model_path
+        model_cls   = _resolve_hf_model_cls(load_target, is_vl)
+        proc_source = (
+            self.model_path
+            if (Path(self.model_path).exists() and (Path(self.model_path) / "tokenizer_config.json").exists())
+            else load_target
+        )
+
+        if is_vl:
+            try:
+                p_src = (
+                    self.model_path
+                    if (Path(self.model_path).exists() and (Path(self.model_path) / "preprocessor_config.json").exists())
+                    else load_target
+                )
+                self._processor = AutoProcessor.from_pretrained(p_src, trust_remote_code=True)
+                self._tokenizer = getattr(self._processor, "tokenizer", None)
+            except Exception as e:
+                log.warning(f"[LLM] Không load được AutoProcessor cho {load_target} ({e}), dùng AutoTokenizer")
+                self._processor = None
+
+        if self._tokenizer is None:
+            self._tokenizer = AutoTokenizer.from_pretrained(proc_source, trust_remote_code=True)
+
         use_gpu = self._device == "cuda" and torch.cuda.is_available()
         if use_gpu:
             self._gpu_id = _best_gpu_index()
             device_map = {"": self._gpu_id}
-            
+
             # [IMPROVE] Configurable quantization bits (4-bit or 8-bit)
             if self._use_quantization and self._quantization_bits in (4, 8):
                 try:
@@ -323,50 +421,55 @@ class LLMEnhancer:
                             bnb_4bit_compute_dtype=torch.bfloat16,
                             bnb_4bit_use_double_quant=True,
                         )
-                        log.info(f"[LLM] Loading transformers model: {self.model_path} (4-bit QLoRA, cuda:{self._gpu_id})")
+                        log.info(f"[LLM] Loading {model_cls.__name__}: {load_target} (4-bit QLoRA, cuda:{self._gpu_id})")
                     else:  # 8-bit
                         bnb_config = BitsAndBytesConfig(
                             load_in_8bit=True,
                             bnb_8bit_compute_dtype=torch.bfloat16,
                         )
-                        log.info(f"[LLM] Loading transformers model: {self.model_path} (8-bit, cuda:{self._gpu_id})")
-                    
-                    self._tokenizer = AutoTokenizer.from_pretrained(
-                        self.model_path, trust_remote_code=True
-                    )
-                    self._model = AutoModelForCausalLM.from_pretrained(
-                        self.model_path,
+                        log.info(f"[LLM] Loading {model_cls.__name__}: {load_target} (8-bit, cuda:{self._gpu_id})")
+
+                    self._model = model_cls.from_pretrained(
+                        load_target,
                         quantization_config=bnb_config,
                         device_map=device_map,
+                        trust_remote_code=True,
                     )
                 except ImportError:
                     log.warning("[LLM] BitsAndBytesConfig not available, loading without quantization")
                     self._quantization_config = None
-                    self._model = AutoModelForCausalLM.from_pretrained(
-                        self.model_path, device_map=device_map, trust_remote_code=True
-                    )
-                    self._tokenizer = AutoTokenizer.from_pretrained(
-                        self.model_path, trust_remote_code=True
+                    self._model = model_cls.from_pretrained(
+                        load_target,
+                        torch_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
+                        device_map=device_map,
+                        trust_remote_code=True,
                     )
             else:
                 # Load without quantization
-                log.info(f"[LLM] Loading transformers model: {self.model_path} (no quantization, cuda:{self._gpu_id})")
-                self._model = AutoModelForCausalLM.from_pretrained(
-                    self.model_path, device_map=device_map, trust_remote_code=True
-                )
-                self._tokenizer = AutoTokenizer.from_pretrained(
-                    self.model_path, trust_remote_code=True
+                dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+                log.info(f"[LLM] Loading {model_cls.__name__}: {load_target} (dtype={dtype}, cuda:{self._gpu_id})")
+                self._model = model_cls.from_pretrained(
+                    load_target,
+                    torch_dtype=dtype,
+                    device_map=device_map,
+                    trust_remote_code=True,
                 )
         else:
             # CPU mode
-            log.info(f"[LLM] Loading transformers model: {self.model_path} (CPU)")
-            self._model = AutoModelForCausalLM.from_pretrained(
-                self.model_path, device_map="cpu", trust_remote_code=True
+            log.info(f"[LLM] Loading {model_cls.__name__}: {load_target} (CPU)")
+            self._model = model_cls.from_pretrained(
+                load_target, device_map="cpu", trust_remote_code=True
             )
-            self._tokenizer = AutoTokenizer.from_pretrained(
-                self.model_path, trust_remote_code=True
-            )
-        
+
+        # Nếu self.model_path là thư mục LoRA adapter chưa merge → gắn PeftModel
+        if base_model_for_lora:
+            try:
+                from peft import PeftModel
+                log.info(f"[LLM] Attaching LoRA adapter from: {self.model_path}")
+                self._model = PeftModel.from_pretrained(self._model, self.model_path)
+            except Exception as e:
+                log.warning(f"[LLM] Không gắn được LoRA adapter ({e}), dùng base model")
+
         # [IMPROVE] Load draft model for speculative decoding
         if self._use_speculative and self._draft_model_path and Path(self._draft_model_path).exists():
             log.info(f"[LLM] Loading draft model for speculative decoding: {self._draft_model_path}")
@@ -384,15 +487,24 @@ class LLMEnhancer:
             except Exception as e:
                 log.warning(f"[LLM] Failed to load draft model: {e}")
                 self._speculative_draft_model = None
-        
+
         self._model.eval()
-        log.info(f"[LLM] Transformers model loaded ({'cuda:'+str(self._gpu_id) if use_gpu else 'CPU'} mode)")
+        log.info(
+            f"[LLM] Transformers model loaded "
+            f"({'cuda:'+str(self._gpu_id) if use_gpu else 'CPU'} mode, is_vl={self._is_vl})"
+        )
         return
-    def _infer(self, messages: List[Dict], max_new_tokens: Optional[int] = None) -> str:
+
+    def _infer(
+        self,
+        messages: List[Dict],
+        max_new_tokens: Optional[int] = None,
+        image: Any = None,
+    ) -> str:
         tokens = max_new_tokens if max_new_tokens is not None else self.max_new_tokens
         if self.backend == "llama_cpp":
             return self._infer_llama_cpp(messages, tokens)
-        return self._infer_transformers(messages, tokens)
+        return self._infer_transformers(messages, tokens, image=image)
 
     def _infer_llama_cpp(self, messages: List[Dict], max_new_tokens: int) -> str:
         result = self._model.create_chat_completion(
@@ -403,12 +515,75 @@ class LLMEnhancer:
         )
         return result["choices"][0]["message"]["content"]
 
-    def _infer_transformers(self, messages: List[Dict], max_new_tokens: int) -> str:
+    def _infer_transformers(
+        self,
+        messages: List[Dict],
+        max_new_tokens: int,
+        image: Any = None,
+    ) -> str:
         import torch
-        text = self._tokenizer.apply_chat_template(
+        infer_device = f"cuda:{self._gpu_id}" if self._gpu_id is not None else "cpu"
+
+        # Multimodal Vision-Language path khi model là Qwen-VL và có ảnh đi kèm
+        if self._is_vl and self._processor is not None and image is not None:
+            try:
+                from PIL import Image as _PILImage
+                if isinstance(image, (str, Path)):
+                    pil_img = _PILImage.open(image).convert("RGB")
+                elif isinstance(image, _PILImage.Image):
+                    pil_img = image.convert("RGB")
+                else:
+                    pil_img = None
+
+                if pil_img is not None:
+                    # Resize hợp lý để tiết kiệm VRAM
+                    w, h = pil_img.size
+                    if max(w, h) > 768:
+                        scale = 768.0 / max(w, h)
+                        pil_img = pil_img.resize((int(w * scale), int(h * scale)))
+
+                    vl_messages = []
+                    for idx, m in enumerate(messages):
+                        role = m.get("role", "user")
+                        content = m.get("content", "")
+                        if idx == len(messages) - 1 and role == "user" and isinstance(content, str):
+                            vl_messages.append({
+                                "role": "user",
+                                "content": [
+                                    {"type": "image", "image": pil_img},
+                                    {"type": "text",  "text": content},
+                                ],
+                            })
+                        else:
+                            vl_messages.append({"role": role, "content": content})
+
+                    text = self._processor.apply_chat_template(
+                        vl_messages, tokenize=False, add_generation_prompt=True
+                    )
+                    inputs = self._processor(
+                        text=[text],
+                        images=[pil_img],
+                        padding=True,
+                        return_tensors="pt",
+                    ).to(infer_device)
+
+                    with torch.no_grad():
+                        output_ids = self._model.generate(
+                            **inputs,
+                            max_new_tokens=max_new_tokens,
+                            temperature=self.temperature,
+                            do_sample=self.temperature > 0,
+                        )
+                    new_tokens = output_ids[0][inputs["input_ids"].shape[1]:]
+                    return self._processor.decode(new_tokens, skip_special_tokens=True)
+            except Exception as exc:
+                log.warning(f"[LLM] Multimodal VL inference fallback sang text-only: {exc}")
+
+        # Text-only path (hoặc fallback từ VL khi không truyền ảnh)
+        tmpl_target = self._processor if (self._is_vl and self._processor is not None) else self._tokenizer
+        text = tmpl_target.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-        infer_device = f"cuda:{self._gpu_id}" if self._gpu_id is not None else "cpu"
         inputs = self._tokenizer(text, return_tensors="pt").to(infer_device)
         with torch.no_grad():
             output_ids = self._model.generate(
@@ -428,6 +603,7 @@ class LLMEnhancer:
         user_text: str,
         context: Optional[Dict] = None,
         chat_history: Optional[List[Dict]] = None,
+        image: Any = None,
     ) -> LLMParsedFeedback:
         """
         Hiểu ý người dùng → trả về LLMParsedFeedback.
@@ -435,6 +611,7 @@ class LLMEnhancer:
 
         context: last_result dict từ AgentMemory (optional)
         chat_history: lịch sử hội thoại gần nhất để LLM hiểu ngữ cảnh
+        image: ảnh PIL.Image hoặc đường dẫn ảnh (cho Qwen-VL)
         """
         user_content = self._build_user_content(user_text, context)
         messages: List[Dict] = [{"role": "system", "content": _SYSTEM_PROMPT}]
@@ -442,8 +619,14 @@ class LLMEnhancer:
             role = "assistant" if entry.get("role") == "agent" else "user"
             messages.append({"role": role, "content": entry.get("content", "")})
         messages.append({"role": "user", "content": user_content})
+
+        if image is None and context:
+            img_candidate = context.get("original_path") or context.get("image_path")
+            if img_candidate and Path(str(img_candidate)).exists():
+                image = img_candidate
+
         try:
-            raw_output = self._infer(messages)
+            raw_output = self._infer(messages, image=image)
             return _parse_llm_output(raw_output)
         except Exception as e:
             log.warning(f"[LLM] parse_intent lỗi: {e}")
@@ -459,6 +642,7 @@ class LLMEnhancer:
         action_type: str,
         memory_summary: Optional[Dict] = None,
         duration_s: float = 0,
+        image: Any = None,
     ) -> str:
         """
         Tạo response tự nhiên từ kết quả phân tích.
@@ -488,8 +672,12 @@ class LLMEnhancer:
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user",   "content": prompt},
         ]
+        if image is None and results:
+            img_candidate = results[0].get("original_path") or results[0].get("image_path")
+            if img_candidate and Path(str(img_candidate)).exists():
+                image = img_candidate
         try:
-            raw = self._infer(messages)
+            raw = self._infer(messages, image=image)
             # Nếu model vẫn xuất header → chỉ lấy phần response
             parsed = _parse_llm_output(raw)
             return parsed.response if parsed.response else _remove_chinese(raw)
@@ -555,18 +743,27 @@ class LLMEnhancer:
     @classmethod
     def base_model_cpu(
         cls,
-        model_name: str = "Qwen/Qwen2.5-0.5B-Instruct",
+        model_name: str = "Qwen/Qwen2.5-VL-3B-Instruct",
         **kwargs,
     ) -> "LLMEnhancer":
         """
-        Load base model từ HuggingFace (chưa fine-tune).
-        Dùng để test inference trên CPU trước khi có model đã train.
+        Load base model Qwen2.5-VL từ HuggingFace (chưa fine-tune).
+        Dùng để chạy hoặc test inference khi chưa có model đã train.
         """
         return cls(backend="transformers", model_path=model_name, **kwargs)
 
     @classmethod
+    def from_vl_model(
+        cls,
+        model_name: str = "Qwen/Qwen2.5-VL-3B-Instruct",
+        **kwargs,
+    ) -> "LLMEnhancer":
+        """Load trực tiếp model Qwen2.5-VL / Qwen2-VL từ HuggingFace hoặc thư mục local."""
+        return cls(backend="transformers", model_path=model_name, **kwargs)
+
+    @classmethod
     def from_lora_dir(cls, lora_dir: str, **kwargs) -> "LLMEnhancer":
-        """Load model đã fine-tune (thư mục LoRA adapter đã merge)."""
+        """Load model đã fine-tune (thư mục LoRA adapter hoặc đã merge)."""
         return cls(backend="transformers", model_path=lora_dir, **kwargs)
 
 
@@ -589,8 +786,8 @@ if __name__ == "__main__":
             print(f"Loading transformers model: {model_arg}")
             enhancer = LLMEnhancer.from_lora_dir(model_arg)
     else:
-        print("Dùng base model (Qwen2.5-0.5B, chưa fine-tune)...")
-        print("Lưu ý: cần kết nối internet để download lần đầu (~1GB)\n")
+        print("Dùng base model (Qwen/Qwen2.5-VL-3B-Instruct, chưa fine-tune)...")
+        print("Lưu ý: cần kết nối internet để download lần đầu\n")
         enhancer = LLMEnhancer.base_model_cpu()
 
     # Test cases
