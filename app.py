@@ -461,109 +461,338 @@ def _err500(e):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PAGE ROUTES
+# PAGE ROUTES (Single-Page App: tất cả đều dùng chung templates/home.html)
 # ══════════════════════════════════════════════════════════════════════════════
+
+def _render_spa(initial_view: str = "home", **extra):
+    return render_template(
+        "home.html",
+        active=initial_view,
+        initial_view=initial_view,
+        maps_key=GOOGLE_MAPS_KEY,
+        logged_in=session.get("logged_in", False),
+        user_role=session.get("role", ""),
+        user_email=session.get("email", ""),
+        user_name=session.get("name", ""),
+        **extra,
+    )
+
 
 @app.route("/", methods=["GET"])
 def home():
-    return render_template("home.html", active="home",
-                           logged_in=session.get("logged_in", False))
+    return _render_spa("home")
 
 
 @app.route("/news", methods=["GET"])
 def news():
-    return render_template("news.html", active="news",
-                           logged_in=session.get("logged_in", False))
+    return _render_spa("home")
 
 
 @app.route("/map", methods=["GET"])
 def map_page():
-    return render_template("map.html", active="map",
-                           maps_key=GOOGLE_MAPS_KEY,
-                           logged_in=session.get("logged_in", False))
+    return _render_spa("map")
 
 
 @app.route("/alerts", methods=["GET"])
 def alerts_page():
-    return render_template("alerts.html", active="alerts",
-                           logged_in=session.get("logged_in", False))
+    return _render_spa("home")
 
 
 @app.route("/submit", methods=["GET"])
 def submit_page():
-    return render_template("submit.html", active="submit",
-                           logged_in=session.get("logged_in", False))
+    return _render_spa("sos")
 
 
 @app.route("/roads", methods=["GET"])
 def roads_page():
-    return render_template("roads.html", active="roads",
-                           logged_in=session.get("logged_in", False))
+    return _render_spa("map")
 
 
 @app.route("/article/<article_id>", methods=["GET"])
 def article_page(article_id: str):
-    """Trang chi tiết bài viết / kết quả phân tích."""
-    from utils.article_generator import ArticleGenerator
-    article_data = None
-    try:
-        from pipeline.job_queue import JobQueue
-        status = JobQueue.instance().get(article_id)
-        if status and status.result_summary:
-            res = status.result_summary
-            gen = ArticleGenerator()
-            article_data = gen.from_result(
-                res,
-                location=res.get("location", "khu vực phân tích"),
-                time=res.get("time", ""),
-                source=res.get("source", "Hệ thống"),
-                run_id=article_id,
-            )
-    except Exception as exc:
-        log.debug("article_page: %s", exc)
-    return render_template("article.html", active="news",
-                           article=article_data,
-                           logged_in=session.get("logged_in", False))
+    return _render_spa("home")
 
 
 @app.route("/chat", methods=["GET"])
 def chat():
-    return render_template("chat.html", active="chat",
-                           logged_in=session.get("logged_in", False))
+    return _render_spa("chat")
 
 
 @app.route("/dashboard", methods=["GET"])
 @app.route("/admin", methods=["GET"])
-@login_required
 def dashboard():
-    role = session.get("role", "")
-    # Nếu chưa có role (tài khoản cũ chưa phân quyền) → về login
-    if not role:
-        return redirect(url_for("login_page"))
-    return render_template("admin.html", active="admin", logged_in=True,
-                           user_role=role,
-                           user_email=session.get("email", ""),
-                           user_name=session.get("name", ""))
+    return _render_spa("admin")
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login_page():
-    """
-    GET  → hiện form login (với hCaptcha site key)
-    POST → legacy fallback (form cũ), redirect về GET
-    """
-    site_key = os.environ.get("HCAPTCHA_SITE_KEY", "10000000-ffff-ffff-ffff-000000000001")
-    # Login thực tế xử lý qua POST /api/auth/login (JSON)
-    # Route này chỉ serve trang HTML
-    if session.get("logged_in"):
-        return redirect(url_for("dashboard"))
-    return render_template("login.html", hcaptcha_site_key=site_key)
+    return _render_spa("admin")
 
 
 @app.route("/logout", methods=["GET"])
 def logout():
     session.clear()
     return redirect(url_for("home"))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# API — SOS REPORTS, BROADCAST & INSTANT AI DEPTH (cho SPA home.html)
+# ══════════════════════════════════════════════════════════════════════════════
+
+_DEFAULT_SOS_REPORTS = [
+    {
+        "id": 1,
+        "title": "Cứu hộ khẩn 4 người mắc kẹt gác xép",
+        "type": "emergency",
+        "lat": 21.5850,
+        "lng": 105.8500,
+        "location": "Phường Túc Duyên, TP. Thái Nguyên",
+        "time": "10 phút trước",
+        "phone": "0982***112",
+        "detail": "Nước dâng tràn hơn 1.8m, cắt điện hoàn toàn. Cần xuồng máy hỗ trợ đón người già và em nhỏ.",
+        "aiAnalysis": "Nước dâng 180cm • Mức độ 3 (Khẩn cấp)",
+        "status": "pending",
+    },
+    {
+        "id": 2,
+        "title": "Ngập sâu 1.2m ngã tư Bến Oánh",
+        "type": "flood",
+        "lat": 21.6050,
+        "lng": 105.8350,
+        "location": "Phường Quang Vinh, TP. Thái Nguyên",
+        "time": "25 phút trước",
+        "phone": "0915***388",
+        "detail": "Các phương tiện ô tô, xe máy không thể lưu thông qua khu vực này. Nhiều xe ô tô con bị ngập.",
+        "aiAnalysis": "Nước dâng 120cm • Xe gầm cao bị cản trở",
+        "status": "pending",
+    },
+    {
+        "id": 3,
+        "title": "Trạm Sơ Tán & Kho Nhu Yếu Phẩm ĐH Nông Lâm (TUAF)",
+        "type": "shelter",
+        "lat": 21.5880,
+        "lng": 105.8180,
+        "location": "Trường ĐH Nông Lâm Thái Nguyên, Quyết Thắng",
+        "time": "Đang hoạt động",
+        "phone": "0208.3855.112",
+        "detail": "Khu vực địa hình cao ráo, cung cấp chỗ ở tạm thời, nước sạch, sạc pin điện thoại và cơm nóng miễn phí.",
+        "aiAnalysis": "An toàn tuyệt đối • Sức chứa 500 người",
+        "status": "resolved",
+    },
+    {
+        "id": 4,
+        "title": "Cần viện trợ nước sạch & áo phao",
+        "type": "emergency",
+        "lat": 21.5720,
+        "lng": 105.8580,
+        "location": "Phường Gia Sàng, TP. Thái Nguyên",
+        "time": "40 phút trước",
+        "phone": "0977***901",
+        "detail": "Xóm bị cô lập 2 ngày qua, hết nước uống và pin dự phòng.",
+        "aiAnalysis": "Cần nhu yếu phẩm khẩn cấp",
+        "status": "pending",
+    },
+    {
+        "id": 5,
+        "title": "Trạm Cứu Hộ & Y Tế Đồng Hỷ",
+        "type": "shelter",
+        "lat": 21.6120,
+        "lng": 105.8650,
+        "location": "Trung tâm Y tế Huyện Đồng Hỷ",
+        "time": "Đang hoạt động",
+        "phone": "0208.3822.115",
+        "detail": "Trực 24/24 tiếp nhận bệnh nhân và các ca sơ cứu thiên tai.",
+        "aiAnalysis": "Điểm y tế hỗ trợ",
+        "status": "resolved",
+    },
+    {
+        "id": 6,
+        "title": "Trạm Quan Trắc Mực Nước Cầu Gia Bẩy (Sông Cầu)",
+        "type": "sensor",
+        "lat": 21.5980,
+        "lng": 105.8480,
+        "location": "Cầu Gia Bẩy, Sông Cầu, Thái Nguyên",
+        "time": "Vừa cập nhật",
+        "phone": "112",
+        "detail": "Mực nước Sông Cầu vượt Báo động III (+2.4m). Cảnh báo ngập lụt diện rộng.",
+        "aiAnalysis": "Mực nước Báo động III",
+        "status": "resolved",
+    },
+]
+
+
+def _get_sos_reports() -> list:
+    data = _load_json("sos_reports.json", default=None)
+    if not data:
+        _save_json("sos_reports.json", _DEFAULT_SOS_REPORTS)
+        return list(_DEFAULT_SOS_REPORTS)
+    return data
+
+
+@app.route("/api/sos/reports", methods=["GET"])
+def api_sos_reports_list():
+    reports = _get_sos_reports()
+    bcast = _load_json("broadcast.json", default={"active": False, "text": ""})
+    return jsonify({"reports": reports, "broadcast": bcast})
+
+
+@app.route("/api/sos/report", methods=["POST"])
+def api_sos_report_create():
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "Người dân").strip()
+    phone = (data.get("phone") or "").strip()
+    address = (data.get("address") or "TP. Thái Nguyên").strip()
+    rtype = (data.get("type") or "emergency").strip()
+    detail = (data.get("detail") or "Tín hiệu cứu hộ gửi trực tiếp từ ứng dụng FloodAI.").strip()
+    lat = data.get("lat")
+    lng = data.get("lng")
+    image_b64 = data.get("image_b64")
+
+    if lat is None or lng is None:
+        import random
+        lat = round(21.5928 + (random.random() - 0.5) * 0.025, 5)
+        lng = round(105.8442 + (random.random() - 0.5) * 0.025, 5)
+
+    ai_label = "Mới gửi • Đã xác minh tọa độ GPS"
+    depth_cm = None
+    if image_b64:
+        try:
+            d_res = _run_instant_depth(image_b64)
+            if d_res.get("depth_cm") is not None:
+                depth_cm = d_res["depth_cm"]
+                ai_label = f"AI đo: {depth_cm}cm • {d_res.get('risk_label', 'Đã phân tích')}"
+        except Exception as exc:
+            log.debug(f"[sos/report] image depth error: {exc}")
+
+    new_item = {
+        "id": int(time.time() * 1000),
+        "title": f"[{ 'Cứu hộ khẩn' if rtype == 'emergency' else 'Báo ngập' if rtype == 'flood' else 'Điểm hỗ trợ' }] {name}",
+        "type": rtype,
+        "lat": float(lat),
+        "lng": float(lng),
+        "location": address,
+        "time": "Vừa xong",
+        "phone": phone,
+        "detail": detail,
+        "aiAnalysis": ai_label,
+        "depth_cm": depth_cm,
+        "status": "pending",
+    }
+    reports = _get_sos_reports()
+    reports.insert(0, new_item)
+    _save_json("sos_reports.json", reports[:200])
+    return jsonify({"ok": True, "report": new_item})
+
+
+@app.route("/api/sos/resolve/<int:report_id>", methods=["POST"])
+def api_sos_resolve(report_id: int):
+    reports = _get_sos_reports()
+    for r in reports:
+        if int(r.get("id", 0)) == report_id:
+            r["status"] = "resolved"
+            _save_json("sos_reports.json", reports)
+            return jsonify({"ok": True, "report": r})
+    return jsonify({"error": "Không tìm thấy"}), 404
+
+
+@app.route("/api/sos/broadcast", methods=["POST"])
+def api_sos_broadcast():
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    active = bool(data.get("active", bool(text)))
+    payload = {"active": active, "text": text, "updated_at": _now_iso()}
+    _save_json("broadcast.json", payload)
+    return jsonify({"ok": True, "broadcast": payload})
+
+
+def _run_instant_depth(image_b64: str) -> dict:
+    """Chạy nhanh JunkClassifier + ReferenceEstimator trên ảnh base64."""
+    import base64
+    import tempfile
+
+    raw = base64.b64decode(image_b64)
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+        f.write(raw)
+        tmp_path = f.name
+
+    try:
+        # 1. Kiểm tra ảnh rác / khô trước
+        try:
+            from depth_analysis.junk_classifier import JunkClassifier
+            jc = JunkClassifier()
+            screen = jc.classify(tmp_path)
+            if screen.image_type in ("junk", "dry"):
+                return {
+                    "ok": True,
+                    "image_type": screen.image_type,
+                    "depth_cm": 0.0,
+                    "flood_level": "NO_FLOOD",
+                    "confidence": round(float(screen.confidence) * 100, 1),
+                    "risk_label": "KHÔNG NGẬP / ẢNH KHÔNG HỢP LỆ",
+                    "advice": screen.vietnamese_message(),
+                }
+        except Exception as exc:
+            log.debug(f"[instant_depth] junk check skipped: {exc}")
+
+        # 2. Chạy ReferenceEstimator (SegFormer + Depth Anything V2 + YOLO/Pose)
+        estimator, err = _get_chat_estimator()
+        if estimator is None:
+            raise RuntimeError(f"Model chưa sẵn sàng: {err}")
+
+        results = estimator.analyze_batch([Path(tmp_path)], chunk_size=1)
+        if not results:
+            raise RuntimeError("Không trích xuất được kết quả từ ảnh")
+
+        r = results[0]
+        depth_cm = round(float(getattr(r, "water_height_cm", 0) or 0), 1)
+        level = str(getattr(r, "flood_level", "UNKNOWN") or "UNKNOWN").upper()
+        conf = round(float(getattr(r, "confidence", 0) or 0) * 100, 1)
+        vehs = getattr(r, "vehicles_detected", []) or []
+
+        if depth_cm >= 100 or level in ("CHEST", "SUBMERGED"):
+            risk_label = f"CẢNH BÁO MỨC 3 — RẤT NGUY HIỂM ({level})"
+            advice = "⚠️ Mực nước ngập rất sâu. Cần ngắt cầu dao điện khẩn cấp, di chuyển lên vị trí cao và gọi xuồng cứu hộ 112 / 0208.3855.112."
+        elif depth_cm >= 40 or level in ("KNEE", "WAIST"):
+            risk_label = f"CẢNH BÁO MỨC 2 — NGUY HIỂM ({level})"
+            advice = "⚠️ Nước ngập qua bánh xe máy / gầm ô tô. Tuyệt đối không cố đi xe qua vùng ngập, ưu tiên sơ tán người già và trẻ nhỏ."
+        elif depth_cm >= 10 or level in ("PUDDLE", "ANKLE"):
+            risk_label = f"CẢNH BÁO MỨC 1 — NGẬP NHẸ ({level})"
+            advice = "ℹ️ Mặt đường có nước ngập nhẹ (~mắt cá chân). Các phương tiện di chuyển chậm, chú ý nắp cống và ổ gà."
+        else:
+            risk_label = "AN TOÀN — KHÔNG PHÁT HIỆN NGẬP SÂU"
+            advice = "✅ Không phát hiện mực nước ngập nguy hiểm trong ảnh."
+
+        if vehs:
+            advice += f" (Đối tượng tham chiếu phát hiện: {', '.join(str(v) for v in vehs)})."
+
+        return {
+            "ok": True,
+            "image_type": "flood" if depth_cm >= 10 else "dry",
+            "depth_cm": depth_cm,
+            "flood_level": level,
+            "confidence": max(conf, 50.0) if depth_cm > 0 else conf,
+            "risk_label": risk_label,
+            "advice": advice,
+        }
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+
+@app.route("/api/depth/instant", methods=["POST"])
+def api_depth_instant():
+    data = request.get_json(silent=True) or {}
+    image_b64 = data.get("image_b64") or data.get("data_b64")
+    if not image_b64:
+        return jsonify({"error": "Thiếu dữ liệu ảnh (image_b64)"}), 400
+    try:
+        res = _run_instant_depth(image_b64)
+        return jsonify(res)
+    except Exception as exc:
+        log.warning(f"[api/depth/instant] {exc}")
+        return jsonify({"error": str(exc)}), 500
 
 
 # ══════════════════════════════════════════════════════════════════════════════

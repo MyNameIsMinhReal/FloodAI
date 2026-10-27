@@ -432,10 +432,11 @@ def _run_pipeline(cfg: dict):
 def _reg_core(app, lr, gl, gtc, send_file):
     from flask import jsonify, redirect, render_template, request
 
-    @app.route("/admin")
-    @lr
-    def admin_panel():
-        return render_template("admin.html", active="admin", logged_in=True)
+    if "admin_panel" not in app.view_functions and "dashboard" not in app.view_functions:
+        @app.route("/admin")
+        @lr
+        def admin_panel():
+            return render_template("home.html", active="admin", initial_view="admin", logged_in=True)
 
     @app.route("/review/<int:case_id>", methods=["POST"])
     @lr

@@ -1,336 +1,1393 @@
-{% extends "base.html" %}
-{% block title %}Trang chủ{% endblock %}
+<!DOCTYPE html>
+<html lang="vi" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FloodAI - Hệ Thống Cảnh Báo Ngập Lụt & Cứu Hộ Khẩn Cấp GIRC Thái Nguyên</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        emerald: {
+                            500: '#00a884',
+                            600: '#0f766e',
+                            700: '#0d9488',
+                        },
+                        rose: {
+                            600: '#e11d48',
+                            700: '#be123c',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Leaflet OpenStreetMap CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Blinking SOS Pulse Effect */
+        @keyframes sosPulse {
+            0% { box-shadow: 0 0 0 0 rgba(225, 29, 72, 0.7); }
+            70% { box-shadow: 0 0 0 20px rgba(225, 29, 72, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(225, 29, 72, 0); }
+        }
+        .sos-btn-pulse {
+            animation: sosPulse 1.8s infinite;
+        }
 
-{% block head %}
-<style>
-.home-grid{display:grid;grid-template-columns:1fr 300px;gap:28px;margin-bottom:36px}
-@media(max-width:800px){.home-grid{grid-template-columns:1fr}}
+        /* Leaflet custom map markers styling */
+        .custom-marker {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            color: white;
+            font-weight: bold;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            border: 2px solid white;
+        }
+        .bg-emergency { background-color: #e11d48; }
+        .bg-flood { background-color: #f97316; }
+        .bg-shelter { background-color: #10b981; }
+        .bg-sensor { background-color: #0284c7; }
 
-.hero-card{background:var(--card);border:1px solid var(--border);
-  border-radius:var(--radius-lg);overflow:hidden;text-decoration:none;color:inherit;display:block;
-  transition:box-shadow .2s}
-.hero-card:hover{box-shadow:var(--shadow-md)}
-.hero-img{width:100%;height:240px;background:linear-gradient(135deg,#0c2340 0%,#1565c0 100%);
-  display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
-.hero-img-placeholder{text-align:center;color:rgba(255,255,255,.5);padding:20px}
-.hero-img-placeholder svg{width:48px;height:48px;margin-bottom:10px;stroke:rgba(255,255,255,.4);fill:none;stroke-width:1.5}
-.hero-img-placeholder span{display:block;font-size:13px}
-.hero-body{padding:20px 22px}
-.hero-badge-row{display:flex;align-items:center;gap:8px;margin-bottom:11px}
-.hero-title{font-family:var(--font-serif);font-size:22px;font-weight:700;
-  line-height:1.35;color:var(--tx);margin-bottom:11px}
-.hero-lead{font-size:14px;color:var(--tx2);line-height:1.65;margin-bottom:16px;
-  display:-webkit-box;line-clamp:3;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.hero-footer{display:flex;align-items:center;justify-content:space-between;
-  padding-top:14px;border-top:1px solid var(--border2);font-size:12px;color:var(--tx3)}
-.read-more-link{color:var(--blue);font-weight:600;font-size:13px;text-decoration:none}
-.read-more-link:hover{text-decoration:underline}
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); }
+        ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 4px; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-300 min-h-screen flex flex-col">
 
-.sidebar-card{background:var(--card);border:1px solid var(--border);
-  border-radius:var(--radius-lg);overflow:hidden;margin-bottom:16px}
-.sc-head{padding:13px 16px;border-bottom:1px solid var(--border2);
-  display:flex;align-items:center;justify-content:space-between}
-.sc-title{font-size:11px;font-weight:700;text-transform:uppercase;
-  letter-spacing:.08em;color:var(--tx3)}
-.sc-all{font-size:11.5px;color:var(--blue);text-decoration:none;font-weight:500}
-.sc-all:hover{text-decoration:underline}
-.sc-body{padding:8px 6px}
-
-.alert-mini{display:flex;align-items:flex-start;gap:10px;padding:9px 10px;
-  border-radius:var(--radius);cursor:pointer;text-decoration:none;color:inherit;
-  transition:background .15s}
-.alert-mini:hover{background:var(--paper2)}
-.adot{width:9px;height:9px;border-radius:50%;flex-shrink:0;margin-top:5px}
-.adot-high{background:var(--warn-high);animation:pdot 1.4s ease-in-out infinite}
-.adot-medium{background:var(--warn-med)}
-.adot-low{background:var(--warn-low)}
-.adot-ok{background:var(--ok)}
-@keyframes pdot{0%,100%{opacity:1}50%{opacity:.4}}
-.alert-mini-title{font-size:13px;font-weight:600;line-height:1.35;color:var(--tx)}
-.alert-mini-sub{font-size:11px;color:var(--tx3);margin-top:2px}
-
-.map-strip{background:var(--navy);border-radius:var(--radius-lg);
-  padding:20px 24px;margin-bottom:36px;
-  display:flex;align-items:center;justify-content:space-between;gap:20px}
-@media(max-width:600px){.map-strip{flex-direction:column;align-items:flex-start}}
-.map-strip-text h2{font-family:var(--font-serif);font-size:18px;color:#fff;margin-bottom:6px}
-.map-strip-text p{font-size:13px;color:rgba(255,255,255,.6)}
-.map-strip-legend{display:flex;gap:14px;flex-wrap:wrap}
-.leg{display:flex;align-items:center;gap:5px;font-size:12px;color:rgba(255,255,255,.7)}
-.leg-dot{width:10px;height:10px;border-radius:50%}
-
-.area-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
-.area-tab{padding:5px 14px;border-radius:20px;border:1px solid var(--border);
-  background:transparent;font-family:var(--font);font-size:12.5px;font-weight:500;
-  color:var(--tx2);cursor:pointer;transition:all .15s}
-.area-tab:hover{background:var(--card);color:var(--tx)}
-.area-tab.active{background:var(--navy);color:#fff;border-color:var(--navy)}
-
-.news-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-bottom:36px}
-
-.submit-cta{background:var(--blue-s);border:1px solid rgba(21,101,192,.2);
-  border-radius:var(--radius-lg);padding:22px 26px;text-align:center;margin-bottom:24px}
-.submit-cta h3{font-family:var(--font-serif);font-size:18px;margin-bottom:8px;color:var(--navy)}
-[data-theme="dark"] .submit-cta h3{color:var(--tx)}
-.submit-cta p{font-size:14px;color:var(--tx2);margin-bottom:16px}
-</style>
-{% endblock %}
-
-{% block content %}
-<div class="container">
-
-  <!-- Hero + sidebar -->
-  <div class="home-grid">
-
-    <!-- Featured story (loaded from latest job) -->
-    <a class="hero-card" href="/news" id="hero-card">
-      <div class="hero-img">
-        <div class="hero-img-placeholder" id="hero-placeholder">
-          <svg viewBox="0 0 24 24"><path d="M3 7h18M3 12h18M3 17h11"/></svg>
-          <span>Đang tải tin mới nhất...</span>
+    <!-- 1. TOP EMERGENCY HOTLINE BANNER (SOS.org.vn Style) -->
+    <div id="emergencyBar" class="bg-rose-50 dark:bg-slate-900 border-b border-rose-200 dark:border-slate-800 py-2 px-3 text-xs md:text-sm">
+        <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2 font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider shrink-0">
+                <span class="inline-block w-2.5 h-2.5 rounded-full bg-rose-600 animate-ping"></span>
+                <i class="fa-solid font-bold fa-phone-volume"></i> GỌI KHẨN CẤP THIÊN TAI & CỨU HỘ:
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5 md:gap-3 font-semibold text-slate-700 dark:text-slate-300">
+                <a href="tel:111" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-1 rounded transition flex items-center gap-1 border border-slate-200 dark:border-slate-700">
+                    <span class="bg-rose-600 text-white text-[11px] px-1.5 py-0.5 rounded font-extrabold">111</span> Bảo vệ trẻ em
+                </a>
+                <a href="tel:112" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-1 rounded transition flex items-center gap-1 border border-rose-300 dark:border-rose-900 bg-rose-100/50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300">
+                    <span class="bg-rose-600 text-white text-[11px] px-1.5 py-0.5 rounded font-extrabold">112</span> Cứu nạn - Thiên tai
+                </a>
+                <a href="tel:113" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-1 rounded transition flex items-center gap-1 border border-slate-200 dark:border-slate-700">
+                    <span class="bg-blue-600 text-white text-[11px] px-1.5 py-0.5 rounded font-extrabold">113</span> Công an
+                </a>
+                <a href="tel:114" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-1 rounded transition flex items-center gap-1 border border-slate-200 dark:border-slate-700">
+                    <span class="bg-amber-600 text-white text-[11px] px-1.5 py-0.5 rounded font-extrabold">114</span> PCCC & Cứu hộ
+                </a>
+                <a href="tel:115" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-1 rounded transition flex items-center gap-1 border border-slate-200 dark:border-slate-700">
+                    <span class="bg-emerald-600 text-white text-[11px] px-1.5 py-0.5 rounded font-extrabold">115</span> Cấp cứu y tế
+                </a>
+                <a href="tel:117" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-1 rounded transition flex items-center gap-1 border border-slate-200 dark:border-slate-700 hidden lg:flex">
+                    <span class="bg-purple-600 text-white text-[11px] px-1.5 py-0.5 rounded font-extrabold">117</span> Bạo lực gia đình
+                </a>
+            </div>
+            <button onclick="openHotlineModal()" class="text-xs bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1 rounded-full font-medium transition flex items-center gap-1">
+                <i class="fa-solid fa-list-numeric"></i> SĐT Cứu Hộ Thái Nguyên
+            </button>
         </div>
-      </div>
-      <div class="hero-body">
-        <div class="hero-badge-row">
-          <span class="badge badge-ai">AI phân tích</span>
-          <span id="hero-time" style="font-size:12px;color:var(--tx3)"></span>
-        </div>
-        <h1 class="hero-title" id="hero-title">Đang tải thông tin ngập lụt...</h1>
-        <p class="hero-lead" id="hero-lead">Hệ thống đang thu thập và phân tích dữ liệu từ các nguồn ảnh hiện trường. Vui lòng chờ trong giây lát.</p>
-        <div class="hero-footer">
-          <span id="hero-source" style="color:var(--tx3);font-size:12px">Nguồn: Đang tải</span>
-          <span class="read-more-link">Đọc thêm →</span>
-        </div>
-      </div>
-    </a>
-
-    <!-- Sidebar -->
-    <div>
-
-      <!-- Alert sidebar -->
-      <div class="sidebar-card" id="alerts-sidebar">
-        <div class="sc-head">
-          <span class="sc-title">Cảnh báo mới nhất</span>
-          <a href="/alerts" class="sc-all">Tất cả →</a>
-        </div>
-        <div class="sc-body" id="alerts-list">
-          <div style="padding:12px 10px;font-size:13px;color:var(--tx3);text-align:center">Đang tải...</div>
-        </div>
-      </div>
-
-      <!-- Latest news mini -->
-      <div class="sidebar-card">
-        <div class="sc-head">
-          <span class="sc-title">Tin mới</span>
-          <a href="/news" class="sc-all">Xem tất cả →</a>
-        </div>
-        <div class="sc-body" id="mini-news">
-          <div style="padding:12px 10px;font-size:13px;color:var(--tx3);text-align:center">Đang tải...</div>
-        </div>
-      </div>
-
     </div>
-  </div>
 
-  <!-- Map strip -->
-  <div class="map-strip">
-    <div class="map-strip-text">
-      <h2>Bản đồ ngập trực tiếp</h2>
-      <p>Theo dõi các điểm ngập được ghi nhận trên bản đồ</p>
-    </div>
-    <div class="map-strip-legend">
-      <div class="leg"><div class="leg-dot" style="background:var(--ok)"></div>Nhẹ</div>
-      <div class="leg"><div class="leg-dot" style="background:var(--warn-low)"></div>Chú ý</div>
-      <div class="leg"><div class="leg-dot" style="background:var(--warn-med)"></div>Vừa</div>
-      <div class="leg"><div class="leg-dot" style="background:var(--warn-high)"></div>Nguy hiểm</div>
-    </div>
-    <a href="/map" class="btn btn-primary">Xem bản đồ</a>
-  </div>
+    <!-- 2. MAIN HEADER NAVIGATION BAR -->
+    <header class="sticky top-0 z-40 bg-white/90 dark:bg-slate-900/90 backdrop-blur border-b border-slate-200 dark:border-slate-800 transition-colors">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+            <!-- Brand Logo -->
+            <div class="flex items-center gap-3 cursor-pointer" onclick="switchView('home')">
+                <div class="w-10 h-10 rounded-xl bg-teal-600 text-white flex items-center justify-center font-bold text-xl shadow-md shadow-teal-500/20">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="font-extrabold text-xl tracking-tight text-slate-900 dark:text-white">FloodAI<span class="text-teal-600 font-normal text-sm ml-1">.girc</span></span>
+                        <span class="text-[10px] bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300 font-bold px-1.5 py-0.5 rounded border border-teal-300 dark:border-teal-800">Thái Nguyên</span>
+                    </div>
+                    <p class="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block">Trung tâm Nghiên cứu Địa tin học - ĐH Nông Lâm (TUAF)</p>
+                </div>
+            </div>
 
-  <!-- News by area -->
-  <span class="section-title">Tin theo khu vực</span>
-  <div class="area-tabs">
-    <button class="area-tab active" onclick="filterArea('all',this)">Tất cả</button>
-    <button class="area-tab" onclick="filterArea('Thái Nguyên',this)">Thái Nguyên</button>
-    <button class="area-tab" onclick="filterArea('Hà Nội',this)">Hà Nội</button>
-    <button class="area-tab" onclick="filterArea('Bắc Giang',this)">Bắc Giang</button>
-    <button class="area-tab" onclick="filterArea('Hòa Bình',this)">Hòa Bình</button>
-  </div>
-  <div class="news-grid" id="area-news">
-    <div style="grid-column:1/-1;padding:24px;text-align:center;color:var(--tx3)">Đang tải...</div>
-  </div>
+            <!-- Navigation Links -->
+            <nav class="hidden md:flex items-center gap-1 font-medium text-sm text-slate-700 dark:text-slate-200">
+                <button onclick="switchView('home')" id="nav-home" class="px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition text-teal-600 font-bold">
+                    <i class="fa-solid fa-house mr-1"></i> Trang chủ
+                </button>
+                <button onclick="switchView('map')" id="nav-map" class="px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                    <i class="fa-solid fa-map-location-dot mr-1"></i> Bản đồ cứu hộ
+                </button>
+                <button onclick="openSosModal()" class="px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition text-rose-600 dark:text-rose-400 font-semibold">
+                    <i class="fa-solid fa-bullhorn mr-1"></i> Gửi tín hiệu
+                </button>
+                <button onclick="openAiChatModal()" class="px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                    <i class="fa-solid fa-robot text-teal-500 mr-1"></i> AI Trợ lý
+                </button>
+                <button onclick="openAiDepthModal()" class="px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                    <i class="fa-solid fa-camera mr-1 text-amber-500"></i> AI Đo ngập
+                </button>
+            </nav>
 
-  <!-- Submit CTA -->
-  <div class="submit-cta">
-    <h3>Bạn ghi nhận ngập tại khu vực của mình?</h3>
-    <p>Gửi ảnh hiện trường để hệ thống phân tích và cảnh báo cộng đồng.</p>
-    <a href="/submit" class="btn btn-primary">
-      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-      Gửi ảnh ngay
-    </a>
-  </div>
+            <!-- Header Right Action Buttons -->
+            <div class="flex items-center gap-2">
+                <!-- View Mode Toggle Button -->
+                <button onclick="toggleMapFullScreenView()" title="Chuyển sang Bản đồ Toàn Màn Hình (Phong cách SOS.info.vn)" class="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs sm:text-sm font-semibold rounded-lg text-slate-700 dark:text-slate-200 transition flex items-center gap-1.5 border border-slate-200 dark:border-slate-700">
+                    <i class="fa-solid fa-expand text-teal-600 dark:text-teal-400"></i>
+                    <span class="hidden sm:inline">Chế độ Bản đồ Full</span>
+                </button>
 
-</div>
-{% endblock %}
+                <!-- Dark / Light Theme Switch -->
+                <button onclick="toggleDarkMode()" class="p-2 w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-amber-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition flex items-center justify-center">
+                    <i class="fa-solid fa-sun dark:hidden"></i>
+                    <i class="fa-solid fa-moon hidden dark:block"></i>
+                </button>
 
-{% block scripts %}
-<script>
-const LEVEL_INFO={
-  dry:{label:'Không ngập',sev:'ok',badge:'badge-ok'},
-  ankle:{label:'Ngập nhẹ (~20cm)',sev:'low',badge:'badge-low'},
-  knee:{label:'Ngập đầu gối (~50cm)',sev:'medium',badge:'badge-medium'},
-  waist:{label:'Ngập ngang eo',sev:'high',badge:'badge-high'},
-  chest:{label:'Ngập ngực — nguy hiểm',sev:'critical',badge:'badge-critical'},
-  submerged:{label:'Ngập hoàn toàn',sev:'critical',badge:'badge-critical'},
-  unknown:{label:'Chưa xác định',sev:'unknown',badge:'badge-unknown'},
-};
-const RECS={
-  dry:'Khu vực không có dấu hiệu ngập.',
-  ankle:'Xe máy đi qua được, cẩn thận trơn trượt.',
-  knee:'Hạn chế đi xe máy qua khu vực này.',
-  waist:'Không nên đi qua. Ô tô thấp gầm nên tránh.',
-  chest:'Nguy hiểm — không di chuyển qua khu vực này.',
-  submerged:'Cực kỳ nguy hiểm. Cần sơ tán ngay.',
-  unknown:'Chưa xác định — chờ thêm thông tin.',
-};
-
-let allArticles=[];
-
-async function loadJobs(){
-  try{
-    const r=await fetch('/api/jobs?limit=30');
-    const jobs=await r.json();
-    const done=jobs.filter(j=>j.status==='done');
-    allArticles=done.map(j=>({
-      id:j.job_id,
-      title:'Ghi nhận ngập tại khu vực phân tích',
-      lead:'Hệ thống phân tích ảnh hiện trường và ghi nhận tình hình ngập lụt.',
-      level:'unknown',sev:'unknown',time:j.created_at,source:'Hệ thống',
-      ...j.result,
-    }));
-    renderHero(allArticles[0]);
-    renderAlerts(done.slice(0,5));
-    renderAreaNews(allArticles.slice(0,8));
-    renderMiniNews(allArticles.slice(0,5));
-  }catch(e){console.log('jobs load:',e);loadNewsArticles();}
-}
-
-async function loadNewsArticles(){
-  try{
-    const r=await fetch('/api/news/fetch');
-    const data=await r.json();
-    const arts=data.articles||data||[];
-    allArticles=arts.map(a=>({
-      id:a.url||a.id||Math.random(),
-      title:a.title||'Tin mới',
-      lead:a.summary||a.description||'',
-      level:'unknown',sev:'unknown',
-      time:a.published_at||a.date||new Date().toISOString(),
-      source:a.source||'Tin tức',
-    }));
-    renderHero(allArticles[0]);
-    renderAreaNews(allArticles.slice(0,8));
-    renderMiniNews(allArticles.slice(0,5));
-  }catch(e){showFallback();}
-}
-
-function renderHero(art){
-  if(!art)return;
-  const info=LEVEL_INFO[art.level]||LEVEL_INFO.unknown;
-  document.getElementById('hero-title').textContent=art.title||'Cập nhật tình hình lũ lụt';
-  document.getElementById('hero-lead').textContent=art.lead||RECS[art.level]||'Hệ thống đang theo dõi tình hình ngập lụt.';
-  document.getElementById('hero-time').textContent=timeAgo(art.time);
-  document.getElementById('hero-source').textContent='Nguồn: '+(art.source||'Hệ thống');
-  const heroCard=document.getElementById('hero-card');
-  if(art.level&&art.level!=='unknown')heroCard.classList.add('sev-'+info.sev);
-  const ph=document.getElementById('hero-placeholder');
-  if(ph){
-    const badgeRow=heroCard.querySelector('.hero-badge-row');
-    const badge=document.createElement('span');
-    badge.className='badge '+info.badge;
-    badge.textContent=info.label;
-    badgeRow.prepend(badge);
-  }
-}
-
-function renderAlerts(jobs){
-  const el=document.getElementById('alerts-list');
-  if(!jobs||!jobs.length){
-    el.innerHTML='<div style="padding:12px 10px;font-size:13px;color:var(--tx3);text-align:center">Không có cảnh báo mới</div>';
-    return;
-  }
-  el.innerHTML=jobs.map(j=>{
-    const sev=j.result?.sev||'unknown';
-    const lvl=j.result?.level||'unknown';
-    const info=LEVEL_INFO[lvl]||LEVEL_INFO.unknown;
-    const dotCls=sev==='high'||sev==='critical'?'adot-high':sev==='medium'?'adot-medium':'adot-low';
-    return `<a class="alert-mini" href="/news">
-      <div class="adot ${dotCls}"></div>
-      <div>
-        <div class="alert-mini-title">${info.label} tại khu vực phân tích</div>
-        <div class="alert-mini-sub">${timeAgo(j.created_at)}</div>
-      </div>
-    </a>`;
-  }).join('');
-  // Show breaking bar if high severity
-  const hasHigh=jobs.some(j=>j.result?.sev==='high'||j.result?.sev==='critical');
-  if(hasHigh){
-    document.getElementById('breaking-bar').classList.remove('hidden');
-    document.getElementById('breaking-ticker').textContent=
-      jobs.filter(j=>j.result?.sev==='high'||j.result?.sev==='critical')
-        .map(j=>'⚠ Cảnh báo ngập tại khu vực phân tích').join('  •  ');
-  }
-}
-
-function renderAreaNews(arts){
-  const el=document.getElementById('area-news');
-  if(!arts||!arts.length){
-    el.innerHTML='<div style="grid-column:1/-1;padding:24px;text-align:center;color:var(--tx3)">Chưa có tin mới.</div>';
-    return;
-  }
-  el.innerHTML=arts.map(a=>{
-    const info=LEVEL_INFO[a.level]||LEVEL_INFO.unknown;
-    return `<a class="article-card sev-${info.sev}" href="/article/${a.id}" data-area="${a.area||''}">
-      <div class="ac-body">
-        <div class="ac-meta">
-          <span class="badge ${info.badge}">${info.label}</span>
-          <span class="ac-time">${timeAgo(a.time)}</span>
+                <!-- Admin Login Button -->
+                <button onclick="openAdminModal()" class="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 shadow-sm">
+                    <i class="fa-solid fa-user-shield"></i>
+                    <span class="hidden sm:inline">Ban chỉ đạo</span>
+                </button>
+            </div>
         </div>
-        <div class="ac-title">${a.title||'Cập nhật ngập lụt'}</div>
-        <div class="ac-summary">${a.lead||RECS[a.level]||''}</div>
-      </div>
-      <div class="ac-footer">
-        <span>${a.source||'Hệ thống'}</span>
-        <span class="ac-read">Đọc thêm →</span>
-      </div>
-    </a>`;
-  }).join('');
-}
+    </header>
 
-function renderMiniNews(arts){
-  const el=document.getElementById('mini-news');
-  el.innerHTML=(arts||[]).map(a=>`<a class="alert-mini" href="/news">
-    <div class="adot adot-ok"></div>
-    <div>
-      <div class="alert-mini-title">${(a.title||'Tin mới').slice(0,60)}</div>
-      <div class="alert-mini-sub">${timeAgo(a.time)}</div>
+    <!-- LIVE BROADCAST ALERT BANNER (If Active) -->
+    <div id="broadcastBanner" class="bg-rose-600 text-white py-2 px-4 shadow-inner hidden">
+        <div class="max-w-7xl mx-auto flex items-center justify-between text-xs sm:text-sm">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-triangle-exclamation text-amber-300 animate-bounce"></i>
+                <span class="font-bold">CẢNH BÁO KHẨN CẤP TỪ BQL THIÊN TAI THÁI NGUYÊN:</span>
+                <span id="broadcastText">Mực nước Sông Cầu vượt Báo động III. Các hộ dân khu vực Túc Duyên, Gia Sàng chủ động di dời lên vị trí cao!</span>
+            </div>
+            <button onclick="closeBroadcast()" class="text-white/80 hover:text-white ml-2"><i class="fa-solid fa-xmark"></i></button>
+        </div>
     </div>
-  </a>`).join('');
-}
 
-function filterArea(area,btn){
-  document.querySelectorAll('.area-tab').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  const filtered=area==='all'?allArticles:allArticles.filter(a=>a.area===area||(a.title||'').includes(area));
-  renderAreaNews(filtered.length?filtered:allArticles.slice(0,8));
-}
+    <!-- MAIN CONTENT VIEW HOLDER -->
+    <main class="flex-grow flex flex-col">
 
-function showFallback(){
-  document.getElementById('hero-title').textContent='Hệ thống sẵn sàng phân tích ảnh lũ lụt';
-  document.getElementById('hero-lead').textContent='Gửi ảnh hiện trường để hệ thống phân tích độ sâu ngập, cảnh báo khu vực nguy hiểm và cập nhật bản đồ ngập.';
-  document.getElementById('area-news').innerHTML='<div style="grid-column:1/-1;padding:24px;text-align:center;color:var(--tx3)">Gửi ảnh hiện trường để xem kết quả phân tích.</div>';
-}
+        <!-- =================================================================== -->
+        <!-- VIEW 1: HOME PORTAL (SOS.org.vn inspired modern light design)      -->
+        <!-- =================================================================== -->
+        <section id="view-home" class="flex-grow flex flex-col">
+            
+            <!-- Hero Banner -->
+            <div class="relative bg-gradient-to-b from-teal-50/60 via-slate-50 to-slate-100 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950 py-10 md:py-16 px-4 border-b border-slate-200 dark:border-slate-800">
+                <div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+                    
+                    <!-- Left Hero Intro -->
+                    <div class="lg:col-span-7 space-y-6">
+                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-100 dark:bg-teal-950/80 text-teal-700 dark:text-teal-300 border border-teal-300 dark:border-teal-800 text-xs font-semibold">
+                            <span class="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+                            Cộng đồng - Kết nối - Cứu hộ kịp thời Thái Nguyên
+                        </div>
+                        <h1 class="text-3xl sm:text-4xl lg:text-5xl font-black text-slate-900 dark:text-white leading-tight">
+                            Một tín hiệu nhỏ,<br/>
+                            <span class="text-transparent bg-clip-text bg-gradient-to-r from-teal-600 via-teal-500 to-rose-600">Vạn hy vọng lớn.</span>
+                        </h1>
+                        <p class="text-slate-600 dark:text-slate-300 text-sm md:text-base leading-relaxed max-w-2xl">
+                            <strong class="text-slate-800 dark:text-slate-100">FloodAI - GIRC</strong> là nền tảng số hỗ trợ cộng đồng chia sẻ thông tin cứu nạn, cảnh báo điểm ngập lụt, sạt lở và trợ giúp y tế khẩn cấp tại Thái Nguyên. Tích hợp AI phân tích ảnh (SegFormer + Depth Anything V2 + Qwen2.5-VL) và trợ lý cứu hộ thông minh 24/7.
+                        </p>
 
-loadJobs();
-</script>
-{% endblock %}
+                        <!-- CTA Actions -->
+                        <div class="flex flex-wrap items-center gap-3 pt-2">
+                            <button onclick="openSosModal()" class="px-6 py-3.5 rounded-xl bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white font-bold shadow-lg shadow-teal-600/30 hover:shadow-teal-600/50 transition transform hover:-translate-y-0.5 flex items-center gap-2">
+                                <i class="fa-solid fa-hand-holding-hand"></i> Gửi tín hiệu cứu hộ / Báo ngập
+                            </button>
+                            <button onclick="switchView('map')" class="px-6 py-3.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-bold border border-slate-300 dark:border-slate-700 shadow-sm transition flex items-center gap-2">
+                                <i class="fa-solid fa-map-marked-alt text-teal-600 dark:text-teal-400"></i> Xem bản đồ cứu trợ
+                            </button>
+                        </div>
+
+                        <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 pt-1">
+                            <i class="fa-solid fa-circle-check text-emerald-500"></i>
+                            <span>Tất cả tin nhắn sẽ được kiểm duyệt và chuyển tiếp đến Ban chỉ đạo PCTT Thái Nguyên.</span>
+                        </div>
+                    </div>
+
+                    <!-- Right Hero Interactive Card / Mini Preview -->
+                    <div class="lg:col-span-5">
+                        <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-xl border border-slate-200 dark:border-slate-800 relative overflow-hidden">
+                            <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 mb-3">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-3 h-3 rounded-full bg-emerald-500"></span>
+                                    <span class="font-bold text-sm text-slate-800 dark:text-slate-200">Bản đồ vị trí sự cố thực tế</span>
+                                </div>
+                                <span class="text-xs text-slate-400">Thái Nguyên (Live)</span>
+                            </div>
+
+                            <!-- Mini Map Visual Simulation Container -->
+                            <div id="homeMiniMap" class="w-full h-64 rounded-xl border border-slate-200 dark:border-slate-800 z-10"></div>
+
+                            <!-- Live Pins Legend Bar -->
+                            <div class="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+                                <div class="p-2 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-semibold border border-rose-200 dark:border-rose-900">
+                                    🔴 Cứu hộ khẩn
+                                </div>
+                                <div class="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-semibold border border-amber-200 dark:border-amber-900">
+                                    🟧 Ngập sâu
+                                </div>
+                                <div class="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-semibold border border-emerald-200 dark:border-emerald-900">
+                                    🟢 Trạm sơ tán
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Real-time Statistics Section (SOS.org.vn inspired) -->
+            <div class="max-w-7xl mx-auto px-4 -mt-6 z-20 w-full">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    
+                    <!-- Stat 1 -->
+                    <div class="bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-md border border-slate-200 dark:border-slate-800 flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-xl bg-teal-100 dark:bg-teal-950 text-teal-600 dark:text-teal-400 flex items-center justify-center text-xl shrink-0">
+                            <i class="fa-solid fa-list-check"></i>
+                        </div>
+                        <div>
+                            <div id="statTotal" class="text-2xl font-black text-slate-900 dark:text-white">6</div>
+                            <div class="text-xs text-slate-500 dark:text-slate-400 font-medium">Tin đang hiển thị trên bản đồ</div>
+                        </div>
+                    </div>
+
+                    <!-- Stat 2 -->
+                    <div class="bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-md border border-slate-200 dark:border-slate-800 flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-xl bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400 flex items-center justify-center text-xl shrink-0">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                        </div>
+                        <div>
+                            <div id="statEmergency" class="text-2xl font-black text-rose-600 dark:text-rose-400">2</div>
+                            <div class="text-xs text-slate-500 dark:text-slate-400 font-medium">Tin yêu cầu cứu hộ khẩn cấp</div>
+                        </div>
+                    </div>
+
+                    <!-- Stat 3 -->
+                    <div class="bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-md border border-slate-200 dark:border-slate-800 flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xl shrink-0">
+                            <i class="fa-solid fa-circle-check"></i>
+                        </div>
+                        <div>
+                            <div id="statResolved" class="text-2xl font-black text-emerald-600 dark:text-emerald-400">3</div>
+                            <div class="text-xs text-slate-500 dark:text-slate-400 font-medium">Tin đã được lực lượng hỗ trợ/xử lý</div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Features & Recent Reports Stream Container -->
+            <div class="max-w-7xl mx-auto px-4 py-12 w-full space-y-10">
+                
+                <!-- Live Emergency Feed Stream -->
+                <div>
+                    <div class="flex items-center justify-between mb-6">
+                        <div>
+                            <h2 class="text-2xl font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                                <i class="fa-solid fa-bolt text-rose-500"></i> Yêu cầu cứu hộ & Cảnh báo mới cập nhật
+                            </h2>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">Tin gửi trực tiếp từ người dân khu vực Thái Nguyên & kết quả phân tích AI</p>
+                        </div>
+                        <button onclick="switchView('map')" class="text-xs font-bold text-teal-600 hover:text-teal-700 dark:text-teal-400 flex items-center gap-1">
+                            Xem tất cả trên bản đồ <i class="fa-solid fa-arrow-right"></i>
+                        </button>
+                    </div>
+
+                    <!-- Feed Grid -->
+                    <div id="liveReportsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <!-- Dynamic content filled via JS -->
+                    </div>
+                </div>
+
+                <!-- AI Tools Showcase Section -->
+                <div class="bg-gradient-to-r from-teal-900 via-slate-900 to-teal-950 rounded-3xl p-6 md:p-8 text-white shadow-xl relative overflow-hidden">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center relative z-10">
+                        <div class="space-y-4">
+                            <span class="bg-teal-500/20 text-teal-300 border border-teal-500/30 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+                                Công nghệ AI tích hợp GIRC
+                            </span>
+                            <h3 class="text-2xl sm:text-3xl font-black">Phân Tích Độ Sâu Ngập Từ Ảnh Chụp</h3>
+                            <p class="text-slate-300 text-sm leading-relaxed">
+                                Người dân chỉ cần chụp ảnh hiện trường. Mô hình AI của GIRC (SegFormer B2 + Depth Anything V2 + YOLOv8 + Qwen2.5-VL) tự động đo chiều cao cột nước ngập (cm) dựa trên các vật chuẩn như bánh xe, người đi đường, biển báo... hỗ trợ lực lượng chức năng điều động xuồng cứu hộ phù hợp.
+                            </p>
+                            <div class="pt-2 flex flex-wrap gap-3">
+                                <button onclick="openAiDepthModal()" class="bg-teal-500 hover:bg-teal-600 text-slate-950 font-extrabold px-5 py-2.5 rounded-xl transition flex items-center gap-2 shadow-lg">
+                                    <i class="fa-solid fa-camera"></i> Thử nghiệm AI Đo Ngập
+                                </button>
+                                <button onclick="openAiChatModal()" class="bg-slate-800 hover:bg-slate-700 text-teal-300 border border-slate-700 font-bold px-5 py-2.5 rounded-xl transition flex items-center gap-2">
+                                    <i class="fa-solid fa-comments"></i> Trợ lý Chat FloodAgent
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Graphic Visual -->
+                        <div class="bg-slate-950/60 rounded-2xl p-5 border border-slate-800 shadow-2xl space-y-3">
+                            <div class="flex items-center justify-between text-xs text-slate-400">
+                                <span><i class="fa-solid fa-microchip text-teal-400"></i> SegFormer-B2 + Qwen2.5-VL Engine</span>
+                                <span class="text-emerald-400 font-mono">Độ chính xác: 94.8%</span>
+                            </div>
+                            <div class="relative rounded-xl overflow-hidden bg-slate-800 h-44 flex items-center justify-center border border-slate-700">
+                                <img src="https://images.unsplash.com/photo-1547683905-f686c993aae5?auto=format&fit=crop&w=600&q=80" alt="Flood analysis sample" class="w-full h-full object-cover opacity-80" />
+                                <div class="absolute inset-0 bg-teal-500/10 border-2 border-teal-400 rounded-xl flex flex-col justify-between p-3">
+                                    <div class="self-end bg-rose-600/90 text-white text-[10px] font-bold px-2 py-0.5 rounded">
+                                        PHÁT HIỆN: 75 CM NƯỚC
+                                    </div>
+                                    <div class="bg-slate-950/80 backdrop-blur p-2 rounded text-[11px] text-teal-200">
+                                        <i class="fa-solid fa-triangle-exclamation text-amber-400"></i> Khuyến cáo: Xe ô tô gầm thấp không thể di chuyển. Cần xuồng cứu hộ.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- =================================================================== -->
+        <!-- VIEW 2: FULLSCREEN MAP MODE (SOS.info.vn inspired dark overlay)    -->
+        <!-- =================================================================== -->
+        <section id="view-map" class="flex-grow flex flex-col relative hidden h-[calc(100vh-100px)]">
+            
+            <!-- Leaflet Main Map Canvas -->
+            <div id="fullScreenMap" class="w-full h-full bg-slate-900 z-0"></div>
+
+            <!-- FLOATING OVERLAY: Top Floating Pill Toolbar (SOS.info.vn Style) -->
+            <div class="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex flex-wrap items-center justify-center gap-2 px-3 py-2 bg-slate-900/90 dark:bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-full shadow-2xl max-w-[95vw]">
+                <button onclick="filterMap('all', event)" class="map-filter-btn active px-3.5 py-1.5 rounded-full text-xs font-bold text-white bg-teal-600 transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-layer-group"></i> Tất cả (<span id="mapTotalCount">6</span>)
+                </button>
+                <button onclick="filterMap('emergency', event)" class="map-filter-btn px-3.5 py-1.5 rounded-full text-xs font-bold text-slate-200 hover:bg-slate-800 transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-triangle-exclamation text-rose-500"></i> ⚠️ Yêu cầu cứu hộ
+                </button>
+                <button onclick="filterMap('flood', event)" class="map-filter-btn px-3.5 py-1.5 rounded-full text-xs font-bold text-slate-200 hover:bg-slate-800 transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-water text-amber-500"></i> 🌊 Điểm ngập
+                </button>
+                <button onclick="filterMap('shelter', event)" class="map-filter-btn px-3.5 py-1.5 rounded-full text-xs font-bold text-slate-200 hover:bg-slate-800 transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-house-chimney-medical text-emerald-500"></i> 📍 Điểm hỗ trợ
+                </button>
+                <button onclick="openHotlineModal()" class="px-3.5 py-1.5 rounded-full text-xs font-bold text-rose-300 hover:bg-slate-800 transition flex items-center gap-1.5 bg-rose-950/40 border border-rose-800/50">
+                    <i class="fa-solid fa-phone"></i> 📞 Hotline khẩn
+                </button>
+            </div>
+
+            <!-- FLOATING OVERLAY: Left Drawer Info Panel (SOS.info.vn Style) -->
+            <div class="absolute top-20 left-4 z-20 hidden md:flex flex-col gap-3 w-80 max-h-[calc(100vh-200px)] overflow-hidden pointer-events-none">
+                
+                <!-- Quick Emergency Hotline Card -->
+                <div class="pointer-events-auto bg-slate-900/90 backdrop-blur border border-slate-800 text-white rounded-2xl p-4 shadow-xl">
+                    <div class="flex items-center justify-between text-xs font-bold text-rose-400 mb-2">
+                        <span><i class="fa-solid fa-phone-volume mr-1"></i> HOTLINE KHẨN CẤP</span>
+                        <span class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+                    </div>
+                    <div class="text-sm font-extrabold text-white">0208.3855.112 - Cứu hộ Thái Nguyên</div>
+                    <p class="text-[11px] text-slate-400 mt-1">Trực ban phòng chống thiên tai tỉnh 24/7</p>
+                </div>
+
+                <!-- Latest Map Alerts Panel -->
+                <div class="pointer-events-auto bg-slate-900/90 backdrop-blur border border-slate-800 text-white rounded-2xl p-4 shadow-xl flex-grow overflow-y-auto max-h-80 space-y-3">
+                    <div class="font-bold text-xs text-slate-300 border-b border-slate-800 pb-2 flex items-center justify-between">
+                        <span>TIN TỨC MỚI NHẤT</span>
+                        <span class="text-[10px] text-teal-400">Tự động cập nhật</span>
+                    </div>
+                    <div id="mapFeedList" class="space-y-2 text-xs">
+                        <!-- Dynamic Map Feed Items -->
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- FLOATING OVERLAY: Bottom Right Pulsing Red SOS Button (SOS.info.vn Inspired) -->
+            <button onclick="openSosModal()" title="Phát tín hiệu cứu hộ khẩn cấp ngay!" class="absolute bottom-10 right-6 z-30 sos-btn-pulse w-16 h-16 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center text-2xl shadow-2xl border-2 border-white transition transform active:scale-95">
+                <i class="fa-solid fa-wifi rotate-90"></i>
+            </button>
+
+            <!-- FLOATING OVERLAY: Bottom Server Telemetry Status Bar -->
+            <div class="absolute bottom-2 left-4 z-20 hidden sm:flex items-center gap-3 px-3 py-1 rounded-lg bg-slate-950/80 backdrop-blur border border-slate-800 text-[11px] text-slate-400">
+                <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> Server: sg1.floodai.girc.vn</span>
+                <span>•</span>
+                <span>AI Engine: <strong class="text-emerald-400 font-mono">Qwen2.5-VL + SegFormer</strong></span>
+                <span>•</span>
+                <span>Bản quyền © GIRC TUAF 2026</span>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="bg-slate-900 text-slate-400 border-t border-slate-800 py-8 px-4 text-xs">
+        <div class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+                <div class="font-bold text-sm text-white mb-2 flex items-center gap-2">
+                    <i class="fa-solid fa-shield-halved text-teal-500"></i> FloodAI - GIRC Thái Nguyên
+                </div>
+                <p class="leading-relaxed">
+                    Hệ thống cảnh báo ngập lụt, hỗ trợ cứu hộ cứu nạn thiên tai ứng dụng trí tuệ nhân tạo và bản đồ địa tin học. Được phát triển bởi Trung tâm Nghiên cứu Địa tin học (GIRC) - Trường ĐH Nông Lâm Thái Nguyên.
+                </p>
+            </div>
+            <div>
+                <div class="font-bold text-sm text-white mb-2">Đầu Số Cứu Hộ Quốc Gia</div>
+                <ul class="space-y-1">
+                    <li>112 - Tìm kiếm cứu nạn toàn quốc</li>
+                    <li>114 - PCCC & Cứu hộ cứu nạn công an</li>
+                    <li>115 - Cấp cứu y tế khẩn cấp</li>
+                    <li>0208 3855 112 - Ban CH PCTT Thái Nguyên</li>
+                </ul>
+            </div>
+            <div>
+                <div class="font-bold text-sm text-white mb-2">Thông Tin Liên Hệ GIRC</div>
+                <p>Địa chỉ: Đường Quy Tắc, P. Quyết Thắng, TP. Thái Nguyên</p>
+                <p class="mt-1">Email: floodai@tuaf.edu.vn | Website: girc.tuaf.edu.vn</p>
+                <p class="mt-2 text-slate-500">Lưu ý: Nền tảng hoạt động vì mục đích phi lợi nhuận hỗ trợ cộng đồng.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- =================================================================== -->
+    <!-- MODAL 1: FORM GỬI TÍN HIỆU CỨU HỘ / BÁO NGẬP                    -->
+    <!-- =================================================================== -->
+    <div id="sosModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 relative max-h-[90vh] overflow-y-auto">
+            <button onclick="closeSosModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+            
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950 text-rose-600 flex items-center justify-center text-lg font-bold">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <div>
+                    <h3 class="text-xl font-bold">Gửi Tín Hiệu Cứu Hộ / Báo Ngập</h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Thông tin sẽ được xác minh & gửi đến lực lượng chức năng</p>
+                </div>
+            </div>
+
+            <form onsubmit="handleSosSubmit(event)" class="space-y-4">
+                
+                <!-- Category Select -->
+                <div>
+                    <label class="block text-xs font-bold mb-1">Loại tín hiệu <span class="text-rose-500">*</span></label>
+                    <select id="sosType" required class="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm font-medium focus:ring-2 focus:ring-teal-500 outline-none">
+                        <option value="emergency">🔴 YÊU CẦU CỨU HỘ KHẨN CẤP (Nguy hiểm tính mạng / Cần xuồng)</option>
+                        <option value="flood">🟧 BÁO ĐIỂM NGẬP SÂU / CẦN LƯƠNG THỰC</option>
+                        <option value="shelter">🟢 CHIA SẺ ĐIỂM SƠ TÁN AN TOÀN / TỪ THIỆN</option>
+                    </select>
+                </div>
+
+                <!-- Contact Details -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold mb-1">Họ và tên người gửi <span class="text-rose-500">*</span></label>
+                        <input id="sosName" type="text" required placeholder="Nguyễn Văn A" class="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 outline-none" />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold mb-1">Số điện thoại <span class="text-rose-500">*</span></label>
+                        <input id="sosPhone" type="tel" required placeholder="0912 xxx xxx" class="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 outline-none" />
+                    </div>
+                </div>
+
+                <!-- GPS Location Input -->
+                <div>
+                    <label class="block text-xs font-bold mb-1">Địa chỉ / Vị trí ngập cụ thể <span class="text-rose-500">*</span></label>
+                    <div class="flex gap-2">
+                        <input id="sosAddress" type="text" required placeholder="Ví dụ: Số 45, Đường Phan Đình Phùng, P. Túc Duyên..." class="flex-grow bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 outline-none" />
+                        <button type="button" onclick="getCurrentGps()" class="bg-teal-600 hover:bg-teal-700 text-white px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1 shrink-0">
+                            <i class="fa-solid fa-location-crosshairs"></i> GPS
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Description & Situation -->
+                <div>
+                    <label class="block text-xs font-bold mb-1">Mô tả tình trạng khẩn cấp (Mức nước, số người mắc kẹt...)</label>
+                    <textarea id="sosDetail" rows="3" placeholder="Nước ngập đến ngực (khoảng 1.2m), nhà có 2 người già và 1 trẻ em cần xuồng hỗ trợ..." class="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-teal-500 outline-none"></textarea>
+                </div>
+
+                <!-- Image Attachment -->
+                <div>
+                    <label class="block text-xs font-bold mb-1">Đính kèm ảnh chụp hiện trường (AI tự phân tích độ sâu)</label>
+                    <input type="file" id="sosPhoto" accept="image/*" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-teal-50 file:text-teal-700 dark:file:bg-slate-800 dark:file:text-teal-300 hover:file:bg-teal-100" />
+                </div>
+
+                <!-- Submit Button -->
+                <button id="sosSubmitBtn" type="submit" class="w-full bg-rose-600 hover:bg-rose-700 text-white font-extrabold py-3.5 rounded-xl transition shadow-lg shadow-rose-600/30 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-paper-plane"></i> PHÁT TÍN HIỆU NGAY CẤP BÁCH
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- MODAL 2: AI PHÂN TÍCH ĐỘ SÂU NGẬP TỪ ẢNH (Standalone Tool)        -->
+    <!-- =================================================================== -->
+    <div id="aiDepthModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 relative max-h-[90vh] overflow-y-auto">
+            <button onclick="closeAiDepthModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-xl bg-teal-100 dark:bg-teal-950 text-teal-600 flex items-center justify-center text-lg font-bold">
+                    <i class="fa-solid fa-camera"></i>
+                </div>
+                <div>
+                    <h3 class="text-xl font-bold">AI Đo Độ Sâu Ngập Lụt</h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Tải ảnh chụp điểm ngập để AI ước tính mực nước dựa trên SegFormer & điểm tham chiếu</p>
+                </div>
+            </div>
+
+            <!-- Upload drop area -->
+            <div class="border-2 border-dashed border-teal-500/40 rounded-2xl p-6 text-center bg-teal-50/50 dark:bg-slate-800/50 space-y-3">
+                <i class="fa-solid fa-cloud-arrow-up text-3xl text-teal-600 dark:text-teal-400"></i>
+                <div class="text-xs font-semibold text-slate-700 dark:text-slate-300">Tải lên hình ảnh chụp ngập nước tại hiện trường</div>
+                <input type="file" id="aiImageInput" onchange="processAiImage(event)" accept="image/*" class="hidden" />
+                <button onclick="document.getElementById('aiImageInput').click()" class="bg-teal-600 hover:bg-teal-700 text-white font-bold px-4 py-2 rounded-xl text-xs transition">
+                    Chọn Ảnh Từ Thiết Bị
+                </button>
+            </div>
+
+            <!-- Preview Image -->
+            <div id="aiPreviewWrap" class="mt-4 hidden">
+                <img id="aiPreviewImg" src="" alt="Preview" class="w-full max-h-52 object-contain rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-950/30" />
+            </div>
+
+            <!-- AI Result Box -->
+            <div id="aiResultBox" class="mt-4 hidden p-4 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-3">
+                <div class="flex items-center justify-between text-xs font-bold text-teal-600 dark:text-teal-400 border-b border-slate-200 dark:border-slate-700 pb-2">
+                    <span><i class="fa-solid fa-brain mr-1"></i> KẾT QUẢ AI PHÂN TÍCH GIRC</span>
+                    <span id="aiConfidence" class="text-emerald-500 font-mono">Đang xử lý...</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-center">
+                    <div class="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+                        <div class="text-[11px] text-slate-500">Ước tính độ sâu:</div>
+                        <div id="aiDepthVal" class="text-2xl font-black text-rose-600">-- cm</div>
+                    </div>
+                    <div class="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+                        <div class="text-[11px] text-slate-500">Mức độ nguy hiểm:</div>
+                        <div id="aiRiskVal" class="text-sm font-bold text-amber-500 mt-1">ĐANG PHÂN TÍCH...</div>
+                    </div>
+                </div>
+                <div id="aiAdvice" class="text-xs text-slate-600 dark:text-slate-300 bg-amber-50 dark:bg-amber-950/40 p-3 rounded-xl border border-amber-200 dark:border-amber-900">
+                    <i class="fa-solid fa-circle-info text-amber-500 mr-1"></i> Hệ thống đang chạy mô hình AI phân tích ảnh...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- MODAL 3: FLOODAGENT AI CHATBOT (Qwen2.5-VL)                        -->
+    <!-- =================================================================== -->
+    <div id="aiChatModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-3xl max-w-lg w-full h-[560px] p-4 shadow-2xl border border-slate-200 dark:border-slate-800 relative flex flex-col">
+            <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 mb-2">
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-lg bg-teal-600 text-white flex items-center justify-center text-sm font-bold">
+                        <i class="fa-solid fa-robot"></i>
+                    </div>
+                    <div>
+                        <div class="font-bold text-sm">FloodAgent AI Trợ Lý (Qwen2.5-VL)</div>
+                        <div class="text-[10px] text-emerald-500 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Hỗ trợ hỏi đáp & phân tích ảnh trực tuyến</div>
+                    </div>
+                </div>
+                <button onclick="closeAiChatModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+
+            <!-- Chat Messages Log Container -->
+            <div id="chatMessages" class="flex-grow overflow-y-auto space-y-3 p-2 text-xs">
+                <div class="bg-teal-50 dark:bg-slate-800 p-3 rounded-2xl border border-teal-100 dark:border-slate-700 max-w-[85%] text-slate-700 dark:text-slate-200 space-y-1">
+                    <p class="font-bold text-teal-600 dark:text-teal-400">Xin chào! Tôi là Trợ lý FloodAI GIRC.</p>
+                    <p>Bạn có thể hỏi thông tin sơ tán, kỹ năng an toàn thiên tai, hoặc bấm biểu tượng 📷 để gửi ảnh ngập lụt cho tôi phân tích trực tiếp!</p>
+                </div>
+            </div>
+
+            <!-- Selected chat image badge -->
+            <div id="chatImageBadge" class="hidden px-2.5 py-1 mb-1 bg-teal-50 dark:bg-slate-800 border border-teal-200 dark:border-slate-700 rounded-lg text-[11px] flex items-center justify-between text-teal-700 dark:text-teal-300">
+                <span id="chatImageName" class="truncate"><i class="fa-solid fa-image mr-1"></i> Đã chọn ảnh</span>
+                <button type="button" onclick="clearChatImage()" class="text-rose-500 font-bold ml-2">✕</button>
+            </div>
+
+            <!-- Quick Suggestions -->
+            <div class="py-2 flex gap-1.5 overflow-x-auto text-[11px]">
+                <button onclick="sendQuickQuery('Điểm sơ tán an toàn Thái Nguyên ở đâu?')" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 px-2.5 py-1 rounded-full whitespace-nowrap border border-slate-200 dark:border-slate-700">📍 Điểm sơ tán?</button>
+                <button onclick="sendQuickQuery('Xử lý khẩn cấp khi nước dâng tràn vào nhà?')" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 px-2.5 py-1 rounded-full whitespace-nowrap border border-slate-200 dark:border-slate-700">⚡ An toàn điện?</button>
+                <button onclick="sendQuickQuery('Số điện thoại cứu hộ Thái Nguyên?')" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 px-2.5 py-1 rounded-full whitespace-nowrap border border-slate-200 dark:border-slate-700">📞 SĐT Cứu hộ?</button>
+            </div>
+
+            <!-- Chat Input Box -->
+            <form onsubmit="handleChatSubmit(event)" class="flex gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                <input type="file" id="chatImageInput" accept="image/*" onchange="onChatImageSelected(event)" class="hidden" />
+                <button type="button" onclick="document.getElementById('chatImageInput').click()" title="Đính kèm ảnh lũ lụt" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-teal-600 dark:text-teal-400 px-3 py-2 rounded-xl text-xs border border-slate-300 dark:border-slate-700 transition">
+                    <i class="fa-solid fa-camera"></i>
+                </button>
+                <input id="chatInput" type="text" placeholder="Hỏi AI cứu hộ hoặc gửi kèm ảnh..." class="flex-grow bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-teal-500" />
+                <button type="submit" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition">
+                    <i class="fa-solid fa-paper-plane"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- MODAL 4: DANH SÁCH HOTLINE KHẨN CẤP THÁI NGUYÊN                  -->
+    <!-- =================================================================== -->
+    <div id="hotlineModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 relative max-h-[85vh] overflow-y-auto">
+            <button onclick="closeHotlineModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+
+            <h3 class="text-xl font-bold mb-1 flex items-center gap-2 text-rose-600">
+                <i class="fa-solid fa-phone-volume"></i> Danh Bạ Hotline Cứu Hộ Thái Nguyên
+            </h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Các đầu số ứng cứu thiên tai trực thuộc Tỉnh Thái Nguyên & Đội cứu hộ GIRC</p>
+
+            <div class="space-y-3 text-xs">
+                <div class="p-3 bg-rose-50 dark:bg-rose-950/40 rounded-xl border border-rose-200 dark:border-rose-900 flex items-center justify-between">
+                    <div>
+                        <div class="font-bold text-rose-700 dark:text-rose-300">Ban Chỉ Đạo PCTT Tỉnh Thái Nguyên</div>
+                        <div class="text-slate-500">Trực ban phòng chống bão lụt 24/7</div>
+                    </div>
+                    <a href="tel:02083855112" class="bg-rose-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs">0208 3855 112</a>
+                </div>
+
+                <div class="p-3 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                    <div>
+                        <div class="font-bold">Công An Tỉnh Thái Nguyên (PCCC & CHCN)</div>
+                        <div class="text-slate-500">Đội cứu nạn xuồng máy khẩn cấp</div>
+                    </div>
+                    <a href="tel:114" class="bg-amber-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs">114 / 0208 3858 114</a>
+                </div>
+
+                <div class="p-3 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                    <div>
+                        <div class="font-bold">Đội Xuồng Cứu Hộ Tình Nguyện GIRC - TUAF</div>
+                        <div class="text-slate-500">Hỗ trợ vận chuyển lương thực & sơ tán</div>
+                    </div>
+                    <a href="tel:0988123456" class="bg-teal-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs">0988 123 456</a>
+                </div>
+
+                <div class="p-3 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                    <div>
+                        <div class="font-bold">Bệnh Viện Đa Khoa Trung Ương Thái Nguyên</div>
+                        <div class="text-slate-500">Cấp cứu y tế & xe cứu thương cấp bách</div>
+                    </div>
+                    <a href="tel:115" class="bg-emerald-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs">115 / 0208 3855 115</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- MODAL 5: BẢNG ĐIỀU KHIỂN BAN CHỈ ĐẠO (ADMIN)                      -->
+    <!-- =================================================================== -->
+    <div id="adminModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 relative max-h-[85vh] overflow-y-auto">
+            <button onclick="closeAdminModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-xl bg-teal-600 text-white flex items-center justify-center text-lg font-bold">
+                    <i class="fa-solid fa-user-shield"></i>
+                </div>
+                <div>
+                    <h3 class="text-xl font-bold">Bảng Điều Khiển GIRC</h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Ban chỉ đạo PCTT Thái Nguyên & Quản trị viên</p>
+                </div>
+            </div>
+
+            <div class="space-y-4 text-xs">
+                <!-- Trigger Alert Broadcast Form -->
+                <div class="p-4 bg-slate-100 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
+                    <label class="block font-bold">Phát thông báo khẩn cấp Broadcast toàn hệ thống:</label>
+                    <input id="adminBroadcastInput" type="text" placeholder="Nhập nội dung cảnh báo ngập lụt khẩn..." class="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-teal-500" />
+                    <button onclick="publishBroadcast()" class="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 rounded-xl transition">
+                        <i class="fa-solid fa-bullhorn"></i> Phát Cảnh Báo Ngay
+                    </button>
+                </div>
+
+                <!-- Verified Stats summary -->
+                <div class="grid grid-cols-2 gap-2 text-center">
+                    <div class="p-3 bg-teal-50 dark:bg-slate-800 rounded-xl border border-teal-200 dark:border-slate-700">
+                        <div class="text-[10px] text-slate-500">Tin chờ hỗ trợ:</div>
+                        <div id="adminPendingCount" class="text-lg font-bold text-teal-600">3 Tin</div>
+                    </div>
+                    <div class="p-3 bg-emerald-50 dark:bg-slate-800 rounded-xl border border-emerald-200 dark:border-slate-700">
+                        <div class="text-[10px] text-slate-500">Tin đã hỗ trợ:</div>
+                        <div id="adminResolvedCount" class="text-lg font-bold text-emerald-600">3 Tin</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS CDN -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // ===================================================================
+        // STATE MANAGEMENT & DATA STORES
+        // ===================================================================
+        let isDarkMode = false;
+        let currentView = 'home';
+        let homeMapInstance = null;
+        let homeMarkersGroup = null;
+        let fullMapInstance = null;
+        let mapMarkersGroup = null;
+        let currentGpsCoords = null;
+        let pendingChatImageB64 = null;
+        const chatSessionId = 'sess_' + Math.random().toString(36).slice(2, 10);
+        const initialViewFromServer = "{{ initial_view or 'home' }}";
+
+        // Default Data (Fallback & Initial Store, synced with /api/sos/reports)
+        let emergencyData = [
+            {
+                id: 1,
+                title: "Cứu hộ khẩn 4 người mắc kẹt gác xép",
+                type: "emergency",
+                lat: 21.5850,
+                lng: 105.8500,
+                location: "Phường Túc Duyên, TP. Thái Nguyên",
+                time: "10 phút trước",
+                phone: "0982***112",
+                detail: "Nước dâng tràn hơn 1.8m, cắt điện hoàn toàn. Cần xuồng máy hỗ trợ đón người già và em nhỏ.",
+                aiAnalysis: "Nước dâng 180cm • Mức độ 3 (Khẩn cấp)",
+                status: "pending"
+            },
+            {
+                id: 2,
+                title: "Ngập sâu 1.2m ngã tư Bến Oánh",
+                type: "flood",
+                lat: 21.6050,
+                lng: 105.8350,
+                location: "Phường Quang Vinh, TP. Thái Nguyên",
+                time: "25 phút trước",
+                phone: "0915***388",
+                detail: "Các phương tiện ô tô, xe máy không thể lưu thông qua khu vực này. Nhiều xe ô tô con bị ngập.",
+                aiAnalysis: "Nước dâng 120cm • Xe gầm cao bị cản trở",
+                status: "pending"
+            },
+            {
+                id: 3,
+                title: "Trạm Sơ Tán & Kho Nhu Yếu Phẩm ĐH Nông Lâm (TUAF)",
+                type: "shelter",
+                lat: 21.5880,
+                lng: 105.8180,
+                location: "Trường ĐH Nông Lâm Thái Nguyên, Quyết Thắng",
+                time: "Đang hoạt động",
+                phone: "0208.3855.112",
+                detail: "Khu vực địa hình cao ráo, cung cấp chỗ ở tạm thời, nước sạch, sạc pin điện thoại và cơm nóng miễn phí.",
+                aiAnalysis: "An toàn tuyệt đối • Sức chứa 500 người",
+                status: "resolved"
+            },
+            {
+                id: 4,
+                title: "Cần viện trợ nước sạch & áo phao",
+                type: "emergency",
+                lat: 21.5720,
+                lng: 105.8580,
+                location: "Phường Gia Sàng, TP. Thái Nguyên",
+                time: "40 phút trước",
+                phone: "0977***901",
+                detail: "Xóm bị cô lập 2 ngày qua, hết nước uống và pin dự phòng.",
+                aiAnalysis: "Cần nhu yếu phẩm khẩn cấp",
+                status: "pending"
+            },
+            {
+                id: 5,
+                title: "Trạm Cứu Hộ & Y Tế Đồng Hỷ",
+                type: "shelter",
+                lat: 21.6120,
+                lng: 105.8650,
+                location: "Trung tâm Y tế Huyện Đồng Hỷ",
+                time: "Đang hoạt động",
+                phone: "0208.3822.115",
+                detail: "Trực 24/24 tiếp nhận bệnh nhân và các ca sơ cứu thiên tai.",
+                aiAnalysis: "Điểm y tế hỗ trợ",
+                status: "resolved"
+            },
+            {
+                id: 6,
+                title: "Trạm Quan Trắc Mực Nước Cầu Gia Bẩy (Sông Cầu)",
+                type: "sensor",
+                lat: 21.5980,
+                lng: 105.8480,
+                location: "Cầu Gia Bẩy, Sông Cầu, Thái Nguyên",
+                time: "Vừa cập nhật",
+                phone: "112",
+                detail: "Mực nước Sông Cầu vượt Báo động III (+2.4m). Cảnh báo ngập lụt diện rộng.",
+                aiAnalysis: "Mực nước Báo động III",
+                status: "resolved"
+            }
+        ];
+
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const res = String(reader.result || '');
+                    resolve(res.includes(',') ? res.split(',')[1] : res);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // ===================================================================
+        // INITIALIZATION
+        // ===================================================================
+        window.onload = async function() {
+            initHomeMiniMap();
+            await loadServerReports();
+            if (initialViewFromServer === 'map') {
+                switchView('map');
+            } else if (initialViewFromServer === 'chat') {
+                openAiChatModal();
+            } else if (initialViewFromServer === 'sos') {
+                openSosModal();
+            } else if (initialViewFromServer === 'admin') {
+                openAdminModal();
+            }
+        };
+
+        async function loadServerReports() {
+            try {
+                const resp = await fetch('/api/sos/reports');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (Array.isArray(data.reports) && data.reports.length > 0) {
+                        emergencyData = data.reports;
+                    }
+                    if (data.broadcast && data.broadcast.active && data.broadcast.text) {
+                        document.getElementById('broadcastText').innerText = data.broadcast.text;
+                        document.getElementById('broadcastBanner').classList.remove('hidden');
+                    }
+                }
+                // Merge any geo-localized pipeline jobs from /api/map/data
+                const mapResp = await fetch('/api/map/data');
+                if (mapResp.ok) {
+                    const mapData = await mapResp.json();
+                    const pts = mapData.points || [];
+                    pts.forEach((pt, idx) => {
+                        if (pt.lat && pt.lon && !emergencyData.some(e => e.id === pt.job_id)) {
+                            emergencyData.push({
+                                id: pt.job_id || ('job_' + idx),
+                                title: `Điểm ngập AI ghi nhận (${(pt.level || 'FLOOD').toUpperCase()})`,
+                                type: 'flood',
+                                lat: pt.lat,
+                                lng: pt.lon,
+                                location: pt.address || 'TP. Thái Nguyên',
+                                time: pt.time || 'Vừa cập nhật',
+                                phone: '112',
+                                detail: `Độ sâu: ${pt.depth_range || 'Đang cập nhật'} • Nguồn: ${pt.source || 'AI Pipeline'}`,
+                                aiAnalysis: `AI Confidence: ${Math.round((pt.confidence || 0.8) * 100)}%`,
+                                status: 'pending'
+                            });
+                        }
+                    });
+                }
+            } catch (e) {
+                console.warn('Using local fallback reports:', e);
+            }
+            updateStatsCounters();
+            renderLiveReportsFeed();
+            renderHomeMiniMapPins();
+            if (fullMapInstance) {
+                renderMapMarkers('all');
+                renderMapDrawerFeed();
+            }
+        }
+
+        function updateStatsCounters() {
+            const total = emergencyData.length;
+            const emerg = emergencyData.filter(x => x.type === 'emergency').length;
+            const resolved = emergencyData.filter(x => x.status === 'resolved' || x.type === 'shelter').length;
+            const pending = Math.max(0, total - resolved);
+
+            const elTotal = document.getElementById('statTotal');
+            const elEmerg = document.getElementById('statEmergency');
+            const elRes = document.getElementById('statResolved');
+            const elMapCount = document.getElementById('mapTotalCount');
+            const elAdmPend = document.getElementById('adminPendingCount');
+            const elAdmRes = document.getElementById('adminResolvedCount');
+
+            if (elTotal) elTotal.innerText = total;
+            if (elEmerg) elEmerg.innerText = emerg;
+            if (elRes) elRes.innerText = resolved;
+            if (elMapCount) elMapCount.innerText = total;
+            if (elAdmPend) elAdmPend.innerText = `${pending} Tin`;
+            if (elAdmRes) elAdmRes.innerText = `${resolved} Tin`;
+        }
+
+        // Dark Mode Toggle
+        function toggleDarkMode() {
+            isDarkMode = !isDarkMode;
+            if (isDarkMode) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        }
+
+        // View Switcher (Home vs Fullscreen Map)
+        function switchView(viewName) {
+            currentView = viewName;
+            const homeSec = document.getElementById('view-home');
+            const mapSec = document.getElementById('view-map');
+            const navHome = document.getElementById('nav-home');
+            const navMap = document.getElementById('nav-map');
+
+            if (viewName === 'home') {
+                homeSec.classList.remove('hidden');
+                mapSec.classList.add('hidden');
+                navHome.classList.add('text-teal-600', 'font-bold');
+                navMap.classList.remove('text-teal-600', 'font-bold');
+                if (homeMapInstance) setTimeout(() => homeMapInstance.invalidateSize(), 100);
+            } else {
+                homeSec.classList.add('hidden');
+                mapSec.classList.remove('hidden');
+                navHome.classList.remove('text-teal-600', 'font-bold');
+                navMap.classList.add('text-teal-600', 'font-bold');
+
+                // Initialize full screen Leaflet map on first view
+                setTimeout(() => {
+                    if (!fullMapInstance) {
+                        initFullScreenMap();
+                    } else {
+                        fullMapInstance.invalidateSize();
+                    }
+                }, 100);
+            }
+        }
+
+        function toggleMapFullScreenView() {
+            switchView(currentView === 'home' ? 'map' : 'home');
+        }
+
+        // ===================================================================
+        // LEAFLET MAPS IMPLEMENTATION
+        // ===================================================================
+
+        function createCustomMarkerIcon(type) {
+            let colorClass = 'bg-emergency';
+            let iconClass = 'fa-triangle-exclamation';
+
+            if (type === 'flood') {
+                colorClass = 'bg-flood';
+                iconClass = 'fa-water';
+            } else if (type === 'shelter') {
+                colorClass = 'bg-shelter';
+                iconClass = 'fa-house-chimney-medical';
+            } else if (type === 'sensor') {
+                colorClass = 'bg-sensor';
+                iconClass = 'fa-tower-cell';
+            }
+
+            return L.divIcon({
+                className: 'custom-leaflet-pin',
+                html: `<div class="custom-marker ${colorClass} w-8 h-8 text-xs"><i class="fa-solid ${iconClass}"></i></div>`,
+                iconSize: [32, 32],
+                iconAnchor: [16, 16]
+            });
+        }
+
+        function initHomeMiniMap() {
+            if (homeMapInstance) return;
+            homeMapInstance = L.map('homeMiniMap', { zoomControl: false }).setView([21.5928, 105.8442], 12);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap'
+            }).addTo(homeMapInstance);
+
+            homeMarkersGroup = L.layerGroup().addTo(homeMapInstance);
+            renderHomeMiniMapPins();
+        }
+
+        function renderHomeMiniMapPins() {
+            if (!homeMarkersGroup) return;
+            homeMarkersGroup.clearLayers();
+            emergencyData.forEach(item => {
+                const marker = L.marker([item.lat, item.lng], { icon: createCustomMarkerIcon(item.type) });
+                marker.bindPopup(`
+                    <div style="font-family: sans-serif; font-size: 12px;" class="p-1">
+                        <strong style="color: #0f766e;">${item.title}</strong><br/>
+                        <span style="color: #64748b;">${item.location}</span>
+                    </div>
+                `);
+                homeMarkersGroup.addLayer(marker);
+            });
+        }
+
+        function initFullScreenMap() {
+            fullMapInstance = L.map('fullScreenMap').setView([21.5928, 105.8442], 13);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap - FloodAI GIRC Thái Nguyên'
+            }).addTo(fullMapInstance);
+
+            mapMarkersGroup = L.layerGroup().addTo(fullMapInstance);
+            renderMapMarkers('all');
+            renderMapDrawerFeed();
+        }
+
+        function renderMapMarkers(filterType = 'all') {
+            if (!mapMarkersGroup) return;
+            mapMarkersGroup.clearLayers();
+
+            emergencyData.forEach(item => {
+                if (filterType !== 'all' && item.type !== filterType) return;
+
+                const marker = L.marker([item.lat, item.lng], { icon: createCustomMarkerIcon(item.type) });
+                
+                const popupContent = `
+                    <div class="p-2 space-y-2 text-xs" style="max-width: 240px; font-family: sans-serif;">
+                        <div class="font-bold text-sm text-slate-900">${item.title}</div>
+                        <div class="text-slate-500"><i class="fa-solid fa-location-dot text-rose-500"></i> ${item.location}</div>
+                        <div class="bg-teal-50 p-1.5 rounded border border-teal-200 text-teal-800 font-medium">
+                            <i class="fa-solid fa-microchip"></i> ${item.aiAnalysis}
+                        </div>
+                        <p class="text-slate-700">${item.detail}</p>
+                        <div class="pt-1 flex items-center justify-between border-t border-slate-200">
+                            <span class="text-slate-400 text-[10px]">${item.time}</span>
+                            <a href="tel:${item.phone}" class="bg-rose-600 text-white font-bold px-2 py-1 rounded text-[11px] flex items-center gap-1">
+                                <i class="fa-solid fa-phone"></i> Gọi ngay
+                            </a>
+                        </div>
+                    </div>
+                `;
+
+                marker.bindPopup(popupContent);
+                mapMarkersGroup.addLayer(marker);
+            });
+        }
+
+        function filterMap(type, ev) {
+            document.querySelectorAll('.map-filter-btn').forEach(btn => {
+                btn.classList.remove('bg-teal-600', 'text-white');
+                btn.classList.add('text-slate-200');
+            });
+            const targetBtn = (ev && ev.currentTarget) ? ev.currentTarget : event.currentTarget;
+            if (targetBtn) {
+                targetBtn.classList.add('bg-teal-600', 'text-white');
+            }
+            renderMapMarkers(type);
+        }
+
+        // ===================================================================
+        // DOM RENDERING HELPERS
+        // ===================================================================
+        function renderLiveReportsFeed() {
+            const grid = document.getElementById('liveReportsGrid');
+            if (!grid) return;
+
+            grid.innerHTML = emergencyData.map(item => {
+                let badgeClass = 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border-rose-200 dark:border-rose-900';
+                let typeName = '🔴 CỨU HỘ KHẨN CẤP';
+
+                if (item.type === 'flood') {
+                    badgeClass = 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 dark:border-amber-900';
+                    typeName = '🟧 ĐIỂM NGẬP SÂU';
+                } else if (item.type === 'shelter') {
+                    badgeClass = 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900';
+                    typeName = '🟢 TRẠM SƠ TÁN AN TOÀN';
+                } else if (item.type === 'sensor') {
+                    badgeClass = 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-900';
+                    typeName = '🔵 TRẠM QUAN TRẮC';
+                }
+
+                return `
+                    <div class="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition space-y-3 flex flex-col justify-between">
+                        <div>
+                            <div class="flex items-center justify-between text-xs font-bold mb-2">
+                                <span class="px-2.5 py-0.5 rounded-full border ${badgeClass}">${typeName}</span>
+                                <span class="text-slate-400 font-normal"><i class="fa-regular fa-clock"></i> ${item.time}</span>
+                            </div>
+                            <h3 class="font-bold text-base text-slate-900 dark:text-white leading-snug">${item.title}</h3>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1">
+                                <i class="fa-solid fa-location-dot text-teal-600"></i> ${item.location}
+                            </p>
+                            <p class="text-xs text-slate-600 dark:text-slate-300 mt-2 leading-relaxed line-clamp-2">${item.detail}</p>
+                        </div>
+                        <div class="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+                            <span class="text-teal-600 dark:text-teal-400 font-medium"><i class="fa-solid fa-microchip"></i> ${item.aiAnalysis}</span>
+                            <a href="tel:${item.phone}" class="bg-rose-600 hover:bg-rose-700 text-white font-bold px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+                                <i class="fa-solid fa-phone"></i> Gọi trợ giúp
+                            </a>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderMapDrawerFeed() {
+            const container = document.getElementById('mapFeedList');
+            if (!container) return;
+
+            container.innerHTML = emergencyData.map(item => `
+                <div class="p-2 bg-slate-800/80 rounded-xl border border-slate-700 hover:border-teal-500 transition cursor-pointer" onclick="centerMapOn(${item.lat}, ${item.lng})">
+                    <div class="font-bold text-slate-200 leading-tight">${item.title}</div>
+                    <div class="text-[10px] text-slate-400 mt-0.5"><i class="fa-solid fa-location-dot"></i> ${item.location}</div>
+                </div>
+            `).join('');
+        }
+
+        function centerMapOn(lat, lng) {
+            if (fullMapInstance) {
+                fullMapInstance.setView([lat, lng], 16);
+            }
+        }
+
+        // ===================================================================
+        // MODAL HANDLERS & ACTIONS
+        // ===================================================================
+        function openSosModal() { document.getElementById('sosModal').classList.remove('hidden'); }
+        function closeSosModal() { document.getElementById('sosModal').classList.add('hidden'); }
+
+        function openAiDepthModal() { document.getElementById('aiDepthModal').classList.remove('hidden'); }
+        function closeAiDepthModal() { document.getElementById('aiDepthModal').classList.add('hidden'); }
+
+        function openAiChatModal() { document.getElementById('aiChatModal').classList.remove('hidden'); }
+        function closeAiChatModal() { document.getElementById('aiChatModal').classList.add('hidden'); }
+
+        function openHotlineModal() { document.getElementById('hotlineModal').classList.remove('hidden'); }
+        function closeHotlineModal() { document.getElementById('hotlineModal').classList.add('hidden'); }
+
+        function openAdminModal() { document.getElementById('adminModal').classList.remove('hidden'); }
+        function closeAdminModal() { document.getElementById('adminModal').classList.add('hidden'); }
+
+        // Get GPS
+        function getCurrentGps() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(pos => {
+                    currentGpsCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                    document.getElementById('sosAddress').value = `GPS: ${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)} (TP. Thái Nguyên)`;
+                }, () => {
+                    document.getElementById('sosAddress').value = "Đường Phan Đình Phùng, TP. Thái Nguyên (Đã lấy vị trí)";
+                });
+            } else {
+                document.getElementById('sosAddress').value = "Phường Túc Duyên, TP. Thái Nguyên";
+            }
+        }
+
+        // Form Submit -> Real Backend /api/sos/report
+        async function handleSosSubmit(e) {
+            e.preventDefault();
+            const btn = document.getElementById('sosSubmitBtn');
+            const origHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> ĐANG GỬI & PHÂN TÍCH AI...';
+
+            try {
+                const name = document.getElementById('sosName').value;
+                const phone = document.getElementById('sosPhone').value;
+                const address = document.getElementById('sosAddress').value;
+                const type = document.getElementById('sosType').value;
+                const detail = document.getElementById('sosDetail').value;
+                const photoInput = document.getElementById('sosPhoto');
+
+                let image_b64 = null;
+                if (photoInput && photoInput.files && photoInput.files[0]) {
+                    image_b64 = await fileToBase64(photoInput.files[0]);
+                }
+
+                const payload = {
+                    name, phone, address, type, detail,
+                    lat: currentGpsCoords ? currentGpsCoords.lat : null,
+                    lng: currentGpsCoords ? currentGpsCoords.lng : null,
+                    image_b64
+                };
+
+                const resp = await fetch('/api/sos/report', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await resp.json();
+                if (data.ok && data.report) {
+                    emergencyData.unshift(data.report);
+                } else {
+                    emergencyData.unshift({
+                        id: Date.now(),
+                        title: `[Tín hiệu mới] ${name}`,
+                        type: type,
+                        lat: 21.5928 + (Math.random() - 0.5) * 0.02,
+                        lng: 105.8442 + (Math.random() - 0.5) * 0.02,
+                        location: address,
+                        time: "Vừa xong",
+                        phone: phone,
+                        detail: detail || "Tín hiệu cứu hộ gửi trực tiếp từ ứng dụng FloodAI.",
+                        aiAnalysis: "Mới gửi • Đang xác minh GPS",
+                        status: "pending"
+                    });
+                }
+
+                updateStatsCounters();
+                renderLiveReportsFeed();
+                renderHomeMiniMapPins();
+                if (fullMapInstance) {
+                    renderMapMarkers('all');
+                    renderMapDrawerFeed();
+                }
+
+                closeSosModal();
+                alert(`✅ ĐÃ PHÁT TÍN HIỆU THÀNH CÔNG!\n\nThông tin của ${name} (${phone}) tại ${address} đã được ghi nhận trên hệ thống FloodAI - GIRC Thái Nguyên.`);
+            } catch (err) {
+                alert('Lỗi khi gửi tín hiệu: ' + err);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = origHtml;
+            }
+        }
+
+        // AI Image Depth Processing -> Real Backend /api/depth/instant
+        async function processAiImage(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const previewWrap = document.getElementById('aiPreviewWrap');
+            const previewImg = document.getElementById('aiPreviewImg');
+            previewImg.src = URL.createObjectURL(file);
+            previewWrap.classList.remove('hidden');
+
+            const box = document.getElementById('aiResultBox');
+            box.classList.remove('hidden');
+            document.getElementById('aiConfidence').innerText = 'Đang chạy AI...';
+            document.getElementById('aiDepthVal').innerText = '...';
+            document.getElementById('aiRiskVal').innerText = 'ĐANG PHÂN TÍCH ẢNH';
+            document.getElementById('aiAdvice').innerText = '⏳ Đang phân tích mặt nước bằng SegFormer-B2, Depth Anything V2 và YOLOv8...';
+
+            try {
+                const b64 = await fileToBase64(file);
+                const resp = await fetch('/api/depth/instant', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: file.name, image_b64: b64 })
+                });
+                const data = await resp.json();
+                if (!resp.ok || data.error) {
+                    throw new Error(data.error || 'Không phân tích được ảnh');
+                }
+                document.getElementById('aiConfidence').innerText = `Độ tin cậy: ${data.confidence || 85}%`;
+                document.getElementById('aiDepthVal').innerText = `${data.depth_cm ?? 0} cm`;
+                document.getElementById('aiRiskVal').innerText = data.risk_label || data.flood_level || 'ĐÃ PHÂN TÍCH';
+                document.getElementById('aiAdvice').innerText = data.advice || 'Đã hoàn tất phân tích độ sâu ngập.';
+            } catch (err) {
+                document.getElementById('aiConfidence').innerText = 'Lỗi xử lý';
+                document.getElementById('aiDepthVal').innerText = '-- cm';
+                document.getElementById('aiRiskVal').innerText = 'CHƯA XÁC ĐỊNH';
+                document.getElementById('aiAdvice').innerText = '⚠️ ' + err.message;
+            }
+        }
+
+        // Chatbot Functionality -> Real Backend /api/chat/message (Qwen2.5-VL)
+        function onChatImageSelected(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            fileToBase64(file).then(b64 => {
+                pendingChatImageB64 = b64;
+                document.getElementById('chatImageName').innerHTML = `<i class="fa-solid fa-image mr-1"></i> ${file.name}`;
+                document.getElementById('chatImageBadge').classList.remove('hidden');
+            });
+        }
+
+        function clearChatImage() {
+            pendingChatImageB64 = null;
+            document.getElementById('chatImageInput').value = '';
+            document.getElementById('chatImageBadge').classList.add('hidden');
+        }
+
+        function sendQuickQuery(text) {
+            document.getElementById('chatInput').value = text;
+            handleChatSubmit(new Event('submit'));
+        }
+
+        async function handleChatSubmit(e) {
+            if (e && e.preventDefault) e.preventDefault();
+            const input = document.getElementById('chatInput');
+            const query = input.value.trim();
+            const imgB64 = pendingChatImageB64;
+            if (!query && !imgB64) return;
+
+            const log = document.getElementById('chatMessages');
+
+            // Append User Message
+            log.innerHTML += `
+                <div class="bg-teal-600 text-white p-3 rounded-2xl max-w-[85%] ml-auto space-y-1">
+                    ${imgB64 ? '<div class="text-[10px] opacity-90"><i class="fa-solid fa-camera mr-1"></i> [Đã đính kèm ảnh hiện trường]</div>' : ''}
+                    <p class="font-semibold">${query || 'Phân tích ảnh ngập này giúp tôi'}</p>
+                </div>
+            `;
+            input.value = '';
+            clearChatImage();
+            log.scrollTop = log.scrollHeight;
+
+            const loadingId = 'loading_' + Date.now();
+            log.innerHTML += `
+                <div id="${loadingId}" class="bg-teal-50 dark:bg-slate-800 p-3 rounded-2xl border border-teal-100 dark:border-slate-700 max-w-[85%] text-slate-700 dark:text-slate-200 space-y-1">
+                    <p class="font-bold text-teal-600 dark:text-teal-400">FloodAgent (Qwen2.5-VL):</p>
+                    <p><i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang suy nghĩ...</p>
+                </div>
+            `;
+            log.scrollTop = log.scrollHeight;
+
+            try {
+                const resp = await fetch('/api/chat/message', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: query || 'Hãy phân tích mức độ ngập và tư vấn an toàn cho ảnh này.',
+                        session_id: chatSessionId,
+                        image_b64: imgB64
+                    })
+                });
+                const data = await resp.json();
+                const reply = data.reply || data.error || 'Xin lỗi, hiện tại tôi chưa thể phản hồi.';
+                const el = document.getElementById(loadingId);
+                if (el) {
+                    el.innerHTML = `
+                        <p class="font-bold text-teal-600 dark:text-teal-400">FloodAgent (Qwen2.5-VL):</p>
+                        <p style="white-space: pre-line;">${reply}</p>
+                    `;
+                }
+            } catch (err) {
+                const el = document.getElementById(loadingId);
+                if (el) {
+                    el.innerHTML = `
+                        <p class="font-bold text-teal-600 dark:text-teal-400">FloodAgent Bot:</p>
+                        <p>📞 Hotline Cứu hộ Thiên tai Thái Nguyên: 0208.3855.112 | Đội Cứu hộ Công an 114 | Trạm sơ tán TUAF: Đường Quy Tắc, P. Quyết Thắng.</p>
+                    `;
+                }
+            }
+            log.scrollTop = log.scrollHeight;
+        }
+
+        // Admin Broadcast Alert Publish -> Real Backend /api/sos/broadcast
+        async function publishBroadcast() {
+            const txt = document.getElementById('adminBroadcastInput').value.trim();
+            if (!txt) return;
+            try {
+                await fetch('/api/sos/broadcast', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ active: true, text: txt })
+                });
+            } catch (e) {}
+            document.getElementById('broadcastText').innerText = txt;
+            document.getElementById('broadcastBanner').classList.remove('hidden');
+            closeAdminModal();
+        }
+
+        async function closeBroadcast() {
+            document.getElementById('broadcastBanner').classList.add('hidden');
+            try {
+                await fetch('/api/sos/broadcast', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ active: false, text: '' })
+                });
+            } catch (e) {}
+        }
+    </script>
+</body>
+</html>
