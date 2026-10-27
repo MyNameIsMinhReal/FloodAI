@@ -196,7 +196,12 @@ def _build_trainer(trl_new, sft_trainer_cls, training_args_cls, model, tokenizer
         }
         if "callbacks" in trainer_params:
             trainer_kwargs["callbacks"] = _make_early_stopping()
-        if "dataset_text_field" in trainer_params and "dataset_text_field" not in extra_cfg:
+        _cols = getattr(train_dataset, "column_names", []) if train_dataset is not None else []
+        if (
+            "dataset_text_field" in trainer_params
+            and "dataset_text_field" not in extra_cfg
+            and "text" in _cols
+        ):
             trainer_kwargs["dataset_text_field"] = "text"
 
         return sft_trainer_cls(**trainer_kwargs)
@@ -592,10 +597,10 @@ def train():
     # - ĐÚNG: chia thành cột `prompt`/`completion` (chuỗi). TRL detect đây là
     #   prompt-completion dataset → tự build completion_mask thủ công ([0]*prompt +
     #   [1]*completion) → labels = -100 trên mọi token prompt, loss CHỈ trên completion.
-    train_dataset = Dataset.from_dict([
+    train_dataset = Dataset.from_list([
         _split_prompt_completion(e["messages"], tokenizer) for e in train_raw
     ])
-    eval_dataset = Dataset.from_dict([
+    eval_dataset = Dataset.from_list([
         _split_prompt_completion(e["messages"], tokenizer) for e in eval_raw
     ])
 
@@ -784,12 +789,17 @@ def merge_and_save():
     # Đọc base_model_name_or_path từ adapter_config.json để tránh mismatch
     import json
     adapter_cfg = OUTPUT_DIR / "adapter_config.json"
-    if adapter_cfg.exists():
-        with open(adapter_cfg) as f:
-            _cfg = json.load(f)
-        actual_base_model = _cfg.get("base_model_name_or_path", BASE_MODEL)
-    else:
-        actual_base_model = BASE_MODEL
+    if not adapter_cfg.exists():
+        log.error(
+            f"Không tìm thấy LoRA adapter tại: {adapter_cfg}\n"
+            "Hãy chạy train xong trước khi merge:\n"
+            "  python -m learning.flood_trainer"
+        )
+        return
+
+    with open(adapter_cfg, encoding="utf-8") as f:
+        _cfg = json.load(f)
+    actual_base_model = _cfg.get("base_model_name_or_path", BASE_MODEL)
 
     model_cls = _resolve_model_cls(actual_base_model)
     log.info(f"Loading base model: {actual_base_model} ({model_cls.__name__})")
@@ -799,7 +809,8 @@ def merge_and_save():
         device_map="cpu",
         trust_remote_code=True,
     )
-    tokenizer = AutoTokenizer.from_pretrained(str(OUTPUT_DIR), trust_remote_code=True)
+    tok_src = str(OUTPUT_DIR) if (OUTPUT_DIR / "tokenizer_config.json").exists() else actual_base_model
+    tokenizer = AutoTokenizer.from_pretrained(tok_src, trust_remote_code=True)
     processor = None
     if _is_vl_model(actual_base_model):
         try:
