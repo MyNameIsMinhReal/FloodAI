@@ -510,8 +510,10 @@
 
                 <!-- Image Attachment -->
                 <div>
-                    <label class="block text-xs font-bold mb-1">Đính kèm ảnh chụp hiện trường (AI tự phân tích độ sâu)</label>
-                    <input type="file" id="sosPhoto" accept="image/*" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-teal-50 file:text-teal-700 dark:file:bg-slate-800 dark:file:text-teal-300 hover:file:bg-teal-100" />
+                    <label class="block text-xs font-bold mb-1">Đính kèm ảnh hiện trường (AI tự trích xuất vị trí & đo mức nước)</label>
+                    <input type="file" id="sosPhoto" onchange="onSosPhotoSelected(event)" accept="image/*" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-teal-50 file:text-teal-700 dark:file:bg-slate-800 dark:file:text-teal-300 hover:file:bg-teal-100" />
+                    <div id="sosGeoAlert" class="hidden mt-2 p-2.5 bg-emerald-50 dark:bg-slate-800 border border-emerald-300 dark:border-emerald-700 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 space-y-1">
+                    </div>
                 </div>
 
                 <!-- Submit Button -->
@@ -1135,6 +1137,48 @@
             }
         }
 
+        // Tự động nhận diện vị trí khi người dân chọn ảnh trong form SOS
+        async function onSosPhotoSelected(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const alertBox = document.getElementById('sosGeoAlert');
+            alertBox.classList.remove('hidden');
+            alertBox.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> AI đang trích xuất GPS từ ảnh & vị trí WiFi...';
+
+            try {
+                const b64 = await fileToBase64(file);
+                let bLat = currentGpsCoords ? currentGpsCoords.lat : null;
+                let bLng = currentGpsCoords ? currentGpsCoords.lng : null;
+
+                const resp = await fetch('/api/geo/detect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        image_b64: b64,
+                        browser_lat: bLat,
+                        browser_lon: bLng
+                    })
+                });
+                const data = await resp.json();
+                if (data.ok && data.geo && data.geo.lat) {
+                    currentGpsCoords = { lat: data.geo.lat, lng: data.geo.lon };
+                    document.getElementById('sosAddress').value = data.geo.address;
+                    alertBox.innerHTML = `
+                        <div class="font-bold flex items-center gap-1">
+                            <i class="fa-solid fa-location-dot text-rose-500"></i>
+                            Đã nhận diện vị trí (${data.geo.method_label}):
+                        </div>
+                        <div class="font-semibold text-slate-900 dark:text-slate-100">${data.geo.address}</div>
+                        <div class="text-[11px] opacity-80">Đã tự động điền vào ô địa chỉ. Bạn có thể sửa đổi nếu cần trước khi gửi.</div>
+                    `;
+                } else {
+                    alertBox.innerHTML = '<span class="text-amber-600 dark:text-amber-400"><i class="fa-solid fa-circle-info mr-1"></i> Ảnh không chứa GPS EXIF. Hệ thống sẽ sử dụng vị trí mạng/GPS thiết bị nếu có.</span>';
+                }
+            } catch (err) {
+                alertBox.innerHTML = '<span class="text-slate-500"><i class="fa-solid fa-circle-info mr-1"></i> Không đọc được vị trí tự động từ ảnh.</span>';
+            }
+        }
+
         // Form Submit -> Real Backend /api/sos/report
         async function handleSosSubmit(e) {
             e.preventDefault();
@@ -1297,23 +1341,53 @@
             log.scrollTop = log.scrollHeight;
 
             try {
+                let bLat = currentGpsCoords ? currentGpsCoords.lat : null;
+                let bLng = currentGpsCoords ? currentGpsCoords.lng : null;
+
                 const resp = await fetch('/api/chat/message', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         message: query || 'Hãy phân tích mức độ ngập và tư vấn an toàn cho ảnh này.',
                         session_id: chatSessionId,
-                        image_b64: imgB64
+                        image_b64: imgB64,
+                        browser_lat: bLat,
+                        browser_lon: bLng
                     })
                 });
                 const data = await resp.json();
                 const reply = data.reply || data.error || 'Xin lỗi, hiện tại tôi chưa thể phản hồi.';
                 const el = document.getElementById(loadingId);
                 if (el) {
-                    el.innerHTML = `
+                    let html = `
                         <p class="font-bold text-teal-600 dark:text-teal-400">FloodAgent (Qwen2.5-VL):</p>
                         <p style="white-space: pre-line;">${reply}</p>
                     `;
+                    // Nếu AI trích xuất được vị trí từ ảnh hoặc mạng: HỎI NGƯỜI DÙNG TRƯỚC KHI ĐÁNH DẤU LÊN BẢN ĐỒ
+                    if (data.geo && data.geo.lat && data.geo.lon) {
+                        const encodedAddr = encodeURIComponent(data.geo.address || 'Điểm ngập');
+                        html += `
+                            <div class="mt-3 p-3 bg-amber-50 dark:bg-slate-900 border border-amber-300 dark:border-amber-700/60 rounded-xl space-y-2 text-xs">
+                                <div class="font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-location-crosshairs text-rose-500"></i>
+                                    <span>Phát hiện vị trí (${data.geo.method_label}):</span>
+                                </div>
+                                <div class="text-slate-800 dark:text-slate-200 font-semibold">${data.geo.address}</div>
+                                <div class="text-[11px] text-slate-600 dark:text-slate-400">
+                                    👉 Bạn có muốn đánh dấu điểm ngập lụt này lên Bản đồ Cứu hộ công cộng không?
+                                </div>
+                                <div class="flex items-center gap-2 pt-1">
+                                    <button onclick="confirmPinFromChat(${data.geo.lat}, ${data.geo.lon}, '${encodedAddr}', this)" class="bg-rose-600 hover:bg-rose-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 shadow-sm transition">
+                                        <i class="fa-solid fa-map-pin"></i> Có, đánh dấu lên bản đồ
+                                    </button>
+                                    <button onclick="this.closest('.mt-3').remove()" class="bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium px-3 py-1.5 rounded-lg text-xs transition">
+                                        Không cần
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    el.innerHTML = html;
                 }
             } catch (err) {
                 const el = document.getElementById(loadingId);
@@ -1325,6 +1399,44 @@
                 }
             }
             log.scrollTop = log.scrollHeight;
+        }
+
+        // Người dùng xác nhận đồng ý ghim điểm ngập từ khung Chatbot
+        async function confirmPinFromChat(lat, lng, encodedAddr, btn) {
+            const addr = decodeURIComponent(encodedAddr);
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang đánh dấu...';
+
+            try {
+                const resp = await fetch('/api/sos/report', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: "Người dân (xác nhận qua AI)",
+                        address: addr,
+                        lat: lat,
+                        lng: lng,
+                        type: "flood",
+                        detail: "Báo cáo điểm ngập được xác nhận qua Trợ lý FloodAgent.",
+                    })
+                });
+                const res = await resp.json();
+                if (resp.ok && res.ok) {
+                    btn.parentElement.innerHTML = `
+                        <div class="text-emerald-600 dark:text-emerald-400 font-bold text-xs flex items-center gap-1.5">
+                            <i class="fa-solid fa-circle-check"></i> Đã đánh dấu điểm ngập lên bản đồ thành công!
+                            <button onclick="switchView('map')" class="ml-2 underline text-teal-600 hover:text-teal-700">Xem ngay</button>
+                        </div>
+                    `;
+                    // Cập nhật lại bản đồ ngay lập tức
+                    loadSosReportsFromBackend();
+                } else {
+                    throw new Error(res.error || 'Lỗi lưu báo cáo');
+                }
+            } catch (err) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-triangle-exclamation mr-1"></i> Thử lại';
+            }
         }
 
         // Admin Broadcast Alert Publish -> Real Backend /api/sos/broadcast

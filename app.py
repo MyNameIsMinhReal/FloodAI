@@ -895,6 +895,78 @@ def api_news_rewrite():
         return jsonify({"error": str(exc)}), 500
 
 
+def _detect_location(image_b64: Optional[str] = None,
+                     browser_lat: Optional[float] = None,
+                     browser_lon: Optional[float] = None,
+                     browser_acc: Optional[float] = None,
+                     client_ip: Optional[str] = None) -> Optional[dict]:
+    """Chạy GeoLocalizer qua GPS EXIF ảnh -> WiFi/Browser -> OCR -> IP."""
+    import tempfile, base64, os
+    tmp_path = None
+    try:
+        from utils.geo_localizer import GeoLocalizer
+        if image_b64:
+            raw = base64.b64decode(image_b64)
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+                f.write(raw)
+                tmp_path = f.name
+        
+        loc = GeoLocalizer()
+        est = loc.localize(
+            image_path=Path(tmp_path) if tmp_path else None,
+            browser_lat=browser_lat,
+            browser_lon=browser_lon,
+            browser_accuracy=browser_acc,
+            client_ip=client_ip
+        )
+        if est and est.has_coords():
+            method_labels = {
+                "gps_exif": "GPS chụp từ ảnh (Độ chính xác cao)",
+                "browser": "Định vị thiết bị / WiFi",
+                "ocr_street": "Nhận diện tên đường từ ảnh",
+                "ocr_district": "Nhận diện quận/huyện từ ảnh",
+                "geoclip": "AI dự đoán từ cảnh quan ảnh",
+                "ip": "Vị trí mạng Internet (IP)",
+            }
+            return {
+                "lat": round(est.lat, 5),
+                "lon": round(est.lon, 5),
+                "address": est.address or f"Khu vực Thái Nguyên ({est.lat:.4f}, {est.lon:.4f})",
+                "method": est.method,
+                "method_label": method_labels.get(est.method, "Định vị tự động"),
+                "radius_m": est.radius_m,
+                "confidence": est.confidence,
+            }
+    except Exception as exc:
+        log.warning(f"[detect_location] {exc}")
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try: os.unlink(tmp_path)
+            except Exception: pass
+    return None
+
+
+@app.route("/api/geo/detect", methods=["POST"])
+def api_geo_detect():
+    data = request.get_json(silent=True) or {}
+    image_b64 = data.get("image_b64")
+    browser_lat = data.get("browser_lat")
+    browser_lon = data.get("browser_lon")
+    browser_acc = data.get("browser_acc")
+    client_ip = request.remote_addr or request.headers.get("X-Forwarded-For", "")
+    
+    geo = _detect_location(
+        image_b64=image_b64,
+        browser_lat=float(browser_lat) if browser_lat is not None else None,
+        browser_lon=float(browser_lon) if browser_lon is not None else None,
+        browser_acc=float(browser_acc) if browser_acc is not None else None,
+        client_ip=client_ip
+    )
+    if geo:
+        return jsonify({"ok": True, "geo": geo})
+    return jsonify({"ok": False, "msg": "Không xác định được tọa độ"})
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # API — CHAT
 # ══════════════════════════════════════════════════════════════════════════════
@@ -905,6 +977,10 @@ def api_chat_message():
     user_msg  = data.get("message", "").strip()
     sid       = data.get("session_id", "default")
     image_b64 = data.get("image_b64")
+    browser_lat = data.get("browser_lat")
+    browser_lon = data.get("browser_lon")
+    browser_acc = data.get("browser_acc")
+    client_ip = request.remote_addr or request.headers.get("X-Forwarded-For", "")
 
     if not user_msg and not image_b64:
         return jsonify({"error": "Thiếu nội dung"}), 400
@@ -919,6 +995,7 @@ def api_chat_message():
 
     content = user_msg
     pil_img = None
+    geo_info = None
     if image_b64:
         try:
             import base64
@@ -929,6 +1006,15 @@ def api_chat_message():
             log.debug(f"[chat] decode PIL image failed: {_img_exc}")
         analysis = _analyze_image(image_b64)
         content  = (analysis + ("\n" + user_msg if user_msg else "")).strip()
+
+        # Tự động trích xuất vị trí của người gửi ảnh
+        geo_info = _detect_location(
+            image_b64=image_b64,
+            browser_lat=float(browser_lat) if browser_lat is not None else None,
+            browser_lon=float(browser_lon) if browser_lon is not None else None,
+            browser_acc=float(browser_acc) if browser_acc is not None else None,
+            client_ip=client_ip
+        )
 
     messages = [{"role": "system", "content": CHAT_SYS}]
     for h in hist[-MAX_HIST:]:
@@ -950,7 +1036,7 @@ def api_chat_message():
         hist.append({"role": "assistant", "content": reply})
         _sessions[sid] = hist[-MAX_HIST:]
 
-    return jsonify({"reply": reply})
+    return jsonify({"reply": reply, "geo": geo_info})
 
 
 @app.route("/api/chat/clear", methods=["POST"])
