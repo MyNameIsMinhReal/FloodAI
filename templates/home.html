@@ -114,7 +114,7 @@
                     <i class="fa-solid fa-map-location-dot mr-1"></i> Bản đồ cứu hộ
                 </button>
                 <button onclick="switchView('news')" id="nav-news" class="px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition text-slate-700 dark:text-slate-200">
-                    <i class="fa-solid fa-newspaper mr-1 text-teal-600 dark:text-teal-400"></i> Bản tin báo chí
+                    <i class="fa-solid fa-newspaper mr-1 text-teal-600 dark:text-teal-400"></i> Báo Mới 24/7
                 </button>
                 <button onclick="openAiChatModal()" class="px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition">
                     <i class="fa-solid fa-robot text-teal-500 mr-1"></i> AI Trợ lý
@@ -415,16 +415,16 @@
                 <div class="max-w-7xl mx-auto space-y-4">
                     <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-100 dark:bg-teal-950/80 text-teal-700 dark:text-teal-300 border border-teal-300 dark:border-teal-800 text-xs font-semibold">
                         <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                        Báo Chí Chính Thống & Phóng Viên AI
+                        Báo Mới 24/7 • Điểm Báo Toàn Quốc
                     </div>
 
                     <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
                         <div>
                             <h1 class="text-2xl sm:text-3xl md:text-4xl font-black text-slate-900 dark:text-white">
-                                Bản Tin Thiên Tai & Điểm Báo Toàn Quốc
+                                Báo Mới 24/7 - Tin Tức Thiên Tai Toàn Quốc
                             </h1>
                             <p class="text-slate-600 dark:text-slate-300 text-xs sm:text-sm max-w-3xl mt-1.5 leading-relaxed">
-                                Cập nhật tin tức trực tiếp từ các hãng thông tấn chính thống (Nhân Dân, VnExpress, Tuổi Trẻ, Dân Trí...). Tích hợp mô hình AI phóng viên (<code class="bg-teal-100 dark:bg-teal-900/60 px-1 py-0.5 rounded text-teal-700 dark:text-teal-300 font-mono">REWRITE_SYS</code>) tự động biên tập và viết lại bài báo hoàn chỉnh, khách quan kèm khuyến cáo an toàn.
+                                Kênh tổng hợp và điểm tin bão lũ, thiên tai từ các cơ quan báo chí chính thống (Nhân Dân, VnExpress, Tuổi Trẻ, Dân Trí...). Tự động biên tập bản tin tổng hợp chuyên nghiệp 24/7 kèm khuyến cáo an toàn kịp thời.
                             </p>
                         </div>
 
@@ -436,7 +436,7 @@
                             </button>
                             <button onclick="openCustomRewriteModal()" class="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shadow-md shadow-teal-600/30 transition flex items-center gap-2">
                                 <i class="fa-solid fa-pen-nib"></i>
-                                <span>Nhờ AI viết lại tin</span>
+                                <span>Soạn bản tin nhanh</span>
                             </button>
                         </div>
                     </div>
@@ -630,7 +630,7 @@
         <!-- 4. Bản tin báo chí -->
         <button onclick="switchView('news')" id="mob-nav-news" class="flex flex-col items-center justify-center flex-1 py-1 text-slate-500 dark:text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 transition active:scale-95">
             <i class="fa-solid fa-newspaper text-lg mb-0.5"></i>
-            <span class="text-[10px] font-semibold">Bản tin</span>
+            <span class="text-[10px] font-semibold">Báo Mới</span>
         </button>
 
         <!-- 5. AI Trợ lý -->
@@ -1920,7 +1920,7 @@
                 </div>
                 <div>
                     <div class="inline-flex items-center gap-1.5 text-[11px] font-bold text-teal-600 dark:text-teal-400 uppercase tracking-wider">
-                        <i class="fa-solid fa-robot"></i> Mô hình Phóng Viên AI (REWRITE_SYS)
+                        <i class="fa-solid fa-robot"></i> Báo Mới 24/7 • Bản Tin Tổng Hợp
                     </div>
                     <h3 id="rewriteModalTitle" class="text-base sm:text-lg font-bold text-slate-900 dark:text-white line-clamp-2">
                         Đang xử lý bài báo...
@@ -1933,8 +1933,8 @@
                 <!-- Status spinner -->
                 <div id="rewriteLoadingState" class="p-8 text-center space-y-3">
                     <i class="fa-solid fa-spinner fa-spin text-3xl text-teal-600 dark:text-teal-400"></i>
-                    <p class="font-semibold text-slate-700 dark:text-slate-300">AI đang phân tích và viết lại bài báo hoàn chỉnh...</p>
-                    <p class="text-[11px] text-slate-500">Áp dụng chuẩn nghiệp vụ báo chí: Mở bài sự kiện, Thân bài bối cảnh, Kết bài khuyến cáo an toàn.</p>
+                    <p class="font-semibold text-slate-700 dark:text-slate-300">Đang biên tập và tổng hợp bản tin hoàn chỉnh...</p>
+                    <p class="text-[11px] text-slate-500">Chuẩn nghiệp vụ báo chí: Diễn biến sự kiện, Bối cảnh hiện trường, Khuyến cáo an toàn phòng chống lũ.</p>
                 </div>
 
                 <!-- Result Box -->
@@ -1948,7 +1948,7 @@
 
                     <div class="bg-slate-50 dark:bg-slate-800/60 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-700">
                         <h4 class="font-bold text-xs uppercase text-slate-400 mb-2 flex items-center gap-1.5">
-                            <i class="fa-solid fa-newspaper text-teal-500"></i> Bài Viết Đã Được AI Hoàn Thiện:
+                            <i class="fa-solid fa-newspaper text-teal-500"></i> Nội Dung Bản Tin Báo Mới Tổng Hợp:
                         </h4>
                         <div id="rewriteArticleBody" class="prose dark:prose-invert max-w-none text-slate-700 dark:text-slate-200 text-xs sm:text-sm leading-relaxed whitespace-pre-line font-serif">
                             <!-- Injected by JS -->
@@ -1975,9 +1975,9 @@
             <button onclick="closeCustomRewriteModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white p-1"><i class="fa-solid fa-xmark text-xl"></i></button>
 
             <h3 class="text-xl font-bold mb-1 flex items-center gap-2 text-teal-600">
-                <i class="fa-solid fa-feather-pointed"></i> Phóng Viên AI Viết Lại Bài Báo
+                <i class="fa-solid fa-feather-pointed"></i> Soạn & Biên Tập Bản Tin Nhanh
             </h3>
-            <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Nhập tiêu đề và nội dung thô để AI hoàn thiện thành bài báo thiên tai chuẩn nghiệp vụ</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Nhập tiêu đề và nội dung ghi nhận hiện trường để biên tập thành bản tin hoàn chỉnh</p>
 
             <form onsubmit="handleCustomRewriteSubmit(event)" class="space-y-3 text-xs">
                 <div>
@@ -1995,7 +1995,7 @@
                 <div class="pt-2 flex justify-end gap-2">
                     <button type="button" onclick="closeCustomRewriteModal()" class="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 font-bold text-xs">Hủy</button>
                     <button type="submit" class="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md">
-                        <i class="fa-solid fa-wand-magic-sparkles"></i> Bắt đầu viết lại
+                        <i class="fa-solid fa-check"></i> Hoàn thành bản tin
                     </button>
                 </div>
             </form>
