@@ -88,41 +88,7 @@
 </head>
 <body class="bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-300 min-h-screen flex flex-col pb-16 md:pb-0">
 
-    <!-- 1. TOP EMERGENCY HOTLINE BANNER (SOS.org.vn Style) -->
-    <div id="emergencyBar" class="bg-rose-50 dark:bg-slate-900 border-b border-rose-200 dark:border-slate-800 py-1.5 px-3 text-xs md:text-sm">
-        <div class="max-w-7xl mx-auto flex items-center justify-between gap-2 overflow-hidden">
-            <div class="flex items-center gap-1.5 font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider shrink-0 text-[11px] sm:text-xs">
-                <span class="inline-block w-2 h-2 rounded-full bg-rose-600 animate-ping"></span>
-                <i class="fa-solid fa-phone-volume"></i>
-                <span class="hidden sm:inline">GỌI KHẨN CẤP THIÊN TAI:</span>
-                <span class="sm:hidden">CỨU HỘ:</span>
-            </div>
-            <!-- Horizontal scrollable hotline numbers on small screens -->
-            <div class="flex items-center gap-1.5 md:gap-3 font-semibold text-slate-700 dark:text-slate-300 overflow-x-auto py-0.5 no-scrollbar flex-nowrap">
-                <a href="tel:112" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-0.5 rounded transition flex items-center gap-1 border border-rose-300 dark:border-rose-900 bg-rose-100/70 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 shrink-0">
-                    <span class="bg-rose-600 text-white text-[10px] sm:text-[11px] px-1.5 py-0.5 rounded font-extrabold">112</span> <span class="text-[11px]">Cứu nạn</span>
-                </a>
-                <a href="tel:114" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-0.5 rounded transition flex items-center gap-1 border border-slate-200 dark:border-slate-700 shrink-0">
-                    <span class="bg-amber-600 text-white text-[10px] sm:text-[11px] px-1.5 py-0.5 rounded font-extrabold">114</span> <span class="text-[11px]">PCCC</span>
-                </a>
-                <a href="tel:115" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-0.5 rounded transition flex items-center gap-1 border border-slate-200 dark:border-slate-700 shrink-0">
-                    <span class="bg-emerald-600 text-white text-[10px] sm:text-[11px] px-1.5 py-0.5 rounded font-extrabold">115</span> <span class="text-[11px]">Y tế</span>
-                </a>
-                <a href="tel:113" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-0.5 rounded transition flex items-center gap-1 border border-slate-200 dark:border-slate-700 shrink-0 hidden sm:flex">
-                    <span class="bg-blue-600 text-white text-[10px] sm:text-[11px] px-1.5 py-0.5 rounded font-extrabold">113</span> <span class="text-[11px]">Công an</span>
-                </a>
-                <a href="tel:111" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-0.5 rounded transition flex items-center gap-1 border border-slate-200 dark:border-slate-700 shrink-0 hidden md:flex">
-                    <span class="bg-rose-600 text-white text-[10px] sm:text-[11px] px-1.5 py-0.5 rounded font-extrabold">111</span> <span class="text-[11px]">Trẻ em</span>
-                </a>
-            </div>
-            <button onclick="openHotlineModal()" class="text-[11px] bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1 rounded-full font-medium transition flex items-center gap-1 shrink-0">
-                <i class="fa-solid fa-list-numeric"></i>
-                <span class="hidden sm:inline">SĐT Cứu Hộ</span> Thái Nguyên
-            </button>
-        </div>
-    </div>
-
-    <!-- 2. MAIN HEADER NAVIGATION BAR -->
+    <!-- 1. MAIN HEADER NAVIGATION BAR -->
     <header class="sticky top-0 z-40 bg-white/90 dark:bg-slate-900/90 backdrop-blur border-b border-slate-200 dark:border-slate-800 transition-colors">
         <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
             <!-- Brand Logo -->
@@ -374,7 +340,7 @@
         <!-- =================================================================== -->
         <!-- VIEW 2: FULLSCREEN MAP MODE (SOS.info.vn inspired dark overlay)    -->
         <!-- =================================================================== -->
-        <section id="view-map" class="flex-grow flex flex-col relative hidden h-[calc(100dvh-130px)] md:h-[calc(100vh-100px)]">
+        <section id="view-map" class="flex-grow flex flex-col relative hidden h-[calc(100dvh-112px)] md:h-[calc(100vh-64px)]">
             
             <!-- Leaflet Main Map Canvas -->
             <div id="fullScreenMap" class="w-full h-full bg-slate-900 z-0"></div>
@@ -441,6 +407,64 @@
         </section>
 
     </main>
+
+    <!-- EMERGENCY HOTLINE BAR (Đầu Số Khẩn Cấp Quốc Gia & Thái Nguyên) -->
+    <div id="emergencyBar" class="bg-slate-900 border-t border-b border-slate-800 py-3 px-4 text-xs md:text-sm">
+        <div class="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-3">
+            
+            <!-- Left Header Label -->
+            <div class="flex items-center gap-2 font-bold text-rose-500 uppercase tracking-wider text-xs sm:text-sm shrink-0">
+                <i class="fa-solid fa-phone-volume text-sm animate-pulse"></i>
+                <span>GỌI KHẨN CẤP THIÊN TAI & CỨU HỘ:</span>
+            </div>
+
+            <!-- Hotline numbers tags (exact match with user screenshot) -->
+            <div class="flex items-center gap-2 overflow-x-auto py-1 no-scrollbar flex-wrap justify-center sm:justify-start">
+                
+                <!-- 111 Bảo vệ trẻ em -->
+                <a href="tel:111" class="hover:bg-slate-800 px-2.5 py-1 rounded transition flex items-center gap-1.5 border border-slate-700/80 bg-slate-800/60 text-slate-200 shrink-0">
+                    <span class="bg-red-600 text-white text-[11px] px-1.5 py-0.5 rounded font-bold">111</span>
+                    <span class="text-xs">Bảo vệ trẻ em</span>
+                </a>
+
+                <!-- 112 Cứu nạn - Thiên tai (Đóng khung đỏ nổi bật) -->
+                <a href="tel:112" class="hover:bg-rose-950/60 px-2.5 py-1 rounded transition flex items-center gap-1.5 border border-rose-700/80 bg-rose-950/40 text-rose-300 shrink-0">
+                    <span class="bg-red-600 text-white text-[11px] px-1.5 py-0.5 rounded font-bold">112</span>
+                    <span class="text-xs font-semibold">Cứu nạn - Thiên tai</span>
+                </a>
+
+                <!-- 113 Công an -->
+                <a href="tel:113" class="hover:bg-slate-800 px-2.5 py-1 rounded transition flex items-center gap-1.5 border border-slate-700/80 bg-slate-800/60 text-slate-200 shrink-0">
+                    <span class="bg-indigo-600 text-white text-[11px] px-1.5 py-0.5 rounded font-bold">113</span>
+                    <span class="text-xs">Công an</span>
+                </a>
+
+                <!-- 114 PCCC & Cứu hộ -->
+                <a href="tel:114" class="hover:bg-slate-800 px-2.5 py-1 rounded transition flex items-center gap-1.5 border border-slate-700/80 bg-slate-800/60 text-slate-200 shrink-0">
+                    <span class="bg-amber-600 text-white text-[11px] px-1.5 py-0.5 rounded font-bold">114</span>
+                    <span class="text-xs">PCCC & Cứu hộ</span>
+                </a>
+
+                <!-- 115 Cấp cứu y tế -->
+                <a href="tel:115" class="hover:bg-slate-800 px-2.5 py-1 rounded transition flex items-center gap-1.5 border border-slate-700/80 bg-slate-800/60 text-slate-200 shrink-0">
+                    <span class="bg-teal-600 text-white text-[11px] px-1.5 py-0.5 rounded font-bold">115</span>
+                    <span class="text-xs">Cấp cứu y tế</span>
+                </a>
+
+                <!-- 117 Bạo lực gia đình -->
+                <a href="tel:117" class="hover:bg-slate-800 px-2.5 py-1 rounded transition flex items-center gap-1.5 border border-slate-700/80 bg-slate-800/60 text-slate-200 shrink-0">
+                    <span class="bg-purple-600 text-white text-[11px] px-1.5 py-0.5 rounded font-bold">117</span>
+                    <span class="text-xs">Bạo lực gia đình</span>
+                </a>
+            </div>
+
+            <!-- Button SĐT Cứu Hộ Thái Nguyên (Red Pill) -->
+            <button onclick="openHotlineModal()" class="text-xs bg-red-600 hover:bg-red-700 text-white px-3.5 py-1.5 rounded-full font-bold transition flex items-center gap-1.5 shadow-md shadow-red-600/30 shrink-0">
+                <i class="fa-solid fa-list-ul"></i>
+                <span>SĐT Cứu Hộ Thái Nguyên</span>
+            </button>
+        </div>
+    </div>
 
     <!-- FOOTER -->
     <footer class="bg-slate-900 text-slate-400 border-t border-slate-800 py-8 px-4 text-xs">
@@ -941,10 +965,14 @@
             const navMap = document.getElementById('nav-map');
             const mobNavHome = document.getElementById('mob-nav-home');
             const mobNavMap = document.getElementById('mob-nav-map');
+            const emergBar = document.getElementById('emergencyBar');
+            const footerEl = document.querySelector('footer');
 
             if (viewName === 'home') {
                 homeSec.classList.remove('hidden');
                 mapSec.classList.add('hidden');
+                if (emergBar) emergBar.classList.remove('hidden');
+                if (footerEl) footerEl.classList.remove('hidden');
                 if (navHome) { navHome.classList.add('text-teal-600', 'font-bold'); }
                 if (navMap) { navMap.classList.remove('text-teal-600', 'font-bold'); }
                 if (mobNavHome) {
@@ -959,6 +987,8 @@
             } else {
                 homeSec.classList.add('hidden');
                 mapSec.classList.remove('hidden');
+                if (emergBar) emergBar.classList.add('hidden');
+                if (footerEl) footerEl.classList.add('hidden');
                 if (navHome) { navHome.classList.remove('text-teal-600', 'font-bold'); }
                 if (navMap) { navMap.classList.add('text-teal-600', 'font-bold'); }
                 if (mobNavHome) {
