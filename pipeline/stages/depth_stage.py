@@ -108,12 +108,14 @@ class DepthStage:
     def _run_estimator(self, images: List[Path], models: dict, tmp_dir: Path) -> List[Any]:
         from depth_analysis.reference_estimator import ReferenceEstimator
 
+        use_dino = self.cfg.get("models", {}).get("use_dino", self.cfg.get("depth", {}).get("use_dino", self.cfg.get("use_dino", False)))
+
         estimator = ReferenceEstimator(
             yolo_model=models["detector"],
             depth_model=models["depth"],
             output_dir=tmp_dir,
             conf_thresh=self.cfg.get("yolo_conf", 0.35),
-            use_dino=self.cfg.get("use_dino", True),
+            use_dino=use_dino,
             dino_model=models["dino"],
             use_pose=self.cfg.get("use_pose", True),
             pose_model=models["pose"],

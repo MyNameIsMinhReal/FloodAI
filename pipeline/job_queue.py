@@ -296,6 +296,14 @@ class JobQueue:
                 error=str(exc),
                 finished_at=datetime.now().isoformat(timespec="seconds"),
             )
+        finally:
+            try:
+                import gc, torch
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
 
 
 # ── SSE helper ─────────────────────────────────────────────────────────────────

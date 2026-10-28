@@ -39,7 +39,7 @@ ui:
 
 # ── Image Enhancement ────────────────────────────────────────────────────
 enhance:
-  enable:             true
+  enable:             false    # Tắt để tăng tốc độ pipeline, giảm tải CPU/GPU
   dark_threshold:     80.0     # Brightness mean < nguong = lam sang
   clahe_clip_limit:   2.5
   clahe_tile_size:    8
@@ -47,54 +47,27 @@ enhance:
 
   # Sua khung canh (black bars / pillarbox / letterbox)
   fix_borders:
-    enable:       true
-    method:       "lama"      # "lama" | "telea" | "ns" | "crop"
-    # "lama" = AI inpainting (dep nhat, cham hon)
-    # "telea"/"ns" = OpenCV inpainting (nhanh, khong dep bang)
-    # "crop" = cat bo phan den (nhanh nhat, mat noi dung)
+    enable:       false       # Tắt AI inpainting LaMa tốn bộ nhớ
+    method:       "crop"      # "crop" = cat bo phan den (nhanh nhat, khong ton tai nguyen)
     black_thresh: 15          # pixel < nguong nay = "den"
     min_bar_width_pct: 0.03   # dai den < 3% chieu rong = bo qua
-    lama_model_path: ""       # de trong = tu dong download
+    lama_model_path: ""
 
 # ── Watermark ────────────────────────────────────────────────────────────
 watermark:
-  enable:            true
-  remove:            true
-  method:            "lama"    # "lama" | "opencv_telea" | "opencv_ns"
+  enable:            false     # Tắt xóa watermark LaMa để tối ưu hóa pipeline
+  remove:            false
+  method:            "opencv_telea"
   confidence_thresh: 0.45
-  lama_model_path:   ""        # de trong = tu dong download
-  # Vung can kiem tra watermark (co the them them)
-  check_corners:     true
-  check_center:      false
-
-  # Pattern watermark biet truoc (them vao day de phat hien chinh xac hon)
-  known_patterns:
-    - name: "CyberLink PowerDirector"
-      location: "bottom_right"
-      color: "white"
-    - name: "Shutterstock"
-      location: "tiled"      # scattered toan anh
-      color: "gray"
-    - name: "Alamy"
-      location: "tiled"
-      color: "gray"
-    - name: "Getty Images"
-      location: "bottom_center"
-      color: "white"
-    - name: "VIVAVIDEO"
-      location: "bottom_right"
-      color: "white"
-    - name: "iStock"
-      location: "bottom_center"
-      color: "gray"
+  lama_model_path:   ""
 
 # ── Depth Analysis ───────────────────────────────────────────────────────
 depth:
   model:        "depth-anything/Depth-Anything-V2-Small-hf"
   yolo_model:   "yolov8n.pt"
   yolo_conf:    0.35
-  use_dino:     true
-  dino_model:   "facebook/dinov2-small"
+  use_dino:     false          # Tắt DINOv2 để tiết kiệm 350MB RAM/VRAM và tăng tốc 3x
+  dino_model:   ""
   use_pose:     true
   pose_model:   "yolov8n-pose.pt"
 
@@ -158,7 +131,7 @@ deblur:
 # Neu enable=true, pipeline chay tu dong voi cac gia tri mac dinh duoi day.
 # Khong can nhan phim gi ca.
 auto_skip:
-  enable: false          # true = tu dong skip tat ca cau hoi
+  enable: true          # true = tu dong skip tat ca cau hoi
 
   # Cac gia tri mac dinh khi auto_skip = true:
   mode:          "local" # "local" | "crawl" | "drive"
@@ -167,13 +140,12 @@ auto_skip:
   max_images:    50
   sources:       ["bing", "google"]
 
-  skip_filter:   false   # Co loc anh khong?
-  enhance:       true    # Co lam sang anh khong?
-  fix_borders:   true    # Co sua black bars khong?
-  border_method: "lama"  # "lama" | "ns" | "crop"
+  skip_filter:   true    # Bo qua loc anh tho
+  enhance:       false   # Bo qua lam sang
+  fix_borders:   false   # Bo qua sua black bars
 
-  check_watermark:  true
-  remove_watermark: true
+  check_watermark:  false
+  remove_watermark: false
 
   skip_depth:    false
   depth_model:   "small"  # "small" | "base" | "large"
@@ -183,6 +155,13 @@ auto_skip:
   drive_folder:  "FloodAnalysis"
 
   output_dir:    "output"
+
+# ── Global Skip Flags (Tối ưu hóa pipeline) ──────────────────────────────────
+skip_raincoat:   true    # Tắt phát hiện áo mưa để tăng tốc độ và giảm tải RAM/VRAM
+skip_vlm_verify: true    # Tắt VLM verify tự động trong batch (VLM chỉ dùng khi chat)
+skip_learning:   true    # Tắt auto-retraining trong quá trình đo thực địa
+skip_hard_mining: true   # Tắt ghi database hard examples
+use_dino:        false   # Tắt DINOv2 để tiết kiệm 350MB bộ nhớ
 
 # ── Water Color Detection (v3) ────────────────────────────────────────────────
 water_color:
@@ -226,74 +205,62 @@ route_prediction:
 pipeline:
   # Bật/tắt từng stage độc lập
   stages:
-    crawl:       true
-    filter:      true
-    analyze:     true
-    depth:       true
-    raincoat:    true
-    vlm_verify:  true
-    postprocess: true
-    store:       true
-    learn:       true
+    crawl:       false   # Đã bỏ
+    filter:      false   # Đã bỏ
+    analyze:     true    # Location / EXIF detection
+    depth:       true    # Đo độ sâu ngập (YOLO + Pose + SegFormer + Depth Anything)
+    raincoat:    false   # Tắt để tối ưu hiệu năng
+    vlm_verify:  false   # Tắt kiểm định VLM batch nặng nề
+    postprocess: true    # Tổng hợp kết quả & alert
+    store:       true    # Lưu báo cáo JSON/CSV/HTML
+    learn:       false   # Tắt trigger retrain nền
 
   # Parallel processing
   parallel:
-    filter:   true    # BlurFilter song song (CPU-safe)
+    filter:   false
     analyze:  true    # Location detection song song
     workers:  4       # Số threads tối đa
 
   # Auto-retrain threshold
-  auto_retrain_threshold: 0.20   # Retrain khi error rate > 20%
+  auto_retrain_threshold: 0.20
 
 # ── Model Switching (MỚI) ────────────────────────────────────────────────────
 models:
-  # Depth estimation
-  # Options: small | base | large | midas | zoedepth | depthpro | metric3d
+  # Depth estimation: small | base | large | midas | zoedepth | depthpro | metric3d
   depth: small
 
-  # Object detector
-  # Options: nano | small | medium  (hoặc đường dẫn đầy đủ: yolov8n.pt)
+  # Object detector: nano | small | medium
   detector: nano
 
   # Pose estimation
   pose: yolov8n-pose.pt
 
-  # Feature extraction
-  dino: facebook/dinov2-small
+  # Feature extraction (để trống = tắt DINOv2 để nhẹ máy)
+  dino: ""
+  use_dino: false
 
   # [v4] Depth batch chunk size — ảnh mỗi lần xử lý trước khi giải phóng RAM
-  # Giảm xuống 4 nếu RAM < 8GB. Tăng lên 12 nếu RAM >= 16GB.
-  depth_chunk_size: 2         # [A4000-16GB] Giảm burst memory
+  depth_chunk_size: 4
 
-  # Flood classifier (ResNet-18 fine-tuned)
-  # Đặt path .pth file tại đây, hoặc để trống để tắt
-  flood_resnet: "models/flood_resnet/model_flood_v20.pth"
-
-  # Label map của flood_resnet (thứ tự index khi train)
-  # Nếu train theo thứ tự khác, sửa ở đây, không cần đụng code
+  # Flood classifier (ResNet-18 fine-tuned) — để trống vì đã có SegFormer
+  flood_resnet: ""
   flood_resnet_labels: ["dry", "flood", "heavy_flood"]
 
-  # VLM (Vision-Language Model) — dùng cho stage vlm_verify
-  # Để trống "" = tắt (stage vẫn chạy nhưng verdict=skipped)
-  # Model nhỏ hơn nếu máy yếu: "Qwen/Qwen2-VL-2B-Instruct"
-  vlm: "Qwen/Qwen2.5-VL-3B-Instruct"   # [A4000-16GB] BẬT VLM 3B cho cross-check <10cm
+  # VLM (Vision-Language Model) — chỉ dùng khi gọi trực tiếp qua Chat / UI
+  vlm: ""
 
-  # [v4] SAM2 Mask Segmentor — refine mask nước bằng Segment Anything
-  # Cần cài: pip install segment-anything-2  + weight (~2GB). Chưa cài = bỏ qua.
-  use_sam: true                # [A4000-16GB] BẬT SAM2 cho water mask chính xác <10cm
-  sam_model_type: "sam2_hiera_large"     # sam2_hiera_large / sam2_hiera_small
-  sam_model_path: ""                     # Để trống = auto-download
+  # SAM2 Mask Segmentor — tắt để tránh ngốn 2GB VRAM không cần thiết
+  use_sam: false
+  sam_model_type: ""
+  sam_model_path: ""
 
-  # Trọng số ensemble — tổng phải = 1.0 (channel_bonus tính thêm ngoài)
-  # color: WaterDetector, dino: DINOv2, resnet: ResNet-18
+  # Trọng số ensemble: tối ưu ưu tiên WaterDetector & SegFormer
   ensemble_weights:
-    color:  0.55
-    dino:   0.30
-    resnet: 0.15      # [A4000-16GB] Tổng = 1.00 (0.55 + 0.30 + 0.15)
+    color:  0.80
+    dino:   0.00
+    resnet: 0.20
 
-  # Water Segmentation (SegFormer fine-tuned 2-class hoặc ADE20K pretrained)
-  # Đặt đường dẫn model fine-tuned tại đây (VD: "models/flood_segnet_b2")
-  # Nếu thư mục local chưa có sẽ tự fallback về ground_detection.model
+  # Water Segmentation (SegFormer fine-tuned)
   segformer: "models/flood_segnet_b2"
 
 # ── Filter Toggles (MỚI) ─────────────────────────────────────────────────────
@@ -346,7 +313,7 @@ database:
 
 # ── Raincoat Detection (MỚI v3) ──────────────────────────────────────────────
 raincoat:
-  enabled: true          # Bật/tắt stage phát hiện áo mưa
+  enabled: false         # Tắt stage phát hiện áo mưa để tối ưu pipeline
 
   # CLIP zero-shot (cần: pip install transformers torch)
   # Tắt nếu không có GPU hoặc muốn chạy nhanh hơn
@@ -378,7 +345,7 @@ raincoat:
 # VD: pipeline đo người cao 1.7m nhưng dáng trong ảnh ~1.5m → flag MISMATCH,
 #     nếu auto_correct bật và đủ tự tin → tự sửa số rồi mới xuất báo cáo.
 vlm_verify:
-  enabled: true             # Bật stage kiểm định
+  enabled: false            # Tắt stage kiểm định batch (chỉ dùng VLM trực tiếp qua Chat / UI)
   device: "auto"            # "auto" | "cuda" | "cpu"
   max_new_tokens: 512       # Số token VLM sinh tối đa mỗi ảnh
 

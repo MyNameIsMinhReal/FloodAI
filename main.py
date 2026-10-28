@@ -82,7 +82,7 @@ def run_pipeline(args, cfg: dict):
     total_time = time.time() - t0
 
     # ── Hard Example Mining ───────────────────────────────────────────────────
-    if not cfg.get("skip_hard_mining", False):
+    if not cfg.get("skip_hard_mining", True):
         from learning.hard_example_mining import HardExampleMiner
         miner = HardExampleMiner(db_path=cfg.get("hard_examples_db", "learning/hard_examples.db"))
         n_hard = 0
@@ -99,7 +99,7 @@ def run_pipeline(args, cfg: dict):
         miner.log_stats()
 
     # ── Save model version if needed ──────────────────────────────────────────
-    if not cfg.get("skip_versioning", False) and state.depth_results:
+    if not cfg.get("skip_versioning", True) and state.depth_results:
         try:
             _maybe_save_model_version(registry, state, cfg)
         except Exception as exc:

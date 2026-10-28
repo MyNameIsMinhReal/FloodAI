@@ -209,6 +209,18 @@ class AsyncFloodPipeline:
         self.learner    = LearnStage(self.cfg)
         self._stages_initialized = True
 
+    def _is_stage_enabled(self, name: str) -> bool:
+        """Kiểm tra stage có được bật không qua cả root config lẫn pipeline.stages."""
+        if self.cfg.get(f"skip_{name}", False):
+            return False
+        stage_cfg = self.cfg.get(name, {})
+        if isinstance(stage_cfg, dict) and not stage_cfg.get("enabled", True):
+            return False
+        pipe_stages = self.cfg.get("pipeline", {}).get("stages", {})
+        if name in pipe_stages and not pipe_stages[name]:
+            return False
+        return True
+
     def _setup_event_handlers(self):
         """Đăng ký event handlers."""
         self.bus.subscribe("low_confidence", self._handle_low_confidence)
@@ -272,41 +284,59 @@ class AsyncFloodPipeline:
         t_start = time.time()
 
         # Stage 1: Analyze (must be first)
-        state = await self._async_stage("analyze", self._stage_analyze, state)
+        if self._is_stage_enabled("analyze"):
+            state = await self._async_stage("analyze", self._stage_analyze, state)
 
-        # Stages 2+3: Depth & Raincoat có thể chạy song song
-        if self.cfg.get("parallel_depth_raincoat", True):
-            state = await self._run_parallel_stages(state)
-        else:
-            if not self.cfg.get("skip_depth", False):
+        # Stages 2+3: Depth & Raincoat
+        if self._is_stage_enabled("depth"):
+            if self._is_stage_enabled("raincoat"):
+                if self.cfg.get("parallel_depth_raincoat", True):
+                    state = await self._run_parallel_stages(state)
+                else:
+                    state = await self._async_stage("depth", self._stage_depth, state)
+                    state = await self._async_stage("raincoat", self._stage_raincoat, state)
+            else:
                 state = await self._async_stage("depth", self._stage_depth, state)
-            if not self.cfg.get("skip_raincoat", False):
-                state = await self._async_stage("raincoat", self._stage_raincoat, state)
+        elif self._is_stage_enabled("raincoat"):
+            state = await self._async_stage("raincoat", self._stage_raincoat, state)
 
         # Stage 3.5: VLM Verify (kiểm định chéo trước khi routing & xuất)
-        if not self.cfg.get("skip_vlm_verify", False):
+        if self._is_stage_enabled("vlm_verify"):
             state = await self._async_stage("vlm_verify", self._stage_vlm_verify, state)
         else:
-            log.info("  [SKIP] VLM verify stage bị tắt trong config.")
+            log.info("  [SKIP] VLM verify stage bị tắt (tối ưu hóa pipeline).")
 
         # Stage 4: Confidence routing
         state = await self._async_stage("confidence_routing", self._stage_routing, state)
 
         # Stage 5: Postprocess
-        state = await self._async_stage("postprocess", self._stage_postprocess, state)
+        if self._is_stage_enabled("postprocess"):
+            state = await self._async_stage("postprocess", self._stage_postprocess, state)
 
         # Stage 6: Store
-        state = await self._async_stage("store", self._stage_store, state)
+        if self._is_stage_enabled("store"):
+            state = await self._async_stage("store", self._stage_store, state)
 
         # Stage 7: Learn
-        if not self.cfg.get("skip_learning", False):
+        if self._is_stage_enabled("learn"):
             state = await self._async_stage("learn", self._stage_learn, state)
+        else:
+            log.info("  [SKIP] Learn stage bị tắt (tối ưu hóa pipeline).")
 
         total = time.time() - t_start
         log.info(f"\n{'='*60}")
         log.info(f"  PIPELINE HOÀN THÀNH — {total:.1f}s tổng cộng")
         self._print_timing_report(state)
         log.info(f"{'='*60}\n")
+
+        # Memory cleanup
+        try:
+            import gc, torch
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
 
         return state
 

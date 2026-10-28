@@ -185,41 +185,55 @@ class FloodPipeline:
         t_start = time.time()
 
         # ── Stage 1: Analyze ──────────────────────────────────────────
-        state = self._run_stage("analyze", self._stage_analyze, state)
+        if self._is_stage_enabled("analyze"):
+            state = self._run_stage("analyze", self._stage_analyze, state)
 
         # ── Stage 2: Depth ────────────────────────────────────────────
-        if not self.cfg.get("skip_depth", False):
+        if self._is_stage_enabled("depth"):
             state = self._run_stage("depth", self._stage_depth, state)
         else:
             log.info("  [SKIP] Depth stage bị tắt trong config.")
 
         # ── Stage 3: Raincoat ─────────────────────────────────────────
-        if not self.cfg.get("skip_raincoat", False):
+        if self._is_stage_enabled("raincoat"):
             state = self._run_stage("raincoat", self._stage_raincoat, state)
         else:
-            log.info("  [SKIP] Raincoat stage bị tắt trong config.")
+            log.info("  [SKIP] Raincoat stage bị tắt (tối ưu hóa pipeline).")
 
         # ── Stage 3.5: VLM Verify (kiểm định chéo trước khi xuất) ────
-        if not self.cfg.get("skip_vlm_verify", False):
+        if self._is_stage_enabled("vlm_verify"):
             state = self._run_stage("vlm_verify", self._stage_vlm_verify, state)
         else:
-            log.info("  [SKIP] VLM verify stage bị tắt trong config.")
+            log.info("  [SKIP] VLM verify stage bị tắt (tối ưu hóa pipeline).")
 
         # ── Stage 4: Postprocess ──────────────────────────────────────
-        state = self._run_stage("postprocess", self._stage_postprocess, state)
+        if self._is_stage_enabled("postprocess"):
+            state = self._run_stage("postprocess", self._stage_postprocess, state)
 
         # ── Stage 5: Store ────────────────────────────────────────────
-        state = self._run_stage("store", self._stage_store, state)
+        if self._is_stage_enabled("store"):
+            state = self._run_stage("store", self._stage_store, state)
 
         # ── Stage 6: Learn ────────────────────────────────────────────
-        if not self.cfg.get("skip_learning", False):
+        if self._is_stage_enabled("learn"):
             state = self._run_stage("learn", self._stage_learn, state)
+        else:
+            log.info("  [SKIP] Learn stage bị tắt (tối ưu hóa pipeline).")
 
         total = time.time() - t_start
         log.info(f"\n{'='*60}")
         log.info(f"  PIPELINE HOÀN THÀNH — {total:.1f}s tổng cộng")
         self._print_timing_report(state)
         log.info(f"{'='*60}\n")
+
+        # Memory cleanup sau khi chạy xong toàn bộ pipeline
+        try:
+            import gc, torch
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
 
         # ── [v4 #5] Pipeline version manifest ──────────────────────────────
         try:
@@ -259,6 +273,18 @@ class FloodPipeline:
         return state
 
     # ── Stage runners ──────────────────────────────────────────────────────────
+
+    def _is_stage_enabled(self, name: str) -> bool:
+        """Kiểm tra stage có được bật không qua cả root config lẫn pipeline.stages."""
+        if self.cfg.get(f"skip_{name}", False):
+            return False
+        stage_cfg = self.cfg.get(name, {})
+        if isinstance(stage_cfg, dict) and not stage_cfg.get("enabled", True):
+            return False
+        pipe_stages = self.cfg.get("pipeline", {}).get("stages", {})
+        if name in pipe_stages and not pipe_stages[name]:
+            return False
+        return True
 
     def _run_stage(self, name: str, fn, state: "PipelineState") -> "PipelineState":
         log.info(f"\n── Stage: {name.upper()} ──────────────────────────────")
@@ -304,13 +330,47 @@ class FloodPipeline:
             if cached_results:
                 log.info(f"  [Cache] Reused {len(cached_results)} depth results")
 
-        depth_results = self.depth.compute(
-            images=images_to_process,
-            overlay_dir=overlay_dir,
-            depthmap_dir=depthmap_dir,
-        )
+        # [Tối ưu] Fast pre-screen: phát hiện ảnh junk hoặc khô ráo (dry) hoàn toàn
+        # để không cần chạy Depth Anything V2 và SegFormer nặng nề
+        pre_screened_results = []
+        if self.cfg.get("use_junk_filter", True) and images_to_process:
+            try:
+                from depth_analysis.junk_classifier import JunkClassifier, ImageType
+                from depth_analysis.reference_estimator import ReferenceFloodResult
+                jc = JunkClassifier()
+                filtered_images = []
+                for img_p in images_to_process:
+                    screen = jc.classify(img_p)
+                    if screen.image_type in (ImageType.JUNK, ImageType.DRY) and screen.confidence >= 0.85:
+                        log.info(f"  [Pre-screen] {img_p.name} -> {screen.image_type.value} ({screen.reason}): Bỏ qua depth model")
+                        res = ReferenceFloodResult(
+                            filename=img_p.name,
+                            original_path=str(img_p),
+                            overlay_path="",
+                            depth_map_path="",
+                            flood_level="NO_FLOOD",
+                            flood_level_desc="Không có lũ (Ảnh khô ráo / Không ngập)" if screen.image_type == ImageType.DRY else "Không phát hiện lũ",
+                            water_height_cm=0.0,
+                            water_height_range="0 cm",
+                            confidence=round(screen.confidence, 2),
+                            notes=f"Pre-screen: {screen.reason}",
+                        )
+                        pre_screened_results.append(res)
+                    else:
+                        filtered_images.append(img_p)
+                images_to_process = filtered_images
+            except Exception as e_junk:
+                log.debug(f"  [Pre-screen] Skip junk classifier: {e_junk}")
 
-        state.depth_results = cached_results + (depth_results or [])
+        depth_results = []
+        if images_to_process:
+            depth_results = self.depth.compute(
+                images=images_to_process,
+                overlay_dir=overlay_dir,
+                depthmap_dir=depthmap_dir,
+            )
+
+        state.depth_results = cached_results + pre_screened_results + (depth_results or [])
         state.log_stage("depth", state.timings.get("depth", 0), len(state.depth_results))
         return state
 

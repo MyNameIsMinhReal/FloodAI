@@ -381,7 +381,7 @@ def _get_chat_estimator():
                 depth_model   = raw_cfg.get("depth_model",  "depth-anything/Depth-Anything-V2-Small-hf"),
                 output_dir    = BASE_DIR / "_chat_tmp",
                 conf_thresh   = float(raw_cfg.get("yolo_conf", 0.35)),
-                use_dino      = raw_cfg.get("use_dino",     True),
+                use_dino      = raw_cfg.get("use_dino",     False),
                 dino_model    = raw_cfg.get("dino_model",   "facebook/dinov2-small"),
                 use_pose      = raw_cfg.get("use_pose",     True),
                 pose_model    = raw_cfg.get("pose_model",   "yolov8n-pose.pt"),
