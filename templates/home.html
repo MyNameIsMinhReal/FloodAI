@@ -105,19 +105,33 @@
                 </div>
             </div>
 
-            <!-- Navigation Links -->
-            <nav class="hidden md:flex items-center gap-1 font-medium text-sm text-slate-700 dark:text-slate-200">
-                <button onclick="switchView('home')" id="nav-home" class="px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition text-teal-600 font-bold">
-                    <i class="fa-solid fa-house mr-1"></i> Trang chủ
+            <!-- Navigation Links (Vibrant Segmented Pill Tabs) -->
+            <nav class="hidden md:flex items-center gap-1 p-1 bg-slate-100/90 dark:bg-slate-800/90 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm backdrop-blur">
+                <!-- 1. Trang chủ (Blue Theme) -->
+                <button onclick="switchView('home')" id="nav-home" class="nav-pill-btn px-3.5 py-1.5 rounded-xl font-extrabold text-xs sm:text-sm transition-all duration-200 flex items-center gap-1.5 bg-blue-600 text-white shadow-md shadow-blue-600/30">
+                    <i class="fa-solid fa-house text-white text-xs"></i>
+                    <span>Trang chủ</span>
                 </button>
-                <button onclick="switchView('map')" id="nav-map" class="px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-                    <i class="fa-solid fa-map-location-dot mr-1"></i> Bản đồ cứu hộ
+
+                <!-- 2. Bản đồ cứu hộ (Emerald Theme) -->
+                <button onclick="switchView('map')" id="nav-map" class="nav-pill-btn px-3.5 py-1.5 rounded-xl font-bold text-xs sm:text-sm transition-all duration-200 flex items-center gap-1.5 text-slate-700 dark:text-slate-200 hover:text-emerald-600 hover:bg-white/80 dark:hover:bg-slate-700">
+                    <i class="fa-solid fa-map-location-dot text-emerald-500 text-xs"></i>
+                    <span>Bản đồ cứu hộ</span>
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                 </button>
-                <button onclick="switchView('news')" id="nav-news" class="px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition text-slate-700 dark:text-slate-200">
-                    <i class="fa-solid fa-newspaper mr-1 text-teal-600 dark:text-teal-400"></i> Báo Mới 24/7
+
+                <!-- 3. Báo Mới 24/7 (Amber/Orange Theme) -->
+                <button onclick="switchView('news')" id="nav-news" class="nav-pill-btn px-3.5 py-1.5 rounded-xl font-bold text-xs sm:text-sm transition-all duration-200 flex items-center gap-1.5 text-slate-700 dark:text-slate-200 hover:text-orange-600 hover:bg-white/80 dark:hover:bg-slate-700">
+                    <i class="fa-solid fa-newspaper text-amber-500 text-xs"></i>
+                    <span>Báo Mới 24/7</span>
+                    <span class="text-[9px] bg-amber-500 text-white font-black px-1.5 py-0.5 rounded-full shadow-sm">HOT</span>
                 </button>
-                <button onclick="openAiChatModal()" class="px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-                    <i class="fa-solid fa-robot text-teal-500 mr-1"></i> AI Trợ lý
+
+                <!-- 4. AI Trợ lý (Violet/Gradient Accent) -->
+                <button onclick="openAiChatModal()" id="nav-chat" class="px-3.5 py-1.5 rounded-xl font-bold text-xs sm:text-sm transition-all duration-200 flex items-center gap-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white shadow-md shadow-violet-500/25 active:scale-95">
+                    <i class="fa-solid fa-robot text-violet-200 text-xs"></i>
+                    <span>AI Trợ lý</span>
+                    <span class="text-[9px] bg-white/25 text-white px-1.5 py-0.5 rounded-full font-extrabold uppercase">24/7</span>
                 </button>
             </nav>
 
@@ -1330,18 +1344,27 @@
             const emergBar = document.getElementById('emergencyBar');
             const footerEl = document.querySelector('footer');
 
-            // Reset all desktop nav highlights
-            [navHome, navMap, navNews].forEach(el => {
-                if (el) {
-                    el.classList.remove('text-teal-600', 'font-bold');
-                    el.classList.add('text-slate-700', 'dark:text-slate-200');
-                }
-            });
+            // Reset Desktop Nav Tabs to clean inactive state
+            if (navHome) {
+                navHome.className = "nav-pill-btn px-3.5 py-1.5 rounded-xl font-bold text-xs sm:text-sm transition-all duration-200 flex items-center gap-1.5 text-slate-700 dark:text-slate-200 hover:text-blue-600 hover:bg-white/80 dark:hover:bg-slate-700";
+                const icon = navHome.querySelector('i');
+                if (icon) icon.className = "fa-solid fa-house text-blue-500 text-xs";
+            }
+            if (navMap) {
+                navMap.className = "nav-pill-btn px-3.5 py-1.5 rounded-xl font-bold text-xs sm:text-sm transition-all duration-200 flex items-center gap-1.5 text-slate-700 dark:text-slate-200 hover:text-emerald-600 hover:bg-white/80 dark:hover:bg-slate-700";
+                const icon = navMap.querySelector('i');
+                if (icon) icon.className = "fa-solid fa-map-location-dot text-emerald-500 text-xs";
+            }
+            if (navNews) {
+                navNews.className = "nav-pill-btn px-3.5 py-1.5 rounded-xl font-bold text-xs sm:text-sm transition-all duration-200 flex items-center gap-1.5 text-slate-700 dark:text-slate-200 hover:text-orange-600 hover:bg-white/80 dark:hover:bg-slate-700";
+                const icon = navNews.querySelector('i');
+                if (icon) icon.className = "fa-solid fa-newspaper text-amber-500 text-xs";
+            }
 
-            // Reset all mobile nav highlights
+            // Reset Mobile Bottom Nav
             [mobNavHome, mobNavMap, mobNavNews].forEach(el => {
                 if (el) {
-                    el.classList.remove('text-teal-600', 'dark:text-teal-400');
+                    el.classList.remove('text-blue-600', 'text-emerald-600', 'text-orange-600', 'font-black', 'scale-105');
                     el.classList.add('text-slate-500', 'dark:text-slate-400');
                 }
             });
@@ -1352,22 +1375,35 @@
                 if (newsSec) newsSec.classList.add('hidden');
                 if (emergBar) emergBar.classList.remove('hidden');
                 if (footerEl) footerEl.classList.remove('hidden');
-                if (navHome) { navHome.classList.add('text-teal-600', 'font-bold'); }
+
+                // Active Home: Rich Blue
+                if (navHome) {
+                    navHome.className = "nav-pill-btn px-3.5 py-1.5 rounded-xl font-extrabold text-xs sm:text-sm transition-all duration-200 flex items-center gap-1.5 bg-blue-600 text-white shadow-md shadow-blue-600/30";
+                    const icon = navHome.querySelector('i');
+                    if (icon) icon.className = "fa-solid fa-house text-white text-xs";
+                }
                 if (mobNavHome) {
-                    mobNavHome.classList.add('text-teal-600', 'dark:text-teal-400');
                     mobNavHome.classList.remove('text-slate-500', 'dark:text-slate-400');
+                    mobNavHome.classList.add('text-blue-600', 'font-black', 'scale-105');
                 }
                 if (homeMapInstance) setTimeout(() => homeMapInstance.invalidateSize(), 100);
+
             } else if (viewName === 'map') {
                 if (homeSec) homeSec.classList.add('hidden');
                 if (mapSec) mapSec.classList.remove('hidden');
                 if (newsSec) newsSec.classList.add('hidden');
                 if (emergBar) emergBar.classList.add('hidden');
                 if (footerEl) footerEl.classList.add('hidden');
-                if (navMap) { navMap.classList.add('text-teal-600', 'font-bold'); }
+
+                // Active Map: Rich Emerald
+                if (navMap) {
+                    navMap.className = "nav-pill-btn px-3.5 py-1.5 rounded-xl font-extrabold text-xs sm:text-sm transition-all duration-200 flex items-center gap-1.5 bg-emerald-600 text-white shadow-md shadow-emerald-600/30";
+                    const icon = navMap.querySelector('i');
+                    if (icon) icon.className = "fa-solid fa-map-location-dot text-white text-xs";
+                }
                 if (mobNavMap) {
-                    mobNavMap.classList.add('text-teal-600', 'dark:text-teal-400');
                     mobNavMap.classList.remove('text-slate-500', 'dark:text-slate-400');
+                    mobNavMap.classList.add('text-emerald-600', 'font-black', 'scale-105');
                 }
                 setTimeout(() => {
                     if (!fullMapInstance) {
@@ -1376,18 +1412,24 @@
                         fullMapInstance.invalidateSize();
                     }
                 }, 100);
+
             } else if (viewName === 'news') {
                 if (homeSec) homeSec.classList.add('hidden');
                 if (mapSec) mapSec.classList.add('hidden');
                 if (newsSec) newsSec.classList.remove('hidden');
                 if (emergBar) emergBar.classList.remove('hidden');
                 if (footerEl) footerEl.classList.remove('hidden');
-                if (navNews) { navNews.classList.add('text-teal-600', 'font-bold'); }
-                if (mobNavNews) {
-                    mobNavNews.classList.add('text-teal-600', 'dark:text-teal-400');
-                    mobNavNews.classList.remove('text-slate-500', 'dark:text-slate-400');
+
+                // Active News: Rich Amber/Orange Gradient
+                if (navNews) {
+                    navNews.className = "nav-pill-btn px-3.5 py-1.5 rounded-xl font-extrabold text-xs sm:text-sm transition-all duration-200 flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md shadow-orange-500/30";
+                    const icon = navNews.querySelector('i');
+                    if (icon) icon.className = "fa-solid fa-newspaper text-white text-xs";
                 }
-                // Load news articles on enter
+                if (mobNavNews) {
+                    mobNavNews.classList.remove('text-slate-500', 'dark:text-slate-400');
+                    mobNavNews.classList.add('text-orange-600', 'font-black', 'scale-105');
+                }
                 if (!newsArticles || newsArticles.length === 0) {
                     loadNewsArticles();
                 }
