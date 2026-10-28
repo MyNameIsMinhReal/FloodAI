@@ -234,13 +234,17 @@ REWRITE_SYS = (
     "Không thêm thông tin ngoài bài gốc. Không dùng bullet points."
 )
 CHAT_SYS = (
-    "Bạn là FloodAgent — chuyên gia AI về lũ lụt và cứu hộ khẩn cấp thuộc Hệ thống FloodAI GIRC Thái Nguyên.\n"
+    "Bạn là FloodAgent — chuyên gia AI về cảnh báo thiên tai, lũ lụt và cứu nạn cứu hộ khẩn cấp "
+    "trên toàn lãnh thổ Việt Nam (thuộc Hệ thống FloodAI GIRC).\n"
     "Nhiệm vụ: tư vấn an toàn lũ lụt, giải thích nguyên nhân thiên tai, "
-    "hướng dẫn ứng phó cứu hộ khẩn cấp, phân tích hiện trạng ngập lũ nếu có ảnh gửi kèm.\n"
+    "hướng dẫn ứng phó cứu hộ khẩn cấp cho người dân tại tất cả 63 tỉnh thành Việt Nam, "
+    "phân tích hiện trạng ngập lũ nếu có ảnh gửi kèm.\n"
     "QUY TẮC BẮT BUỘC:\n"
     "- LUÔN LUÔN trả lời 100% bằng TIẾNG VIỆT tự nhiên, chuẩn mực, rõ ràng.\n"
     "- TUYỆT ĐỐI KHÔNG dùng tiếng Trung, chữ Hán, tiếng Nga hay bất kỳ từ ngữ ngoại lai nào.\n"
     "- Trả lời ngắn gọn, thiết thực, ưu tiên bảo vệ an toàn tính mạng con người.\n"
+    "- Hướng dẫn người dân gọi đúng đầu số khẩn cấp toàn quốc: 112 (Yêu cầu cứu nạn khẩn cấp thiên tai), "
+    "114 (Cứu nạn cứu hộ PCCC), 115 (Cấp cứu y tế) hoặc Ban chỉ đạo PCTT địa phương tương ứng.\n"
     "- KHÔNG dùng format INTENT:/DEPTH_HINT: — chỉ viết câu trả lời tự nhiên."
 )
 
@@ -604,67 +608,67 @@ _DEFAULT_SOS_REPORTS = [
     },
     {
         "id": 2,
-        "title": "Ngập sâu 1.2m ngã tư Bến Oánh",
-        "type": "flood",
-        "lat": 21.6050,
-        "lng": 105.8350,
-        "location": "Phường Quang Vinh, TP. Thái Nguyên",
+        "title": "Sạt lở taluy & ngập sâu khu dân cư",
+        "type": "emergency",
+        "lat": 21.7228,
+        "lng": 104.9113,
+        "location": "Phường Hồng Hà, TP. Yên Bái",
         "time": "25 phút trước",
         "phone": "0915***388",
-        "detail": "Các phương tiện ô tô, xe máy không thể lưu thông qua khu vực này. Nhiều xe ô tô con bị ngập.",
-        "aiAnalysis": "Nước dâng 120cm • Xe gầm cao bị cản trở",
+        "detail": "Nước sông Hồng dâng cao tràn đê, nhiều hộ dân bị cô lập cần di dời khẩn cấp.",
+        "aiAnalysis": "Nước dâng 150cm • Nguy cơ cô lập",
         "status": "pending",
     },
     {
         "id": 3,
-        "title": "Trạm Sơ Tán & Kho Nhu Yếu Phẩm ĐH Nông Lâm (TUAF)",
+        "title": "Trạm Tiếp Nhận Cứu Trợ & Sơ Tán Trung Tâm",
         "type": "shelter",
-        "lat": 21.5880,
-        "lng": 105.8180,
-        "location": "Trường ĐH Nông Lâm Thái Nguyên, Quyết Thắng",
+        "lat": 21.0185,
+        "lng": 105.7725,
+        "location": "Cung Điền kinh Quốc gia, Nam Từ Liêm, Hà Nội",
         "time": "Đang hoạt động",
-        "phone": "0208.3855.112",
-        "detail": "Khu vực địa hình cao ráo, cung cấp chỗ ở tạm thời, nước sạch, sạc pin điện thoại và cơm nóng miễn phí.",
-        "aiAnalysis": "An toàn tuyệt đối • Sức chứa 500 người",
+        "phone": "024.3837.8348",
+        "detail": "Khu vực cao ráo an toàn, cung cấp chỗ lưu trú, sạc pin điện thoại, suất ăn và nước sạch miễn phí.",
+        "aiAnalysis": "An toàn tuyệt đối • Sức chứa 2,000 người",
         "status": "resolved",
     },
     {
         "id": 4,
-        "title": "Cần viện trợ nước sạch & áo phao",
-        "type": "emergency",
-        "lat": 21.5720,
-        "lng": 105.8580,
-        "location": "Phường Gia Sàng, TP. Thái Nguyên",
+        "title": "Nước ngập tràn Quốc Lộ 1A chia cắt lưu thông",
+        "type": "flood",
+        "lat": 16.2625,
+        "lng": 107.9056,
+        "location": "Thị trấn Phú Lộc, Phú Lộc, Thừa Thiên Huế",
         "time": "40 phút trước",
         "phone": "0977***901",
-        "detail": "Xóm bị cô lập 2 ngày qua, hết nước uống và pin dự phòng.",
-        "aiAnalysis": "Cần nhu yếu phẩm khẩn cấp",
+        "detail": "Đoạn qua đầm Cầu Hai nước ngập 1.1m, các phương tiện không thể di chuyển qua đèo.",
+        "aiAnalysis": "Nước dâng 110cm • Cấm mọi phương tiện",
         "status": "pending",
     },
     {
         "id": 5,
-        "title": "Trạm Cứu Hộ & Y Tế Đồng Hỷ",
+        "title": "Trạm Điều Phối Xuồng Cứu Nạn Hòa Vang",
         "type": "shelter",
-        "lat": 21.6120,
-        "lng": 105.8650,
-        "location": "Trung tâm Y tế Huyện Đồng Hỷ",
+        "lat": 15.9658,
+        "lng": 108.1132,
+        "location": "UBND Xã Hòa Khương, Huyện Hòa Vang, TP. Đà Nẵng",
         "time": "Đang hoạt động",
-        "phone": "0208.3822.115",
-        "detail": "Trực 24/24 tiếp nhận bệnh nhân và các ca sơ cứu thiên tai.",
-        "aiAnalysis": "Điểm y tế hỗ trợ",
+        "phone": "0236.3822.492",
+        "detail": "Trực ban 24/24 tiếp nhận người dân sơ tán từ vùng trũng thấp ven sông Yên.",
+        "aiAnalysis": "Trực 24/24 • 12 xuồng cứu hộ sẵn sàng",
         "status": "resolved",
     },
     {
         "id": 6,
-        "title": "Trạm Quan Trắc Mực Nước Cầu Gia Bẩy (Sông Cầu)",
-        "type": "sensor",
-        "lat": 21.5980,
-        "lng": 105.8480,
-        "location": "Cầu Gia Bẩy, Sông Cầu, Thái Nguyên",
+        "title": "Triều cường dâng cao ngập tuyến đường huyết mạch",
+        "type": "flood",
+        "lat": 10.7483,
+        "lng": 106.7118,
+        "location": "Đường Trần Xuân Soạn, Quận 7, TP. Hồ Chí Minh",
         "time": "Vừa cập nhật",
-        "phone": "112",
-        "detail": "Mực nước Sông Cầu vượt Báo động III (+2.4m). Cảnh báo ngập lụt diện rộng.",
-        "aiAnalysis": "Mực nước Báo động III",
+        "phone": "114",
+        "detail": "Mực nước triều dâng kết hợp mưa lớn gây ngập 65cm, giao thông ùn ứ nghiêm trọng.",
+        "aiAnalysis": "Triều cường + Mưa lớn • Mực nước 65cm",
         "status": "resolved",
     },
 ]
@@ -690,7 +694,7 @@ def api_sos_report_create():
     data = request.get_json(silent=True) or {}
     name = (data.get("name") or "Người dân").strip()
     phone = (data.get("phone") or "").strip()
-    address = (data.get("address") or "TP. Thái Nguyên").strip()
+    address = (data.get("address") or "Việt Nam").strip()
     rtype = (data.get("type") or "emergency").strip()
     detail = (data.get("detail") or "Tín hiệu cứu hộ gửi trực tiếp từ ứng dụng FloodAI.").strip()
     lat = data.get("lat")
@@ -699,8 +703,9 @@ def api_sos_report_create():
 
     if lat is None or lng is None:
         import random
-        lat = round(21.5928 + (random.random() - 0.5) * 0.025, 5)
-        lng = round(105.8442 + (random.random() - 0.5) * 0.025, 5)
+        # Tọa độ mặc định trung tâm Việt Nam nếu thiết bị không bật GPS
+        lat = round(16.0470 + (random.random() - 0.5) * 0.05, 5)
+        lng = round(108.2062 + (random.random() - 0.5) * 0.05, 5)
 
     ai_label = "Mới gửi • Đã xác minh tọa độ GPS"
     depth_cm = None
@@ -939,7 +944,7 @@ def _detect_location(image_b64: Optional[str] = None,
             return {
                 "lat": round(est.lat, 5),
                 "lon": round(est.lon, 5),
-                "address": est.address or f"Khu vực Thái Nguyên ({est.lat:.4f}, {est.lon:.4f})",
+                "address": est.address or f"Tọa độ ({est.lat:.4f}, {est.lon:.4f})",
                 "method": est.method,
                 "method_label": method_labels.get(est.method, "Định vị tự động"),
                 "radius_m": est.radius_m,
