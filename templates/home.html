@@ -4,6 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FloodAI - Hệ Thống Cảnh Báo Ngập Lụt & Cứu Hộ Khẩn Cấp GIRC Thái Nguyên</title>
+    <!-- Immediate theme restoration from localStorage to prevent flash of wrong theme -->
+    <script>
+        (function() {
+            try {
+                const savedTheme = localStorage.getItem('floodai_theme');
+                if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                    document.documentElement.classList.add('dark');
+                    document.documentElement.classList.remove('light');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                    document.documentElement.classList.add('light');
+                }
+            } catch (e) {}
+        })();
+    </script>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -714,7 +729,7 @@
         // ===================================================================
         // STATE MANAGEMENT & DATA STORES
         // ===================================================================
-        let isDarkMode = false;
+        let isDarkMode = document.documentElement.classList.contains('dark');
         let currentView = 'home';
         let homeMapInstance = null;
         let homeMarkersGroup = null;
@@ -905,13 +920,15 @@
             if (elAdmRes) elAdmRes.innerText = `${resolved} Tin`;
         }
 
-        // Dark Mode Toggle
+        // Dark Mode Toggle & LocalStorage persistence
         function toggleDarkMode() {
-            isDarkMode = !isDarkMode;
+            isDarkMode = document.documentElement.classList.toggle('dark');
             if (isDarkMode) {
-                document.documentElement.classList.add('dark');
+                document.documentElement.classList.remove('light');
+                try { localStorage.setItem('floodai_theme', 'dark'); } catch (e) {}
             } else {
-                document.documentElement.classList.remove('dark');
+                document.documentElement.classList.add('light');
+                try { localStorage.setItem('floodai_theme', 'light'); } catch (e) {}
             }
         }
 
