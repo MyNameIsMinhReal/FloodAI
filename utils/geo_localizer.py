@@ -279,13 +279,14 @@ class GeoLocalizer:
 
     def _from_ip(self, ip: str) -> GeoEstimate:
         """ip-api.com — miễn phí, không cần key, giới hạn 45 req/phút."""
-        if not ip or ip in ("127.0.0.1", "::1", "localhost"):
-            return GeoEstimate()
         try:
-            url  = f"http://ip-api.com/json/{ip}?fields=status,lat,lon,city,regionName&lang=vi"
+            if not ip or ip in ("127.0.0.1", "::1", "localhost") or ip.startswith(("10.", "192.168.", "172.16.")):
+                url = "http://ip-api.com/json/?fields=status,lat,lon,city,regionName&lang=vi"
+            else:
+                url = f"http://ip-api.com/json/{ip}?fields=status,lat,lon,city,regionName&lang=vi"
             req  = urllib.request.Request(url, headers={"User-Agent": "FloodPipeline/1.0"})
             resp = urllib.request.urlopen(req, timeout=5)
-            data = json.loads(resp.read())
+            data = json.loads(resp.read().decode("utf-8"))
             if data.get("status") == "success":
                 return GeoEstimate(
                     lat=float(data["lat"]), lon=float(data["lon"]),

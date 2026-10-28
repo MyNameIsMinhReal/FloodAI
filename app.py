@@ -980,6 +980,50 @@ def api_geo_detect():
     return jsonify({"ok": False, "msg": "Không xác định được tọa độ"})
 
 
+@app.route("/api/geo/client_ip", methods=["GET"])
+def api_geo_client_ip():
+    """Tự động định vị thành phố/tỉnh và tọa độ trung tâm dựa trên địa chỉ IP của người dùng."""
+    forwarded_for = request.headers.get("X-Forwarded-For", "")
+    client_ip = forwarded_for.split(",")[0].strip() if forwarded_for else (request.remote_addr or "")
+
+    is_local = (
+        not client_ip
+        or client_ip in ("127.0.0.1", "::1", "localhost")
+        or client_ip.startswith(("10.", "192.168.", "172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31."))
+    )
+
+    query_url = "http://ip-api.com/json/?fields=status,lat,lon,city,regionName,countryCode&lang=vi" if is_local else f"http://ip-api.com/json/{client_ip}?fields=status,lat,lon,city,regionName,countryCode&lang=vi"
+
+    try:
+        import urllib.request
+        req = urllib.request.Request(query_url, headers={"User-Agent": "FloodPipeline/1.0"})
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            if data.get("status") == "success":
+                city = data.get("city") or data.get("regionName") or "Việt Nam"
+                region = data.get("regionName") or city
+                return jsonify({
+                    "ok": True,
+                    "city": city,
+                    "region": region,
+                    "lat": float(data["lat"]),
+                    "lon": float(data["lon"]),
+                    "client_ip": client_ip or "Auto (Public IP)",
+                    "country": data.get("countryCode", "VN")
+                })
+    except Exception as exc:
+        log.debug(f"[api_geo_client_ip] {exc}")
+
+    # Fallback to Vietnam geographic center
+    return jsonify({
+        "ok": False,
+        "city": "Việt Nam",
+        "region": "Toàn quốc",
+        "lat": 16.0470,
+        "lon": 108.2062
+    })
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # API — CHAT
 # ══════════════════════════════════════════════════════════════════════════════
