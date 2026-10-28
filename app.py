@@ -239,6 +239,19 @@ CHAT_SYS = (
     "Nhiệm vụ: tư vấn an toàn lũ lụt, giải thích nguyên nhân thiên tai, "
     "hướng dẫn ứng phó cứu hộ khẩn cấp cho người dân tại tất cả 63 tỉnh thành Việt Nam, "
     "phân tích hiện trạng ngập lũ nếu có ảnh gửi kèm.\n"
+    "ĐIỂM SƠ TÁN TOÀN QUỐC:\n"
+    "- Khi người dân hỏi về trạm sơ tán hoặc nơi tránh trú an toàn, hãy hỏi tỉnh/thành của họ và hướng dẫn "
+    "đến các trạm sơ tán an toàn cao ráo của địa phương tương ứng:\n"
+    "  + Hà Nội: Cung Điền kinh Quốc gia (Nam Từ Liêm), Cung Thể thao Quần Ngựa (Ba Đình).\n"
+    "  + Thái Nguyên: Trường ĐH Nông Lâm Thái Nguyên (TUAF - Đồi Quyết Thắng), Nhà thi đấu Tỉnh.\n"
+    "  + Yên Bái: THPT Chuyên Nguyễn Tất Thành (đồi cao tránh lũ sông Thao).\n"
+    "  + Hải Phòng & Quảng Ninh: Cung Văn hóa Việt Tiệp (Lê Chân), Cung Triển lãm Hạ Long.\n"
+    "  + Nghệ An & Hà Tĩnh: Nhà thi đấu Tỉnh Nghệ An (TP. Vinh), Trung tâm TDTT Hồng Lĩnh.\n"
+    "  + Thừa Thiên Huế: Trung tâm Thể thao Tỉnh (Đường Bà Triệu), ĐH Nông Lâm Huế.\n"
+    "  + Đà Nẵng & Quảng Nam: Cung Thể thao Tiên Sơn (Hải Châu), UBND Xã Hòa Khương (Hòa Vang), Nhà thi đấu Tam Kỳ.\n"
+    "  + Tây Nguyên (Đắk Lắk): Nhà thi đấu Tỉnh Đắk Lắk (TP. Buôn Ma Thuột).\n"
+    "  + TP. Hồ Chí Minh: Nhà thi đấu Phú Thọ (Quận 11 - gò cao không ngập), Trung tâm TDTT Quận 7.\n"
+    "  + Miền Tây (Cần Thơ, An Giang): Nhà thi đấu Cần Thơ (Ninh Kiều), Sân vận động An Giang (Long Xuyên).\n"
     "QUY TẮC BẮT BUỘC:\n"
     "- LUÔN LUÔN trả lời 100% bằng TIẾNG VIỆT tự nhiên, chuẩn mực, rõ ràng.\n"
     "- TUYỆT ĐỐI KHÔNG dùng tiếng Trung, chữ Hán, tiếng Nga hay bất kỳ từ ngữ ngoại lai nào.\n"
@@ -602,14 +615,14 @@ _DEFAULT_SOS_REPORTS = [
         "id": 1,
         "title": "Cứu hộ khẩn 4 người mắc kẹt gác xép",
         "type": "emergency",
-        "lat": 21.5850,
-        "lng": 105.8500,
+        "lat": 21.585,
+        "lng": 105.85,
         "location": "Phường Túc Duyên, TP. Thái Nguyên",
         "time": "10 phút trước",
         "phone": "0982***112",
         "detail": "Nước dâng tràn hơn 1.8m, cắt điện hoàn toàn. Cần xuồng máy hỗ trợ đón người già và em nhỏ.",
         "aiAnalysis": "Nước dâng 180cm • Mức độ 3 (Khẩn cấp)",
-        "status": "pending",
+        "status": "pending"
     },
     {
         "id": 2,
@@ -622,20 +635,7 @@ _DEFAULT_SOS_REPORTS = [
         "phone": "0915***388",
         "detail": "Nước sông Hồng dâng cao tràn đê, nhiều hộ dân bị cô lập cần di dời khẩn cấp.",
         "aiAnalysis": "Nước dâng 150cm • Nguy cơ cô lập",
-        "status": "pending",
-    },
-    {
-        "id": 3,
-        "title": "Trạm Tiếp Nhận Cứu Trợ & Sơ Tán Trung Tâm",
-        "type": "shelter",
-        "lat": 21.0185,
-        "lng": 105.7725,
-        "location": "Cung Điền kinh Quốc gia, Nam Từ Liêm, Hà Nội",
-        "time": "Đang hoạt động",
-        "phone": "024.3837.8348",
-        "detail": "Khu vực cao ráo an toàn, cung cấp chỗ lưu trú, sạc pin điện thoại, suất ăn và nước sạch miễn phí.",
-        "aiAnalysis": "An toàn tuyệt đối • Sức chứa 2,000 người",
-        "status": "resolved",
+        "status": "pending"
     },
     {
         "id": 4,
@@ -648,20 +648,7 @@ _DEFAULT_SOS_REPORTS = [
         "phone": "0977***901",
         "detail": "Đoạn qua đầm Cầu Hai nước ngập 1.1m, các phương tiện không thể di chuyển qua đèo.",
         "aiAnalysis": "Nước dâng 110cm • Cấm mọi phương tiện",
-        "status": "pending",
-    },
-    {
-        "id": 5,
-        "title": "Trạm Điều Phối Xuồng Cứu Nạn Hòa Vang",
-        "type": "shelter",
-        "lat": 15.9658,
-        "lng": 108.1132,
-        "location": "UBND Xã Hòa Khương, Huyện Hòa Vang, TP. Đà Nẵng",
-        "time": "Đang hoạt động",
-        "phone": "0236.3822.492",
-        "detail": "Trực ban 24/24 tiếp nhận người dân sơ tán từ vùng trũng thấp ven sông Yên.",
-        "aiAnalysis": "Trực 24/24 • 12 xuồng cứu hộ sẵn sàng",
-        "status": "resolved",
+        "status": "pending"
     },
     {
         "id": 6,
@@ -674,8 +661,216 @@ _DEFAULT_SOS_REPORTS = [
         "phone": "114",
         "detail": "Mực nước triều dâng kết hợp mưa lớn gây ngập 65cm, giao thông ùn ứ nghiêm trọng.",
         "aiAnalysis": "Triều cường + Mưa lớn • Mực nước 65cm",
-        "status": "resolved",
+        "status": "resolved"
     },
+    {
+        "id": 3,
+        "title": "Trạm Tiếp Nhận Cứu Trợ & Sơ Tán Trung Tâm Hà Nội",
+        "type": "shelter",
+        "lat": 21.0185,
+        "lng": 105.7725,
+        "location": "Cung Điền kinh Quốc gia, Nam Từ Liêm, Hà Nội",
+        "time": "Đang hoạt động",
+        "phone": "024.3837.8348",
+        "detail": "Địa hình cao ráo, cung cấp chỗ lưu trú tạm thời, sạc pin điện thoại, suất ăn và nước sạch miễn phí.",
+        "aiAnalysis": "An toàn tuyệt đối • Sức chứa 2,000 người",
+        "status": "resolved"
+    },
+    {
+        "id": 7,
+        "title": "Điểm Sơ Tán An Toàn Ba Đình - Hà Nội",
+        "type": "shelter",
+        "lat": 21.0392,
+        "lng": 105.8164,
+        "location": "Cung Thể thao Quần Ngựa, Phố Văn Cao, Ba Đình, Hà Nội",
+        "time": "Đang hoạt động",
+        "phone": "024.3832.5114",
+        "detail": "Nhà thi đấu kiên cố, tiếp nhận người dân tránh ngập úng nội thành và bão lớn.",
+        "aiAnalysis": "Sẵn sàng 24/7 • Sức chứa 1,500 người",
+        "status": "resolved"
+    },
+    {
+        "id": 8,
+        "title": "Trạm Sơ Tán Địa Hình Cao ĐH Nông Lâm Thái Nguyên",
+        "type": "shelter",
+        "lat": 21.588,
+        "lng": 105.818,
+        "location": "ĐH Nông Lâm Thái Nguyên (TUAF), Quyết Thắng, Thái Nguyên",
+        "time": "Đang hoạt động",
+        "phone": "0208.3855.112",
+        "detail": "Khuôn viên trên đồi cao tuyệt đối không ngập, có kho thực phẩm, nước sạch và đội xuồng cứu hộ túc trực.",
+        "aiAnalysis": "Đồi cao an toàn • Sức chứa 1,000 người",
+        "status": "resolved"
+    },
+    {
+        "id": 9,
+        "title": "Trạm Tiếp Nhận Sơ Tán TP. Yên Bái",
+        "type": "shelter",
+        "lat": 21.718,
+        "lng": 104.9025,
+        "location": "Trường THPT Chuyên Nguyễn Tất Thành, TP. Yên Bái",
+        "time": "Đang hoạt động",
+        "phone": "0216.3852.361",
+        "detail": "Vùng đồi cao an toàn tránh lũ sông Thao, có nhân viên y tế và lương thực dự trữ 7 ngày.",
+        "aiAnalysis": "Tránh ngập đê sông Hồng • Sức chứa 800 người",
+        "status": "resolved"
+    },
+    {
+        "id": 10,
+        "title": "Trung Tâm Tránh Trú Bão Lụt Hải Phòng",
+        "type": "shelter",
+        "lat": 20.8525,
+        "lng": 106.684,
+        "location": "Cung Văn hóa Hữu nghị Việt Tiệp, Lê Chân, Hải Phòng",
+        "time": "Đang hoạt động",
+        "phone": "0225.3842.114",
+        "detail": "Tòa nhà bê tông kiên cố chống bão cấp 14, có máy phát điện dự phòng công suất lớn.",
+        "aiAnalysis": "Kiên cố cấp 14 • Sức chứa 1,200 người",
+        "status": "resolved"
+    },
+    {
+        "id": 11,
+        "title": "Trạm Tránh Bão & Sơ Tán Ven Biển Quảng Ninh",
+        "type": "shelter",
+        "lat": 20.949,
+        "lng": 107.0875,
+        "location": "Cung Quy hoạch Hội chợ Triển lãm, TP. Hạ Long, Quảng Ninh",
+        "time": "Đang hoạt động",
+        "phone": "0203.3835.621",
+        "detail": "Địa điểm tránh triều cường và nước dâng do bão cho ngư dân và khách du lịch.",
+        "aiAnalysis": "Chống triều dâng bão • Sức chứa 2,500 người",
+        "status": "resolved"
+    },
+    {
+        "id": 12,
+        "title": "Trung Tâm Sơ Tán Tránh Lũ Nghệ An",
+        "type": "shelter",
+        "lat": 18.675,
+        "lng": 105.682,
+        "location": "Nhà thi đấu Thể thao Tỉnh Nghệ An, TP. Vinh",
+        "time": "Đang hoạt động",
+        "phone": "0238.3844.114",
+        "detail": "Tiếp nhận nhân dân từ các vùng trũng ngập ven sông Lam và Hưng Nguyên sơ tán khẩn cấp.",
+        "aiAnalysis": "Tiếp nhận 24/24 • Sức chứa 1,500 người",
+        "status": "resolved"
+    },
+    {
+        "id": 13,
+        "title": "Trạm Sơ Tán Tránh Lũ & Cứu Nạn Huế",
+        "type": "shelter",
+        "lat": 16.467,
+        "lng": 107.595,
+        "location": "Trung tâm Thể thao Tỉnh Thừa Thiên Huế, TP. Huế",
+        "time": "Đang hoạt động",
+        "phone": "0234.3822.345",
+        "detail": "Khu vực cao ráo trung tâm, có đội cano cao su túc trực đưa người dân vùng lũ sông Hương vào tránh trú.",
+        "aiAnalysis": "Vùng cao bờ Nam sông Hương • Sức chứa 1,000 người",
+        "status": "resolved"
+    },
+    {
+        "id": 5,
+        "title": "Trạm Điều Phối Xuồng Cứu Nạn Hòa Vang - Đà Nẵng",
+        "type": "shelter",
+        "lat": 15.9658,
+        "lng": 108.1132,
+        "location": "UBND Xã Hòa Khương, Huyện Hòa Vang, TP. Đà Nẵng",
+        "time": "Đang hoạt động",
+        "phone": "0236.3822.492",
+        "detail": "Trực ban 24/24 tiếp nhận người dân sơ tán từ vùng trũng thấp ven sông Yên.",
+        "aiAnalysis": "Trực 24/24 • 12 xuồng cứu hộ sẵn sàng",
+        "status": "resolved"
+    },
+    {
+        "id": 14,
+        "title": "Cung Thể Thao Tiên Sơn - Điểm Tránh Bão Lũ Đà Nẵng",
+        "type": "shelter",
+        "lat": 16.035,
+        "lng": 108.223,
+        "location": "Cung Thể thao Tiên Sơn, Phường Hòa Cường Bắc, Hải Châu, Đà Nẵng",
+        "time": "Đang hoạt động",
+        "phone": "0236.3888.114",
+        "detail": "Công trình kiên cố tiêu chuẩn quốc tế, trang bị trạm y tế dã chiến, nước uống và bếp ăn tập thể.",
+        "aiAnalysis": "An toàn bão cấp 15 • Sức chứa 4,000 người",
+        "status": "resolved"
+    },
+    {
+        "id": 15,
+        "title": "Trạm Sơ Tán An Toàn Tam Kỳ - Quảng Nam",
+        "type": "shelter",
+        "lat": 15.568,
+        "lng": 108.483,
+        "location": "Nhà thi đấu TDTT Tỉnh Quảng Nam, TP. Tam Kỳ",
+        "time": "Đang hoạt động",
+        "phone": "0235.3852.540",
+        "detail": "Điểm sơ tán cao ráo tránh lũ sông Tam Kỳ và vùng biển lân cận.",
+        "aiAnalysis": "Tránh lũ ngập ven biển • Sức chứa 1,200 người",
+        "status": "resolved"
+    },
+    {
+        "id": 16,
+        "title": "Trạm Cứu Trợ Lũ Quét Buôn Ma Thuột - Đắk Lắk",
+        "type": "shelter",
+        "lat": 12.685,
+        "lng": 108.045,
+        "location": "Nhà thi đấu Thể thao Tỉnh Đắk Lắk, TP. Buôn Ma Thuột",
+        "time": "Đang hoạt động",
+        "phone": "0262.3852.114",
+        "detail": "Trạm trung chuyển cứu trợ và tránh sạt lở đất vùng đồi dốc Tây Nguyên.",
+        "aiAnalysis": "Tránh sạt lở đồi dốc • Sức chứa 1,000 người",
+        "status": "resolved"
+    },
+    {
+        "id": 17,
+        "title": "Trạm Tiếp Nhận Sơ Tán Phú Thọ - TP. Hồ Chí Minh",
+        "type": "shelter",
+        "lat": 10.768,
+        "lng": 106.657,
+        "location": "Nhà thi đấu Phú Thọ, Quận 11, TP. Hồ Chí Minh",
+        "time": "Đang hoạt động",
+        "phone": "028.3829.7598",
+        "detail": "Địa hình gò cao trung tâm Sài Gòn, tiếp nhận bà con sơ tán tránh ngập lụt triều cường đô thị.",
+        "aiAnalysis": "Gò đất cao không ngập • Sức chứa 3,000 người",
+        "status": "resolved"
+    },
+    {
+        "id": 18,
+        "title": "Điểm Cứu Trợ & Sơ Tán Nam Sài Gòn (Quận 7)",
+        "type": "shelter",
+        "lat": 10.732,
+        "lng": 106.728,
+        "location": "Trung tâm TDTT Quận 7, Huỳnh Tấn Phát, TP. Hồ Chí Minh",
+        "time": "Đang hoạt động",
+        "phone": "028.3785.114",
+        "detail": "Tiếp nhận tạm thời người dân khu vực trũng thấp ven sông Soài Rạp và rạch Ông Lớn.",
+        "aiAnalysis": "Tránh ngập triều cường • Sức chứa 800 người",
+        "status": "resolved"
+    },
+    {
+        "id": 19,
+        "title": "Trạm Sơ Tán Cứu Nạn Ninh Kiều - TP. Cần Thơ",
+        "type": "shelter",
+        "lat": 10.045,
+        "lng": 105.783,
+        "location": "Nhà thi đấu Đa năng Cần Thơ, Quận Ninh Kiều, TP. Cần Thơ",
+        "time": "Đang hoạt động",
+        "phone": "0292.3820.218",
+        "detail": "Khu vực đê kè cao ráo, cung cấp lương thực và thuốc men phòng chống lũ đầu nguồn sông Hậu.",
+        "aiAnalysis": "Tránh lũ sông Hậu • Sức chứa 1,500 người",
+        "status": "resolved"
+    },
+    {
+        "id": 20,
+        "title": "Trung Tâm Tránh Lũ & Sơ Tán Long Xuyên - An Giang",
+        "type": "shelter",
+        "lat": 10.383,
+        "lng": 105.435,
+        "location": "Sân vận động An Giang, TP. Long Xuyên, An Giang",
+        "time": "Đang hoạt động",
+        "phone": "0296.3842.114",
+        "detail": "Điểm tập kết xuồng ghe cứu hộ và trạm nghỉ an toàn mùa nước nổi cho người dân vùng trũng Tứ giác Long Xuyên.",
+        "aiAnalysis": "Điểm cao mùa nước nổi • Sức chứa 1,200 người",
+        "status": "resolved"
+    }
 ]
 
 
