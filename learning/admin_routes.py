@@ -301,13 +301,14 @@ def _pl_write_reports(results: dict, out_root: Path):
         _plog(f"✅ CSV  → {csv_p}",  "SUCCESS")
     except Exception as e:
         _plog(f"⚠️ HTML/CSV report failed: {e}", "WARNING")
-    try:
-        from utils.excel_reporter import ExcelReporter
-        xlsx_p = ExcelReporter(output_dir=out_root).generate(results)
-        if xlsx_p:
-            _plog(f"✅ XLSX → {xlsx_p}", "SUCCESS")
-    except Exception as e:
-        _plog(f"⚠️ Excel report skipped: {e}", "WARNING")
+    if not cfg.get("skip_excel", True):
+        try:
+            from utils.excel_reporter import ExcelReporter
+            xlsx_p = ExcelReporter(output_dir=out_root).generate(results)
+            if xlsx_p:
+                _plog(f"✅ XLSX → {xlsx_p}", "SUCCESS")
+        except Exception as e:
+            _plog(f"⚠️ Excel report skipped: {e}", "WARNING")
 
 
 def _pl_upload_drive(results: dict, out_root: Path, run_id: str, cfg: dict):

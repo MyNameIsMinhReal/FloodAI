@@ -157,6 +157,8 @@ auto_skip:
   output_dir:    "output"
 
 # ── Global Skip Flags (Tối ưu hóa pipeline) ──────────────────────────────────
+skip_drive:      true    # Tắt upload Google Drive (không cần API key / token)
+skip_excel:      true    # Tắt xuất báo cáo Excel .xlsx (không cần openpyxl, chỉ dùng JSON/CSV)
 skip_raincoat:   true    # Tắt phát hiện áo mưa để tăng tốc độ và giảm tải RAM/VRAM
 skip_vlm_verify: true    # Tắt VLM verify tự động trong batch (VLM chỉ dùng khi chat)
 skip_learning:   true    # Tắt auto-retraining trong quá trình đo thực địa

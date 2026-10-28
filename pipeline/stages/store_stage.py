@@ -27,7 +27,10 @@ class StoreStage:
         self._generate_reports(state)
 
     def upload_drive(self, state: "PipelineState") -> Optional[str]:
-        """Upload toàn bộ output lên Google Drive."""
+        """Upload toàn bộ output lên Google Drive (mặc định đã tắt)."""
+        if self.cfg.get("skip_drive", True):
+            log.info("  [Drive] Bỏ qua upload Google Drive (tối ưu hóa pipeline)")
+            return None
         from uploader.drive_uploader import DriveUploader
         from utils.constants import DRIVE_UPLOAD_EXTENSIONS
         try:
@@ -61,13 +64,15 @@ class StoreStage:
         except Exception as exc:
             log.warning(f"  [Store] Report lỗi: {exc}")
 
-        try:
-            from utils.excel_reporter import ExcelReporter
-            xlsx_p = ExcelReporter(output_dir=output_dir).generate(results_dict)
-            if xlsx_p:
-                log.info(f"  [Store] XLSX → {xlsx_p}")
-        except Exception as exc:
-            log.warning(f"  [Store] Excel report lỗi: {exc}")
+        # Excel report (.xlsx) — mặc định bỏ qua để tối ưu tốc độ và không cần openpyxl
+        if not self.cfg.get("skip_excel", True):
+            try:
+                from utils.excel_reporter import ExcelReporter
+                xlsx_p = ExcelReporter(output_dir=output_dir).generate(results_dict)
+                if xlsx_p:
+                    log.info(f"  [Store] XLSX → {xlsx_p}")
+            except Exception as exc:
+                log.warning(f"  [Store] Excel report lỗi: {exc}")
 
     def _save_summary(self, state: "PipelineState") -> None:
         from pipeline.orchestrator import PipelineState
