@@ -29,9 +29,17 @@ import yaml
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 
-# ── Bootstrap ──────────────────────────────────────────────────────────────────
+# Bootstrap
 BASE_DIR = Path(__file__).parent
 sys.path.insert(0, str(BASE_DIR))
+
+# Đảm bảo UTF-8 cho console tránh lỗi Unicode trên mọi hệ điều hành
+for _stream in (sys.stdout, sys.stderr):
+    if _stream and hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
 try:
     from dotenv import load_dotenv
@@ -41,7 +49,7 @@ except ImportError:
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 log = logging.getLogger("floodai_web")
@@ -1923,8 +1931,19 @@ except Exception as _adm_exc:
 
 # ══════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="FloodAI Web Application")
+    parser.add_argument("--port", "-p", type=int, default=int(os.environ.get("PORT", 5000)),
+                        help="Port để chạy web server (mặc định: 5000 hoặc biến môi trường PORT)")
+    parser.add_argument("--host", "-H", type=str, default=os.environ.get("HOST", "0.0.0.0"),
+                        help="Host để lắng nghe (mặc định: 0.0.0.0)")
+    parser.add_argument("--debug", action="store_true",
+                        help="Bật chế độ debug của Flask")
+    args, _ = parser.parse_known_args()
+
+    port = args.port
+    host = args.host
+
     start_llm()
-    port = int(os.environ.get("PORT", 5000))
-    host = os.environ.get("HOST", "127.0.0.1")
     log.info(f"FloodAI Web → http://{host}:{port}")
-    app.run(debug=False, port=port, host=host)
+    app.run(debug=args.debug, port=port, host=host)
