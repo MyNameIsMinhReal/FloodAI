@@ -786,6 +786,12 @@ def merge_and_save():
 
     merged_dir = ROOT_DIR / "models" / "flood-agent-merged"
 
+    # Ép chạy hoàn toàn trên CPU RAM để tránh lỗi CUDA driver 999 hoặc thiết bị bận
+    import os
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    import gc
+    gc.collect()
+
     # Đọc base_model_name_or_path từ adapter_config.json để tránh mismatch
     import json
     adapter_cfg = OUTPUT_DIR / "adapter_config.json"
@@ -820,7 +826,7 @@ def merge_and_save():
             log.warning(f"Không load được AutoProcessor khi merge ({e})")
 
     log.info(f"Loading LoRA adapter: {OUTPUT_DIR}")
-    model = PeftModel.from_pretrained(base_model, str(OUTPUT_DIR))
+    model = PeftModel.from_pretrained(base_model, str(OUTPUT_DIR), device_map="cpu")
 
     log.info("Merging LoRA into base model...")
     # Fix: merge_and_unload should always be called as a method
