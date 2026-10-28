@@ -64,39 +64,45 @@
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); }
         ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 4px; }
+
+        /* Mobile specific optimizations */
+        .safe-area-bottom { padding-bottom: max(0.5rem, env(safe-area-inset-bottom)); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-300 min-h-screen flex flex-col">
+<body class="bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-300 min-h-screen flex flex-col pb-16 md:pb-0">
 
     <!-- 1. TOP EMERGENCY HOTLINE BANNER (SOS.org.vn Style) -->
-    <div id="emergencyBar" class="bg-rose-50 dark:bg-slate-900 border-b border-rose-200 dark:border-slate-800 py-2 px-3 text-xs md:text-sm">
-        <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
-            <div class="flex items-center gap-2 font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider shrink-0">
-                <span class="inline-block w-2.5 h-2.5 rounded-full bg-rose-600 animate-ping"></span>
-                <i class="fa-solid font-bold fa-phone-volume"></i> GỌI KHẨN CẤP THIÊN TAI & CỨU HỘ:
+    <div id="emergencyBar" class="bg-rose-50 dark:bg-slate-900 border-b border-rose-200 dark:border-slate-800 py-1.5 px-3 text-xs md:text-sm">
+        <div class="max-w-7xl mx-auto flex items-center justify-between gap-2 overflow-hidden">
+            <div class="flex items-center gap-1.5 font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider shrink-0 text-[11px] sm:text-xs">
+                <span class="inline-block w-2 h-2 rounded-full bg-rose-600 animate-ping"></span>
+                <i class="fa-solid fa-phone-volume"></i>
+                <span class="hidden sm:inline">GỌI KHẨN CẤP THIÊN TAI:</span>
+                <span class="sm:hidden">CỨU HỘ:</span>
             </div>
-            <div class="flex flex-wrap items-center gap-1.5 md:gap-3 font-semibold text-slate-700 dark:text-slate-300">
-                <a href="tel:111" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-1 rounded transition flex items-center gap-1 border border-slate-200 dark:border-slate-700">
-                    <span class="bg-rose-600 text-white text-[11px] px-1.5 py-0.5 rounded font-extrabold">111</span> Bảo vệ trẻ em
+            <!-- Horizontal scrollable hotline numbers on small screens -->
+            <div class="flex items-center gap-1.5 md:gap-3 font-semibold text-slate-700 dark:text-slate-300 overflow-x-auto py-0.5 no-scrollbar flex-nowrap">
+                <a href="tel:112" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-0.5 rounded transition flex items-center gap-1 border border-rose-300 dark:border-rose-900 bg-rose-100/70 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 shrink-0">
+                    <span class="bg-rose-600 text-white text-[10px] sm:text-[11px] px-1.5 py-0.5 rounded font-extrabold">112</span> <span class="text-[11px]">Cứu nạn</span>
                 </a>
-                <a href="tel:112" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-1 rounded transition flex items-center gap-1 border border-rose-300 dark:border-rose-900 bg-rose-100/50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300">
-                    <span class="bg-rose-600 text-white text-[11px] px-1.5 py-0.5 rounded font-extrabold">112</span> Cứu nạn - Thiên tai
+                <a href="tel:114" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-0.5 rounded transition flex items-center gap-1 border border-slate-200 dark:border-slate-700 shrink-0">
+                    <span class="bg-amber-600 text-white text-[10px] sm:text-[11px] px-1.5 py-0.5 rounded font-extrabold">114</span> <span class="text-[11px]">PCCC</span>
                 </a>
-                <a href="tel:113" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-1 rounded transition flex items-center gap-1 border border-slate-200 dark:border-slate-700">
-                    <span class="bg-blue-600 text-white text-[11px] px-1.5 py-0.5 rounded font-extrabold">113</span> Công an
+                <a href="tel:115" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-0.5 rounded transition flex items-center gap-1 border border-slate-200 dark:border-slate-700 shrink-0">
+                    <span class="bg-emerald-600 text-white text-[10px] sm:text-[11px] px-1.5 py-0.5 rounded font-extrabold">115</span> <span class="text-[11px]">Y tế</span>
                 </a>
-                <a href="tel:114" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-1 rounded transition flex items-center gap-1 border border-slate-200 dark:border-slate-700">
-                    <span class="bg-amber-600 text-white text-[11px] px-1.5 py-0.5 rounded font-extrabold">114</span> PCCC & Cứu hộ
+                <a href="tel:113" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-0.5 rounded transition flex items-center gap-1 border border-slate-200 dark:border-slate-700 shrink-0 hidden sm:flex">
+                    <span class="bg-blue-600 text-white text-[10px] sm:text-[11px] px-1.5 py-0.5 rounded font-extrabold">113</span> <span class="text-[11px]">Công an</span>
                 </a>
-                <a href="tel:115" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-1 rounded transition flex items-center gap-1 border border-slate-200 dark:border-slate-700">
-                    <span class="bg-emerald-600 text-white text-[11px] px-1.5 py-0.5 rounded font-extrabold">115</span> Cấp cứu y tế
-                </a>
-                <a href="tel:117" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-1 rounded transition flex items-center gap-1 border border-slate-200 dark:border-slate-700 hidden lg:flex">
-                    <span class="bg-purple-600 text-white text-[11px] px-1.5 py-0.5 rounded font-extrabold">117</span> Bạo lực gia đình
+                <a href="tel:111" class="hover:bg-rose-100 dark:hover:bg-slate-800 px-2 py-0.5 rounded transition flex items-center gap-1 border border-slate-200 dark:border-slate-700 shrink-0 hidden md:flex">
+                    <span class="bg-rose-600 text-white text-[10px] sm:text-[11px] px-1.5 py-0.5 rounded font-extrabold">111</span> <span class="text-[11px]">Trẻ em</span>
                 </a>
             </div>
-            <button onclick="openHotlineModal()" class="text-xs bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1 rounded-full font-medium transition flex items-center gap-1">
-                <i class="fa-solid fa-list-numeric"></i> SĐT Cứu Hộ Thái Nguyên
+            <button onclick="openHotlineModal()" class="text-[11px] bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1 rounded-full font-medium transition flex items-center gap-1 shrink-0">
+                <i class="fa-solid fa-list-numeric"></i>
+                <span class="hidden sm:inline">SĐT Cứu Hộ</span> Thái Nguyên
             </button>
         </div>
     </div>
@@ -353,27 +359,27 @@
         <!-- =================================================================== -->
         <!-- VIEW 2: FULLSCREEN MAP MODE (SOS.info.vn inspired dark overlay)    -->
         <!-- =================================================================== -->
-        <section id="view-map" class="flex-grow flex flex-col relative hidden h-[calc(100vh-100px)]">
+        <section id="view-map" class="flex-grow flex flex-col relative hidden h-[calc(100dvh-130px)] md:h-[calc(100vh-100px)]">
             
             <!-- Leaflet Main Map Canvas -->
             <div id="fullScreenMap" class="w-full h-full bg-slate-900 z-0"></div>
 
             <!-- FLOATING OVERLAY: Top Floating Pill Toolbar (SOS.info.vn Style) -->
-            <div class="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex flex-wrap items-center justify-center gap-2 px-3 py-2 bg-slate-900/90 dark:bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-full shadow-2xl max-w-[95vw]">
-                <button onclick="filterMap('all', event)" class="map-filter-btn active px-3.5 py-1.5 rounded-full text-xs font-bold text-white bg-teal-600 transition flex items-center gap-1.5">
+            <div class="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center justify-start gap-1.5 px-3 py-1.5 bg-slate-900/90 dark:bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-full shadow-2xl max-w-[96vw] overflow-x-auto no-scrollbar whitespace-nowrap">
+                <button onclick="filterMap('all', event)" class="map-filter-btn active px-3 py-1.5 rounded-full text-xs font-bold text-white bg-teal-600 transition flex items-center gap-1.5 shrink-0">
                     <i class="fa-solid fa-layer-group"></i> Tất cả (<span id="mapTotalCount">6</span>)
                 </button>
-                <button onclick="filterMap('emergency', event)" class="map-filter-btn px-3.5 py-1.5 rounded-full text-xs font-bold text-slate-200 hover:bg-slate-800 transition flex items-center gap-1.5">
-                    <i class="fa-solid fa-triangle-exclamation text-rose-500"></i> ⚠️ Yêu cầu cứu hộ
+                <button onclick="filterMap('emergency', event)" class="map-filter-btn px-3 py-1.5 rounded-full text-xs font-bold text-slate-200 hover:bg-slate-800 transition flex items-center gap-1.5 shrink-0">
+                    <i class="fa-solid fa-triangle-exclamation text-rose-500"></i> Cứu hộ
                 </button>
-                <button onclick="filterMap('flood', event)" class="map-filter-btn px-3.5 py-1.5 rounded-full text-xs font-bold text-slate-200 hover:bg-slate-800 transition flex items-center gap-1.5">
-                    <i class="fa-solid fa-water text-amber-500"></i> 🌊 Điểm ngập
+                <button onclick="filterMap('flood', event)" class="map-filter-btn px-3 py-1.5 rounded-full text-xs font-bold text-slate-200 hover:bg-slate-800 transition flex items-center gap-1.5 shrink-0">
+                    <i class="fa-solid fa-water text-amber-500"></i> Điểm ngập
                 </button>
-                <button onclick="filterMap('shelter', event)" class="map-filter-btn px-3.5 py-1.5 rounded-full text-xs font-bold text-slate-200 hover:bg-slate-800 transition flex items-center gap-1.5">
-                    <i class="fa-solid fa-house-chimney-medical text-emerald-500"></i> 📍 Điểm hỗ trợ
+                <button onclick="filterMap('shelter', event)" class="map-filter-btn px-3 py-1.5 rounded-full text-xs font-bold text-slate-200 hover:bg-slate-800 transition flex items-center gap-1.5 shrink-0">
+                    <i class="fa-solid fa-house-chimney-medical text-emerald-500"></i> Trạm sơ tán
                 </button>
-                <button onclick="openHotlineModal()" class="px-3.5 py-1.5 rounded-full text-xs font-bold text-rose-300 hover:bg-slate-800 transition flex items-center gap-1.5 bg-rose-950/40 border border-rose-800/50">
-                    <i class="fa-solid fa-phone"></i> 📞 Hotline khẩn
+                <button onclick="openHotlineModal()" class="px-3 py-1.5 rounded-full text-xs font-bold text-rose-300 hover:bg-slate-800 transition flex items-center gap-1.5 bg-rose-950/40 border border-rose-800/50 shrink-0">
+                    <i class="fa-solid fa-phone"></i> Hotline
                 </button>
             </div>
 
@@ -404,7 +410,7 @@
             </div>
 
             <!-- FLOATING OVERLAY: Bottom Right Pulsing Red SOS Button (SOS.info.vn Inspired) -->
-            <button onclick="openSosModal()" title="Phát tín hiệu cứu hộ khẩn cấp ngay!" class="absolute bottom-10 right-6 z-30 sos-btn-pulse w-16 h-16 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center text-2xl shadow-2xl border-2 border-white transition transform active:scale-95">
+            <button onclick="openSosModal()" title="Phát tín hiệu cứu hộ khẩn cấp ngay!" class="absolute bottom-20 md:bottom-10 right-4 md:right-6 z-30 sos-btn-pulse w-14 h-14 md:w-16 md:h-16 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center text-xl md:text-2xl shadow-2xl border-2 border-white transition transform active:scale-95">
                 <i class="fa-solid fa-wifi rotate-90"></i>
             </button>
 
@@ -450,11 +456,46 @@
         </div>
     </footer>
 
+    <!-- MOBILE BOTTOM APP NAVIGATION BAR (Native App Style - Mobile Only) -->
+    <nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 flex items-center justify-around py-2 px-2 shadow-2xl safe-area-bottom">
+        <!-- 1. Trang chủ -->
+        <button onclick="switchView('home')" id="mob-nav-home" class="flex flex-col items-center justify-center flex-1 py-1 text-teal-600 dark:text-teal-400 transition active:scale-95">
+            <i class="fa-solid fa-house text-lg mb-0.5"></i>
+            <span class="text-[10px] font-semibold">Trang chủ</span>
+        </button>
+
+        <!-- 2. Bản đồ cứu hộ -->
+        <button onclick="switchView('map')" id="mob-nav-map" class="flex flex-col items-center justify-center flex-1 py-1 text-slate-500 dark:text-slate-400 transition active:scale-95">
+            <i class="fa-solid fa-map-location-dot text-lg mb-0.5"></i>
+            <span class="text-[10px] font-semibold">Bản đồ</span>
+        </button>
+
+        <!-- 3. Primary Center SOS Action (Elevated Floating Red Button) -->
+        <div class="flex-1 flex justify-center -mt-6">
+            <button onclick="openSosModal()" title="Gửi tín hiệu cứu hộ khẩn cấp" class="w-14 h-14 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex flex-col items-center justify-center shadow-lg shadow-rose-600/50 border-4 border-white dark:border-slate-900 sos-btn-pulse transition active:scale-90">
+                <i class="fa-solid fa-bullhorn text-lg"></i>
+                <span class="text-[9px] font-black uppercase tracking-tighter">SOS</span>
+            </button>
+        </div>
+
+        <!-- 4. AI Trợ lý -->
+        <button onclick="openAiChatModal()" class="flex flex-col items-center justify-center flex-1 py-1 text-slate-500 dark:text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 transition active:scale-95">
+            <i class="fa-solid fa-robot text-lg mb-0.5"></i>
+            <span class="text-[10px] font-semibold">AI Trợ lý</span>
+        </button>
+
+        <!-- 5. Hotline -->
+        <button onclick="openHotlineModal()" class="flex flex-col items-center justify-center flex-1 py-1 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition active:scale-95">
+            <i class="fa-solid fa-phone-volume text-lg mb-0.5"></i>
+            <span class="text-[10px] font-semibold">Hotline</span>
+        </button>
+    </nav>
+
     <!-- =================================================================== -->
     <!-- MODAL 1: FORM GỬI TÍN HIỆU CỨU HỘ / BÁO NGẬP                    -->
     <!-- =================================================================== -->
-    <div id="sosModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
-        <div class="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 relative max-h-[90vh] overflow-y-auto">
+    <div id="sosModal" onclick="if(event.target === this) closeSosModal()" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-t-3xl sm:rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-800 relative max-h-[92vh] sm:max-h-[90vh] overflow-y-auto">
             <button onclick="closeSosModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
             
             <div class="flex items-center gap-3 mb-4">
@@ -472,7 +513,7 @@
                 <!-- Category Select -->
                 <div>
                     <label class="block text-xs font-bold mb-1">Loại tín hiệu <span class="text-rose-500">*</span></label>
-                    <select id="sosType" required class="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm font-medium focus:ring-2 focus:ring-teal-500 outline-none">
+                    <select id="sosType" required class="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2.5 text-base sm:text-sm font-medium focus:ring-2 focus:ring-teal-500 outline-none">
                         <option value="emergency">🔴 YÊU CẦU CỨU HỘ KHẨN CẤP (Nguy hiểm tính mạng / Cần xuồng)</option>
                         <option value="flood">🟧 BÁO ĐIỂM NGẬP SÂU / CẦN LƯƠNG THỰC</option>
                         <option value="shelter">🟢 CHIA SẺ ĐIỂM SƠ TÁN AN TOÀN / TỪ THIỆN</option>
@@ -483,11 +524,11 @@
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-bold mb-1">Họ và tên người gửi <span class="text-rose-500">*</span></label>
-                        <input id="sosName" type="text" required placeholder="Nguyễn Văn A" class="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 outline-none" />
+                        <input id="sosName" type="text" required placeholder="Nguyễn Văn A" class="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-base sm:text-sm focus:ring-2 focus:ring-teal-500 outline-none" />
                     </div>
                     <div>
                         <label class="block text-xs font-bold mb-1">Số điện thoại <span class="text-rose-500">*</span></label>
-                        <input id="sosPhone" type="tel" required placeholder="0912 xxx xxx" class="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 outline-none" />
+                        <input id="sosPhone" type="tel" required placeholder="0912 xxx xxx" class="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-base sm:text-sm focus:ring-2 focus:ring-teal-500 outline-none" />
                     </div>
                 </div>
 
@@ -495,7 +536,7 @@
                 <div>
                     <label class="block text-xs font-bold mb-1">Địa chỉ / Vị trí ngập cụ thể <span class="text-rose-500">*</span></label>
                     <div class="flex gap-2">
-                        <input id="sosAddress" type="text" required placeholder="Ví dụ: Số 45, Đường Phan Đình Phùng, P. Túc Duyên..." class="flex-grow bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 outline-none" />
+                        <input id="sosAddress" type="text" required placeholder="Ví dụ: Số 45, Đường Phan Đình Phùng, P. Túc Duyên..." class="flex-grow bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-base sm:text-sm focus:ring-2 focus:ring-teal-500 outline-none" />
                         <button type="button" onclick="getCurrentGps()" class="bg-teal-600 hover:bg-teal-700 text-white px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1 shrink-0">
                             <i class="fa-solid fa-location-crosshairs"></i> GPS
                         </button>
@@ -505,7 +546,7 @@
                 <!-- Description & Situation -->
                 <div>
                     <label class="block text-xs font-bold mb-1">Mô tả tình trạng khẩn cấp (Mức nước, số người mắc kẹt...)</label>
-                    <textarea id="sosDetail" rows="3" placeholder="Nước ngập đến ngực (khoảng 1.2m), nhà có 2 người già và 1 trẻ em cần xuồng hỗ trợ..." class="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-teal-500 outline-none"></textarea>
+                    <textarea id="sosDetail" rows="3" placeholder="Nước ngập đến ngực (khoảng 1.2m), nhà có 2 người già và 1 trẻ em cần xuồng hỗ trợ..." class="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-base sm:text-sm focus:ring-2 focus:ring-teal-500 outline-none"></textarea>
                 </div>
 
                 <!-- Image Attachment -->
@@ -517,7 +558,7 @@
                 </div>
 
                 <!-- Submit Button -->
-                <button id="sosSubmitBtn" type="submit" class="w-full bg-rose-600 hover:bg-rose-700 text-white font-extrabold py-3.5 rounded-xl transition shadow-lg shadow-rose-600/30 flex items-center justify-center gap-2">
+                <button id="sosSubmitBtn" type="submit" class="w-full bg-rose-600 hover:bg-rose-700 text-white font-extrabold py-3.5 rounded-xl transition shadow-lg shadow-rose-600/30 flex items-center justify-center gap-2 text-sm sm:text-base">
                     <i class="fa-solid fa-paper-plane"></i> PHÁT TÍN HIỆU NGAY CẤP BÁCH
                 </button>
             </form>
@@ -527,8 +568,8 @@
     <!-- =================================================================== -->
     <!-- MODAL 3: FLOODAGENT AI CHATBOT (Qwen2.5-VL)                        -->
     <!-- =================================================================== -->
-    <div id="aiChatModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
-        <div class="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-3xl max-w-lg w-full h-[560px] p-4 shadow-2xl border border-slate-200 dark:border-slate-800 relative flex flex-col">
+    <div id="aiChatModal" onclick="if(event.target === this) closeAiChatModal()" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-t-3xl sm:rounded-3xl max-w-lg w-full h-[90dvh] sm:h-[580px] p-4 shadow-2xl border border-slate-200 dark:border-slate-800 relative flex flex-col">
             <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 mb-2">
                 <div class="flex items-center gap-2">
                     <div class="w-8 h-8 rounded-lg bg-teal-600 text-white flex items-center justify-center text-sm font-bold">
@@ -539,7 +580,7 @@
                         <div class="text-[10px] text-emerald-500 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Hỗ trợ hỏi đáp & phân tích ảnh trực tuyến</div>
                     </div>
                 </div>
-                <button onclick="closeAiChatModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+                <button onclick="closeAiChatModal()" class="text-slate-400 hover:text-white p-1"><i class="fa-solid fa-xmark text-xl"></i></button>
             </div>
 
             <!-- Chat Messages Log Container -->
@@ -557,20 +598,20 @@
             </div>
 
             <!-- Quick Suggestions -->
-            <div class="py-2 flex-shrink-0 flex gap-1.5 overflow-x-auto text-[11px]">
-                <button onclick="sendQuickQuery('Điểm sơ tán an toàn Thái Nguyên ở đâu?')" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 px-2.5 py-1.5 rounded-full whitespace-nowrap border border-slate-200 dark:border-slate-700">📍 Điểm sơ tán?</button>
-                <button onclick="sendQuickQuery('Xử lý khẩn cấp khi nước dâng tràn vào nhà?')" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 px-2.5 py-1.5 rounded-full whitespace-nowrap border border-slate-200 dark:border-slate-700">⚡ An toàn điện?</button>
-                <button onclick="sendQuickQuery('Số điện thoại cứu hộ Thái Nguyên?')" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 px-2.5 py-1.5 rounded-full whitespace-nowrap border border-slate-200 dark:border-slate-700">📞 SĐT Cứu hộ?</button>
+            <div class="py-2 flex-shrink-0 flex gap-1.5 overflow-x-auto text-[11px] no-scrollbar">
+                <button onclick="sendQuickQuery('Điểm sơ tán an toàn Thái Nguyên ở đâu?')" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 px-2.5 py-1.5 rounded-full whitespace-nowrap border border-slate-200 dark:border-slate-700 shrink-0">📍 Điểm sơ tán?</button>
+                <button onclick="sendQuickQuery('Xử lý khẩn cấp khi nước dâng tràn vào nhà?')" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 px-2.5 py-1.5 rounded-full whitespace-nowrap border border-slate-200 dark:border-slate-700 shrink-0">⚡ An toàn điện?</button>
+                <button onclick="sendQuickQuery('Số điện thoại cứu hộ Thái Nguyên?')" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 px-2.5 py-1.5 rounded-full whitespace-nowrap border border-slate-200 dark:border-slate-700 shrink-0">📞 SĐT Cứu hộ?</button>
             </div>
 
             <!-- Chat Input Box -->
             <form onsubmit="handleChatSubmit(event)" class="flex flex-shrink-0 gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
                 <input type="file" id="chatImageInput" accept="image/*" onchange="onChatImageSelected(event)" class="hidden" />
-                <button type="button" onclick="document.getElementById('chatImageInput').click()" title="Đính kèm ảnh lũ lụt" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-teal-600 dark:text-teal-400 px-3 py-2 rounded-xl text-xs border border-slate-300 dark:border-slate-700 transition">
+                <button type="button" onclick="document.getElementById('chatImageInput').click()" title="Đính kèm ảnh lũ lụt" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-teal-600 dark:text-teal-400 px-3.5 py-2.5 rounded-xl text-sm border border-slate-300 dark:border-slate-700 transition shrink-0">
                     <i class="fa-solid fa-camera"></i>
                 </button>
-                <input id="chatInput" type="text" placeholder="Hỏi AI cứu hộ hoặc gửi kèm ảnh..." class="flex-grow bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-teal-500" />
-                <button type="submit" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition">
+                <input id="chatInput" type="text" placeholder="Hỏi AI cứu hộ hoặc gửi kèm ảnh..." class="flex-grow bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-base sm:text-xs outline-none focus:ring-2 focus:ring-teal-500" />
+                <button type="submit" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition shrink-0">
                     <i class="fa-solid fa-paper-plane"></i>
                 </button>
             </form>
@@ -580,9 +621,9 @@
     <!-- =================================================================== -->
     <!-- MODAL 4: DANH SÁCH HOTLINE KHẨN CẤP THÁI NGUYÊN                  -->
     <!-- =================================================================== -->
-    <div id="hotlineModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
-        <div class="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 relative max-h-[85vh] overflow-y-auto">
-            <button onclick="closeHotlineModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+    <div id="hotlineModal" onclick="if(event.target === this) closeHotlineModal()" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-t-3xl sm:rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-800 relative max-h-[90dvh] sm:max-h-[85vh] overflow-y-auto">
+            <button onclick="closeHotlineModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white p-1"><i class="fa-solid fa-xmark text-xl"></i></button>
 
             <h3 class="text-xl font-bold mb-1 flex items-center gap-2 text-rose-600">
                 <i class="fa-solid fa-phone-volume"></i> Danh Bạ Hotline Cứu Hộ Thái Nguyên
@@ -628,8 +669,8 @@
     <!-- =================================================================== -->
     <!-- MODAL 5: BẢNG ĐIỀU KHIỂN BAN CHỈ ĐẠO (ADMIN)                      -->
     <!-- =================================================================== -->
-    <div id="adminModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
-        <div class="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 relative max-h-[85vh] overflow-y-auto">
+    <div id="adminModal" onclick="if(event.target === this) closeAdminModal()" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-t-3xl sm:rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-800 relative max-h-[90dvh] sm:max-h-[85vh] overflow-y-auto">
             <button onclick="closeAdminModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
 
             <div class="flex items-center gap-3 mb-4">
@@ -646,7 +687,7 @@
                 <!-- Trigger Alert Broadcast Form -->
                 <div class="p-4 bg-slate-100 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
                     <label class="block font-bold">Phát thông báo khẩn cấp Broadcast toàn hệ thống:</label>
-                    <input id="adminBroadcastInput" type="text" placeholder="Nhập nội dung cảnh báo ngập lụt khẩn..." class="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-teal-500" />
+                    <input id="adminBroadcastInput" type="text" placeholder="Nhập nội dung cảnh báo ngập lụt khẩn..." class="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-base sm:text-xs outline-none focus:ring-2 focus:ring-teal-500" />
                     <button onclick="publishBroadcast()" class="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 rounded-xl transition">
                         <i class="fa-solid fa-bullhorn"></i> Phát Cảnh Báo Ngay
                     </button>
@@ -881,18 +922,36 @@
             const mapSec = document.getElementById('view-map');
             const navHome = document.getElementById('nav-home');
             const navMap = document.getElementById('nav-map');
+            const mobNavHome = document.getElementById('mob-nav-home');
+            const mobNavMap = document.getElementById('mob-nav-map');
 
             if (viewName === 'home') {
                 homeSec.classList.remove('hidden');
                 mapSec.classList.add('hidden');
-                navHome.classList.add('text-teal-600', 'font-bold');
-                navMap.classList.remove('text-teal-600', 'font-bold');
+                if (navHome) { navHome.classList.add('text-teal-600', 'font-bold'); }
+                if (navMap) { navMap.classList.remove('text-teal-600', 'font-bold'); }
+                if (mobNavHome) {
+                    mobNavHome.classList.add('text-teal-600', 'dark:text-teal-400');
+                    mobNavHome.classList.remove('text-slate-500', 'dark:text-slate-400');
+                }
+                if (mobNavMap) {
+                    mobNavMap.classList.remove('text-teal-600', 'dark:text-teal-400');
+                    mobNavMap.classList.add('text-slate-500', 'dark:text-slate-400');
+                }
                 if (homeMapInstance) setTimeout(() => homeMapInstance.invalidateSize(), 100);
             } else {
                 homeSec.classList.add('hidden');
                 mapSec.classList.remove('hidden');
-                navHome.classList.remove('text-teal-600', 'font-bold');
-                navMap.classList.add('text-teal-600', 'font-bold');
+                if (navHome) { navHome.classList.remove('text-teal-600', 'font-bold'); }
+                if (navMap) { navMap.classList.add('text-teal-600', 'font-bold'); }
+                if (mobNavHome) {
+                    mobNavHome.classList.remove('text-teal-600', 'dark:text-teal-400');
+                    mobNavHome.classList.add('text-slate-500', 'dark:text-slate-400');
+                }
+                if (mobNavMap) {
+                    mobNavMap.classList.add('text-teal-600', 'dark:text-teal-400');
+                    mobNavMap.classList.remove('text-slate-500', 'dark:text-slate-400');
+                }
 
                 // Initialize full screen Leaflet map on first view
                 setTimeout(() => {
@@ -1122,6 +1181,16 @@
 
         function openAdminModal() { document.getElementById('adminModal').classList.remove('hidden'); }
         function closeAdminModal() { document.getElementById('adminModal').classList.add('hidden'); }
+
+        // Close any open modal on Escape key press
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeSosModal();
+                closeAiChatModal();
+                closeHotlineModal();
+                closeAdminModal();
+            }
+        });
 
         // Get GPS
         function getCurrentGps() {
