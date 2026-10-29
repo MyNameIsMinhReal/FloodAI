@@ -920,45 +920,6 @@
             </div>
         </div>
     </div>
-
-    <!-- =================================================================== -->
-    <!-- MODAL 5: BẢNG ĐIỀU KHIỂN BAN CHỈ ĐẠO (ADMIN)                      -->
-    <!-- =================================================================== -->
-    <div id="adminModal" onclick="if(event.target === this) closeAdminModal()" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-t-3xl sm:rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-800 relative max-h-[90dvh] sm:max-h-[85vh] overflow-y-auto">
-            <button onclick="closeAdminModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
-
-            <div class="flex items-center gap-3 mb-4">
-                <div class="w-10 h-10 rounded-xl bg-teal-600 text-white flex items-center justify-center text-lg font-bold">
-                    <i class="fa-solid fa-user-shield"></i>
-                </div>
-                <div>
-                    <h3 class="text-xl font-bold">Bảng Điều Khiển GIRC</h3>
-                    <p class="text-xs text-slate-500 dark:text-slate-400">Ban chỉ đạo PCTT Quốc Gia & Quản trị viên</p>
-                </div>
-            </div>
-
-            <div class="space-y-4 text-xs">
-                <!-- Trigger Alert Broadcast Form -->
-                <div class="p-4 bg-slate-100 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
-                    <label class="block font-bold">Phát thông báo khẩn cấp Broadcast toàn hệ thống:</label>
-                    <input id="adminBroadcastInput" type="text" placeholder="Nhập nội dung cảnh báo ngập lụt khẩn..." class="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-base sm:text-xs outline-none focus:ring-2 focus:ring-teal-500" />
-                    <button onclick="publishBroadcast()" class="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 rounded-xl transition">
-                        <i class="fa-solid fa-bullhorn"></i> Phát Cảnh Báo Ngay
-                    </button>
-                </div>
-
-                <!-- Verified Stats summary -->
-                <div class="grid grid-cols-2 gap-2 text-center">
-                    <div class="p-3 bg-teal-50 dark:bg-slate-800 rounded-xl border border-teal-200 dark:border-slate-700">
-                        <div class="text-[10px] text-slate-500">Tin chờ hỗ trợ:</div>
-                        <div id="adminPendingCount" class="text-lg font-bold text-teal-600">3 Tin</div>
-                    </div>
-                    <div class="p-3 bg-emerald-50 dark:bg-slate-800 rounded-xl border border-emerald-200 dark:border-slate-700">
-                        <div class="text-[10px] text-slate-500">Tin đã hỗ trợ:</div>
-                        <div id="adminResolvedCount" class="text-lg font-bold text-emerald-600">3 Tin</div>
-                    </div>
-                </div>
             </div>
         </div>
     </div>
@@ -1333,8 +1294,7 @@
                 openSosModal();
             } else if (initialViewFromServer === 'news') {
                 switchView('news');
-            } else if (initialViewFromServer === 'admin') {
-                openAdminModal();
+
             }
         };
 
@@ -1900,8 +1860,7 @@
         function openHotlineModal() { document.getElementById('hotlineModal').classList.remove('hidden'); }
         function closeHotlineModal() { document.getElementById('hotlineModal').classList.add('hidden'); }
 
-        function openAdminModal() { document.getElementById('adminModal').classList.remove('hidden'); }
-        function closeAdminModal() { document.getElementById('adminModal').classList.add('hidden'); }
+
 
         // Close any open modal on Escape key press
         document.addEventListener('keydown', function(e) {
@@ -1909,8 +1868,7 @@
                 closeSosModal();
                 closeAiChatModal();
                 closeHotlineModal();
-                closeAdminModal();
-            }
+                            }
         });
 
         // Get GPS
@@ -2236,33 +2194,7 @@
             }
         }
 
-        // Admin Broadcast Alert Publish -> Real Backend /api/sos/broadcast
-        async function publishBroadcast() {
-            const txt = document.getElementById('adminBroadcastInput').value.trim();
-            if (!txt) return;
-            try {
-                await fetch('/api/sos/broadcast', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ active: true, text: txt })
-                });
-            } catch (e) {}
-            document.getElementById('broadcastText').innerText = txt;
-            document.getElementById('broadcastBanner').classList.remove('hidden');
-            closeAdminModal();
-        }
-
-        async function closeBroadcast() {
-            document.getElementById('broadcastBanner').classList.add('hidden');
-            try {
-                await fetch('/api/sos/broadcast', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ active: false, text: '' })
-                });
-            } catch (e) {}
-        }
-    </script>
+        </script>
 
     <!-- =================================================================== -->
     <!-- MODAL 6: XEM BÀI VIẾT DO AI PHÓNG VIÊN BIÊN TẬP LẠI               -->
