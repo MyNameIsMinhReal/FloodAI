@@ -1695,7 +1695,6 @@
             });
             if (userLocation && userLocation.lat) {
                 homeMapInstance.setView([userLocation.lat, userLocation.lon], 12);
-                addUserLocationMarker(homeMapInstance, userLocation.lat, userLocation.lon, userLocation.city);
             } else if (homeMapInstance && latlngs.length > 0) {
                 try {
                     homeMapInstance.fitBounds(L.latLngBounds(latlngs), { padding: [15, 15], maxZoom: 10 });
@@ -1763,9 +1762,6 @@
             }, { position: 'bottomleft' }).addTo(fullMapInstance);
 
             mapMarkersGroup = L.layerGroup().addTo(fullMapInstance);
-            if (userLocation && userLocation.lat) {
-                addUserLocationMarker(fullMapInstance, userLocation.lat, userLocation.lon, userLocation.city);
-            }
             renderMapMarkers('all');
             renderMapDrawerFeed();
         }
@@ -1795,13 +1791,11 @@
                     // Cập nhật tâm bản đồ Mini về thành phố của IP người dùng
                     if (homeMapInstance) {
                         homeMapInstance.setView([data.lat, data.lon], 12);
-                        addUserLocationMarker(homeMapInstance, data.lat, data.lon, cityName);
                     }
 
                     // Cập nhật tâm Full Map nếu đã khởi tạo
                     if (fullMapInstance) {
                         fullMapInstance.setView([data.lat, data.lon], 12);
-                        addUserLocationMarker(fullMapInstance, data.lat, data.lon, cityName);
                     }
 
                     // Lưu vị trí ngầm định cho GPS khi gửi SOS nếu chưa có
@@ -1818,46 +1812,16 @@
             }
         }
 
+        // Chỉ ghim khi người dùng thực sự gửi tín hiệu SOS / báo cáo ngập
         function addUserLocationMarker(map, lat, lon, cityName) {
-            if (!map) return;
-            const isMini = (map === homeMapInstance);
-            if (isMini && userMarkerMini) {
-                try { map.removeLayer(userMarkerMini); } catch(e){}
-            } else if (!isMini && userMarkerFull) {
-                try { map.removeLayer(userMarkerFull); } catch(e){}
-            }
-
-            const userIcon = L.divIcon({
-                className: 'user-loc-pin',
-                html: `
-                    <div class="relative flex items-center justify-center">
-                        <span class="animate-ping absolute inline-flex h-7 w-7 rounded-full bg-teal-400 opacity-75"></span>
-                        <div class="w-6 h-6 rounded-full bg-teal-600 text-white flex items-center justify-center shadow-lg border-2 border-white text-[11px]">
-                            <i class="fa-solid fa-crosshairs"></i>
-                        </div>
-                    </div>
-                `,
-                iconSize: [24, 24],
-                iconAnchor: [12, 12]
-            });
-
-            const marker = L.marker([lat, lon], { icon: userIcon, zIndexOffset: 1000 }).addTo(map);
-            marker.bindPopup(`
-                <div style="font-family: sans-serif; font-size: 12px;" class="p-1">
-                    <strong style="color: #0d9488;"><i class="fa-solid fa-location-dot text-rose-500 mr-1"></i> Vị trí của bạn</strong><br/>
-                    <span style="color: #475569;">${cityName} (Định vị IP thiết bị)</span>
-                </div>
-            `);
-
-            if (isMini) userMarkerMini = marker;
-            else userMarkerFull = marker;
+            // Không tự động ghim vị trí người dùng khi mở bản đồ
+            return;
         }
 
         function centerMapOnUserLocation() {
             if (userLocation && userLocation.lat) {
                 if (fullMapInstance) {
-                    fullMapInstance.setView([userLocation.lat, userLocation.lon], 13);
-                    if (userMarkerFull) userMarkerFull.openPopup();
+                    fullMapInstance.flyTo([userLocation.lat, userLocation.lon], 13, { duration: 1 });
                 }
             } else if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(pos => {
@@ -1865,8 +1829,7 @@
                     const lon = pos.coords.longitude;
                     userLocation = { ok: true, lat, lon, city: "Vị trí GPS hiện tại" };
                     if (fullMapInstance) {
-                        fullMapInstance.setView([lat, lon], 14);
-                        addUserLocationMarker(fullMapInstance, lat, lon, "Vị trí GPS chính xác");
+                        fullMapInstance.flyTo([lat, lon], 13, { duration: 1 });
                     }
                 }, () => {
                     alert("Không thể lấy vị trí thiết bị.");
@@ -2123,6 +2086,11 @@
                 if (fullMapInstance) {
                     renderMapMarkers('all');
                     renderMapDrawerFeed();
+                    const targetLat = (data && data.report && data.report.lat) ? data.report.lat : (currentGpsCoords ? currentGpsCoords.lat : null);
+                    const targetLng = (data && data.report && data.report.lng) ? data.report.lng : (currentGpsCoords ? currentGpsCoords.lng : null);
+                    if (targetLat && targetLng) {
+                        fullMapInstance.flyTo([targetLat, targetLng], 14, { duration: 1.2 });
+                    }
                 }
 
                 closeSosModal();
