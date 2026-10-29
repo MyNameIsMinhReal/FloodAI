@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đăng nhập & Đăng ký — FloodAI Việt Nam</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#0d9488',
+                        emergency: '#e11d48'
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between selection:bg-teal-500 selection:text-white">
+
+    <!-- TOP NAVIGATION BAR -->
+    <header class="border-b border-slate-800 bg-slate-900/70 backdrop-blur-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+            <a href="/" class="flex items-center gap-3 group">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-teal-600 to-teal-400 flex items-center justify-center text-white shadow-lg shadow-teal-500/20 group-hover:scale-105 transition-transform">
+                    <i class="fa-solid fa-water text-lg"></i>
+                </div>
+                <div>
+                    <div class="font-extrabold text-base tracking-tight text-white flex items-center gap-1.5">
+                        FloodAI <span class="text-xs px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-400 border border-teal-500/30 font-semibold">GIRC</span>
+                    </div>
+                    <div class="text-[11px] text-slate-400 font-medium">Hệ Thống Ứng Phó & Cứu Hộ Thiên Tai</div>
+                </div>
+            </a>
+
+            <div class="flex items-center gap-3">
+                <a href="/" class="text-xs sm:text-sm font-semibold text-slate-300 hover:text-white px-3.5 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 transition flex items-center gap-2 shadow-sm">
+                    <i class="fa-solid fa-arrow-left text-teal-400"></i>
+                    <span>Quay lại Bản đồ</span>
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN AUTH CONTENT (Split-Screen) -->
+    <main class="flex-grow flex items-center justify-center p-4 sm:p-6 lg:p-8">
+        <div class="max-w-5xl w-full grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+
+            <!-- LEFT COLUMN: Form Container (Dễ dàng custom thêm trường) -->
+            <div class="lg:col-span-7 bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden backdrop-blur-xl">
+                
+                <!-- Background Glow -->
+                <div class="absolute -top-24 -left-24 w-56 h-56 bg-teal-500/10 rounded-full blur-3xl pointer-events-none"></div>
+                <div class="absolute -bottom-24 -right-24 w-56 h-56 bg-rose-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+                <!-- Tabs: Đăng nhập vs Đăng ký -->
+                <div class="flex items-center p-1.5 bg-slate-950/80 rounded-2xl border border-slate-800 mb-6">
+                    <button id="tabBtnLogin" onclick="switchTab('login')" class="flex-1 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 bg-teal-600 text-white shadow-md">
+                        <i class="fa-solid fa-right-to-bracket text-xs"></i>
+                        <span>Đăng nhập</span>
+                    </button>
+                    <button id="tabBtnRegister" onclick="switchTab('register')" class="flex-1 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200">
+                        <i class="fa-solid fa-user-plus text-xs"></i>
+                        <span>Đăng ký mới</span>
+                    </button>
+                </div>
+
+                <!-- Alert Message Box -->
+                <div id="authAlert" class="hidden mb-5 p-3.5 rounded-xl text-xs sm:text-sm font-medium flex items-center gap-2.5"></div>
+
+                <!-- ============================================================== -->
+                <!-- FORM 1: ĐĂNG NHẬP (LOGIN)                                     -->
+                <!-- ============================================================== -->
+                <form id="formLogin" onsubmit="handleLogin(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                            Số điện thoại hoặc Email
+                        </label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                                <i class="fa-solid fa-id-badge"></i>
+                            </span>
+                            <input type="text" id="loginIdentifier" required placeholder="Ví dụ: 0912345678 hoặc email@domain.com"
+                                   class="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition" />
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="flex items-center justify-between mb-1.5">
+                            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                                Mật khẩu
+                            </label>
+                            <a href="javascript:void(0)" onclick="alert('Vui lòng liên hệ tổng đài 112 hoặc quản trị viên để cấp lại mật khẩu.')" class="text-xs text-teal-400 hover:underline">Quên mật khẩu?</a>
+                        </div>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                                <i class="fa-solid fa-lock"></i>
+                            </span>
+                            <input type="password" id="loginPassword" required placeholder="Nhập mật khẩu..."
+                                   class="w-full pl-10 pr-10 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition" />
+                            <button type="button" onclick="togglePasswordVisibility('loginPassword', this)" class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between text-xs text-slate-400 pt-1">
+                        <label class="flex items-center gap-2 cursor-pointer select-none">
+                            <input type="checkbox" id="rememberMe" checked class="rounded border-slate-700 bg-slate-950 text-teal-600 focus:ring-teal-500" />
+                            <span>Ghi nhớ đăng nhập trên thiết bị này</span>
+                        </label>
+                    </div>
+
+                    <button type="submit" id="btnSubmitLogin" class="w-full py-3 px-4 bg-teal-600 hover:bg-teal-500 active:scale-[0.99] text-white font-bold rounded-xl shadow-lg shadow-teal-600/30 transition flex items-center justify-center gap-2 text-sm mt-2">
+                        <span>Đăng nhập hệ thống</span>
+                        <i class="fa-solid fa-arrow-right text-xs"></i>
+                    </button>
+                </form>
+
+                <!-- ============================================================== -->
+                <!-- FORM 2: ĐĂNG KÝ (REGISTER) — DỄ DÀNG CUSTOM THÊM TRƯỜNG        -->
+                <!-- ============================================================== -->
+                <form id="formRegister" onsubmit="handleRegister(event)" class="space-y-3.5 hidden">
+                    
+                    <!-- [CUSTOM FIELD: Họ và tên] -->
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                            Họ và tên <span class="text-rose-400">*</span>
+                        </label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                                <i class="fa-solid fa-user"></i>
+                            </span>
+                            <input type="text" id="regName" required placeholder="Họ và tên đầy đủ..."
+                                   class="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition" />
+                        </div>
+                    </div>
+
+                    <!-- [CUSTOM FIELD: Số điện thoại & Email (2 cột)] -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                                Số điện thoại <span class="text-rose-400">*</span>
+                            </label>
+                            <div class="relative">
+                                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                                    <i class="fa-solid fa-phone"></i>
+                                </span>
+                                <input type="tel" id="regPhone" required placeholder="09xxxxxxxx"
+                                       class="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition" />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                                Email liên hệ
+                            </label>
+                            <div class="relative">
+                                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                                    <i class="fa-solid fa-envelope"></i>
+                                </span>
+                                <input type="email" id="regEmail" placeholder="email@domain.com"
+                                       class="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- [CUSTOM FIELD: Tỉnh / Thành phố cư trú] -->
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                            Tỉnh / Thành phố thường trú
+                        </label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                                <i class="fa-solid fa-location-dot"></i>
+                            </span>
+                            <input type="text" id="regProvince" placeholder="Ví dụ: Thái Nguyên, Hà Nội, Huế, TP.HCM..."
+                                   class="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition" />
+                        </div>
+                    </div>
+
+                    <!-- [CUSTOM FIELD: Mật khẩu & Xác nhận] -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                                Mật khẩu <span class="text-rose-400">*</span>
+                            </label>
+                            <div class="relative">
+                                <input type="password" id="regPassword" required placeholder="Tối thiểu 6 ký tự" minlength="6"
+                                       class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition" />
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                                Nhập lại mật khẩu <span class="text-rose-400">*</span>
+                            </label>
+                            <div class="relative">
+                                <input type="password" id="regPasswordConfirm" required placeholder="Khớp mật khẩu" minlength="6"
+                                       class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- [CUSTOM FIELD: Điều khoản chia sẻ vị trí] -->
+                    <div class="pt-1">
+                        <label class="flex items-start gap-2.5 text-xs text-slate-400 cursor-pointer select-none">
+                            <input type="checkbox" id="regAgreeTerms" required checked class="mt-0.5 rounded border-slate-700 bg-slate-950 text-teal-600 focus:ring-teal-500" />
+                            <span>Tôi đồng ý cung cấp thông tin liên hệ và tọa độ phục vụ công tác cứu trợ, tìm kiếm cứu nạn khẩn cấp của FloodAI.</span>
+                        </label>
+                    </div>
+
+                    <button type="submit" id="btnSubmitRegister" class="w-full py-3 px-4 bg-teal-600 hover:bg-teal-500 active:scale-[0.99] text-white font-bold rounded-xl shadow-lg shadow-teal-600/30 transition flex items-center justify-center gap-2 text-sm mt-3">
+                        <span>Hoàn tất đăng ký</span>
+                        <i class="fa-solid fa-circle-check text-xs"></i>
+                    </button>
+                </form>
+
+            </div>
+
+            <!-- RIGHT COLUMN: System Visual & Benefits -->
+            <div class="lg:col-span-5 space-y-6">
+                
+                <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-teal-500/10 border border-teal-500/30 text-teal-400 text-xs font-semibold">
+                    <span class="w-2 h-2 rounded-full bg-teal-400 animate-pulse"></span>
+                    Hệ Thống Dữ Liệu Cứu Trợ Quốc Gia
+                </div>
+
+                <div class="space-y-3">
+                    <h1 class="text-3xl sm:text-4xl font-black text-white leading-tight">
+                        Chung tay ứng phó thiên tai thông minh
+                    </h1>
+                    <p class="text-slate-400 text-sm leading-relaxed">
+                        Tài khoản FloodAI giúp người dân chủ động cập nhật cảnh báo ngập lụt theo thời gian thực và nhận hỗ trợ cứu hộ khẩn cấp nhanh nhất từ Ban chỉ đạo PCTT.
+                    </p>
+                </div>
+
+                <!-- Feature Benefits List -->
+                <div class="space-y-3.5 pt-2">
+                    <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-start gap-3.5">
+                        <div class="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center shrink-0 border border-rose-500/20 text-base">
+                            <i class="fa-solid fa-tower-broadcast"></i>
+                        </div>
+                        <div>
+                            <div class="font-bold text-sm text-white">Gửi SOS khẩn cấp 1-chạm</div>
+                            <div class="text-xs text-slate-400 mt-0.5">Tự động truyền số điện thoại, danh tính và định vị GPS chính xác đến lực lượng cứu hộ.</div>
+                        </div>
+                    </div>
+
+                    <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-start gap-3.5">
+                        <div class="w-10 h-10 rounded-xl bg-teal-500/10 text-teal-400 flex items-center justify-center shrink-0 border border-teal-500/20 text-base">
+                            <i class="fa-solid fa-map-location-dot"></i>
+                        </div>
+                        <div>
+                            <div class="font-bold text-sm text-white">Ranh giới vệ tinh & Trạm sơ tán</div>
+                            <div class="text-xs text-slate-400 mt-0.5">Xem bản đồ địa phận 63 tỉnh thành, các điểm ngập sâu và lộ trình an toàn đến trạm sơ tán gần nhất.</div>
+                        </div>
+                    </div>
+
+                    <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-start gap-3.5">
+                        <div class="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-500/20 text-base">
+                            <i class="fa-solid fa-newspaper"></i>
+                        </div>
+                        <div>
+                            <div class="font-bold text-sm text-white">Điểm báo 24/7 & Trợ lý AI</div>
+                            <div class="text-xs text-slate-400 mt-0.5">Tổng hợp tin tức chính thống từ Nhân Dân, VnExpress, Tuổi Trẻ và phân tích độ sâu ngập bằng AI.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Emergency Contact Pill -->
+                <div class="p-3.5 rounded-2xl bg-gradient-to-r from-rose-950/40 to-slate-900 border border-rose-800/40 flex items-center justify-between text-xs">
+                    <span class="text-slate-300 font-medium">Trực ban cứu hộ khẩn cấp:</span>
+                    <span class="font-extrabold text-rose-400 text-sm">112 / 114</span>
+                </div>
+
+            </div>
+
+        </div>
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="border-t border-slate-800 py-4 text-center text-xs text-slate-500 bg-slate-950">
+        <p>© 2026 FloodAI Việt Nam — Nền tảng Phân Tích & Cứu Hộ Thiên Tai Quốc Gia</p>
+    </footer>
+
+    <!-- INTERACTIVE JAVASCRIPT LOGIC -->
+    <script>
+        // Check query param ?tab=register or ?tab=login
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('tab') === 'register') {
+            switchTab('register');
+        }
+
+        function switchTab(tab) {
+            const btnLogin = document.getElementById('tabBtnLogin');
+            const btnReg = document.getElementById('tabBtnRegister');
+            const formLogin = document.getElementById('formLogin');
+            const formReg = document.getElementById('formRegister');
+            const alertBox = document.getElementById('authAlert');
+
+            alertBox.classList.add('hidden');
+
+            if (tab === 'login') {
+                btnLogin.className = "flex-1 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 bg-teal-600 text-white shadow-md";
+                btnReg.className = "flex-1 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200";
+                formLogin.classList.remove('hidden');
+                formReg.classList.add('hidden');
+            } else {
+                btnReg.className = "flex-1 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 bg-teal-600 text-white shadow-md";
+                btnLogin.className = "flex-1 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200";
+                formReg.classList.remove('hidden');
+                formLogin.classList.add('hidden');
+            }
+        }
+
+        function togglePasswordVisibility(inputId, btn) {
+            const input = document.getElementById(inputId);
+            const icon = btn.querySelector('i');
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.className = 'fa-solid fa-eye-slash';
+            } else {
+                input.type = 'password';
+                icon.className = 'fa-solid fa-eye';
+            }
+        }
+
+        function showAlert(msg, isSuccess = false) {
+            const alertBox = document.getElementById('authAlert');
+            alertBox.classList.remove('hidden', 'bg-rose-950/80', 'text-rose-300', 'border-rose-800', 'bg-teal-950/80', 'text-teal-300', 'border-teal-800');
+            if (isSuccess) {
+                alertBox.className = "mb-5 p-3.5 rounded-xl text-xs sm:text-sm font-medium flex items-center gap-2.5 bg-teal-950/80 text-teal-300 border border-teal-800";
+                alertBox.innerHTML = `<i class="fa-solid fa-circle-check text-teal-400 text-base"></i><span>${msg}</span>`;
+            } else {
+                alertBox.className = "mb-5 p-3.5 rounded-xl text-xs sm:text-sm font-medium flex items-center gap-2.5 bg-rose-950/80 text-rose-300 border border-rose-800";
+                alertBox.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-rose-400 text-base"></i><span>${msg}</span>`;
+            }
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const identifier = document.getElementById('loginIdentifier').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            const btn = document.getElementById('btnSubmitLogin');
+
+            if (!identifier || !password) {
+                showAlert('Vui lòng nhập đầy đủ thông tin đăng nhập.');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Đang xác thực...';
+
+            try {
+                const resp = await fetch('/api/account/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ identifier, password })
+                });
+                const data = await resp.json();
+
+                if (data.ok) {
+                    showAlert('Đăng nhập thành công! Đang chuyển hướng...', true);
+                    const nextUrl = urlParams.get('next') || '/';
+                    setTimeout(() => {
+                        window.location.href = nextUrl;
+                    }, 800);
+                } else {
+                    showAlert(data.error || 'Đăng nhập không thành công.');
+                    btn.disabled = false;
+                    btn.innerHTML = '<span>Đăng nhập hệ thống</span><i class="fa-solid fa-arrow-right text-xs ml-2"></i>';
+                }
+            } catch (err) {
+                showAlert('Lỗi kết nối máy chủ. Vui lòng thử lại.');
+                btn.disabled = false;
+                btn.innerHTML = '<span>Đăng nhập hệ thống</span><i class="fa-solid fa-arrow-right text-xs ml-2"></i>';
+            }
+        }
+
+        async function handleRegister(e) {
+            e.preventDefault();
+            const name = document.getElementById('regName').value.trim();
+            const phone = document.getElementById('regPhone').value.trim();
+            const email = document.getElementById('regEmail').value.trim();
+            const province = document.getElementById('regProvince').value.trim();
+            const password = document.getElementById('regPassword').value;
+            const passwordConfirm = document.getElementById('regPasswordConfirm').value;
+            const btn = document.getElementById('btnSubmitRegister');
+
+            if (password !== passwordConfirm) {
+                showAlert('Mật khẩu xác nhận không khớp.');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Đang tạo tài khoản...';
+
+            try {
+                const resp = await fetch('/api/account/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, phone, email, province, password })
+                });
+                const data = await resp.json();
+
+                if (data.ok) {
+                    showAlert('Đăng ký thành công! Đang chuyển hướng...', true);
+                    const nextUrl = urlParams.get('next') || '/';
+                    setTimeout(() => {
+                        window.location.href = nextUrl;
+                    }, 1000);
+                } else {
+                    showAlert(data.error || 'Đăng ký không thành công.');
+                    btn.disabled = false;
+                    btn.innerHTML = '<span>Hoàn tất đăng ký</span><i class="fa-solid fa-circle-check text-xs ml-2"></i>';
+                }
+            } catch (err) {
+                showAlert('Lỗi kết nối máy chủ. Vui lòng thử lại.');
+                btn.disabled = false;
+                btn.innerHTML = '<span>Hoàn tất đăng ký</span><i class="fa-solid fa-circle-check text-xs ml-2"></i>';
+            }
+        }
+    </script>
+</body>
+</html>

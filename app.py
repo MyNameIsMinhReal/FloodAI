@@ -2196,6 +2196,78 @@ except Exception as _adm_exc:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# DEDICATED AUTH PAGE & CITIZEN ACCOUNT ENDPOINTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/login")
+@app.route("/register")
+def auth_page():
+    """Trang Đăng nhập / Đăng ký riêng biệt cho người dân & quản trị"""
+    return render_template("auth.html")
+
+
+@app.route("/api/account/register", methods=["POST"])
+def api_account_register():
+    data = request.get_json(silent=True) or {}
+    name = data.get("name")
+    phone = data.get("phone")
+    email = data.get("email")
+    password = data.get("password")
+    province = data.get("province", "")
+    address = data.get("address", "")
+
+    from utils.auth_db import register_user
+    res = register_user(name, phone, email, password, province, address)
+    if res.get("ok") and "user" in res:
+        session["user_id"] = res["user"]["id"]
+        session["user_name"] = res["user"]["name"]
+        session["user_phone"] = res["user"]["phone"]
+        session["user_email"] = res["user"]["email"]
+        session["user_province"] = res["user"]["province"]
+        session["user_role"] = res["user"]["role"]
+    return jsonify(res)
+
+
+@app.route("/api/account/login", methods=["POST"])
+def api_account_login():
+    data = request.get_json(silent=True) or {}
+    identifier = data.get("identifier")
+    password = data.get("password")
+
+    from utils.auth_db import authenticate_user
+    res = authenticate_user(identifier, password)
+    if res.get("ok") and "user" in res:
+        session["user_id"] = res["user"]["id"]
+        session["user_name"] = res["user"]["name"]
+        session["user_phone"] = res["user"]["phone"]
+        session["user_email"] = res["user"]["email"]
+        session["user_province"] = res["user"]["province"]
+        session["user_role"] = res["user"]["role"]
+    return jsonify(res)
+
+
+@app.route("/api/account/me", methods=["GET"])
+def api_account_me():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"ok": True, "logged_in": False, "user": None})
+    from utils.auth_db import get_user_by_id
+    u = get_user_by_id(user_id)
+    if not u:
+        session.clear()
+        return jsonify({"ok": True, "logged_in": False, "user": None})
+    return jsonify({"ok": True, "logged_in": True, "user": u})
+
+
+@app.route("/api/account/logout", methods=["GET", "POST"])
+def api_account_logout():
+    session.clear()
+    if request.is_json:
+        return jsonify({"ok": True, "message": "Đã đăng xuất"})
+    return redirect("/")
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="FloodAI Web Application")
