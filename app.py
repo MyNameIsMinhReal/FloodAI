@@ -595,15 +595,17 @@ def dashboard():
     return _render_spa("admin")
 
 
-@app.route("/login", methods=["GET", "POST"])
-def login_page():
-    return _render_spa("admin")
+@app.route("/login", methods=["GET"])
+@app.route("/register", methods=["GET"])
+def auth_page():
+    """Trang Đăng nhập / Đăng ký riêng biệt cho người dân & quản trị"""
+    return render_template("auth.html")
 
 
-@app.route("/logout", methods=["GET"])
+@app.route("/logout", methods=["GET", "POST"])
 def logout():
     session.clear()
-    return redirect(url_for("home"))
+    return redirect("/")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2199,13 +2201,6 @@ except Exception as _adm_exc:
 # ══════════════════════════════════════════════════════════════════════════════
 # DEDICATED AUTH PAGE & CITIZEN ACCOUNT ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════════════
-
-@app.route("/login")
-@app.route("/register")
-def auth_page():
-    """Trang Đăng nhập / Đăng ký riêng biệt cho người dân & quản trị"""
-    return render_template("auth.html")
-
 
 @app.route("/api/account/register", methods=["POST"])
 def api_account_register():
