@@ -75,66 +75,36 @@
         .bg-shelter { background-color: #10b981; }
         .bg-sensor { background-color: #0284c7; }
 
-        /* Custom marker badges and labels directly on map */
+        /* Custom Leaflet Map styling: Viền trắng ranh giới & nhãn trắng kiểu Google Maps */
         .custom-leaflet-pin {
             background: transparent !important;
             border: none !important;
         }
-        .marker-pill-badge {
-            display: inline-block;
-            padding: 1px 6px;
-            font-size: 10px;
-            font-weight: 800;
-            border-radius: 9999px;
-            white-space: nowrap;
-            letter-spacing: 0.02em;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.5);
-            border: 1px solid rgba(255,255,255,0.85);
-            margin-top: 3px;
-            pointer-events: none;
-            text-align: center;
-        }
-        .vietnam-region-marker {
+        .province-label-container {
             background: transparent !important;
             border: none !important;
         }
-        .vietnam-region-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            background: rgba(15, 23, 42, 0.90);
-            color: #f8fafc;
-            border: 1.5px solid rgba(45, 212, 191, 0.7);
-            padding: 3px 9px;
-            border-radius: 9999px;
-            font-size: 11px;
-            font-weight: 800;
-            box-shadow: 0 4px 14px rgba(0,0,0,0.5);
-            white-space: nowrap;
-            cursor: pointer;
-            backdrop-filter: blur(6px);
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            transform-origin: center center;
-        }
-        .vietnam-region-pill:hover {
-            background: #0f766e;
-            border-color: #2dd4bf;
+        .province-map-label {
+            display: inline-block;
             color: #ffffff;
-            transform: scale(1.1);
-            box-shadow: 0 6px 20px rgba(45, 212, 191, 0.4);
-        }
-        .vietnam-region-pill .pulse-dot {
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-            background: #2dd4bf;
-            box-shadow: 0 0 8px #2dd4bf;
-            animation: pulseDot 1.5s infinite;
-        }
-        @keyframes pulseDot {
-            0% { transform: scale(0.9); opacity: 0.8; }
-            50% { transform: scale(1.3); opacity: 1; }
-            100% { transform: scale(0.9); opacity: 0.8; }
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            text-align: center;
+            white-space: nowrap;
+            pointer-events: none;
+            user-select: none;
+            text-shadow: 
+                0 0 3px #000000,
+                0 0 6px #000000,
+                1px 1px 2px #000000,
+                -1px -1px 2px #000000,
+                1px -1px 2px #000000,
+                -1px 1px 2px #000000;
+            opacity: 0.95;
+            transform: translate(-50%, -50%);
         }
 
         /* Custom scrollbar */
@@ -441,23 +411,8 @@
                 </button>
             </div>
 
-            <!-- FLOATING OVERLAY: Quick City / Region Selector Toolbar (HN, Huế, Đà Nẵng, TP.HCM...) -->
-            <div class="absolute top-14 left-1/2 -translate-x-1/2 z-20 flex items-center justify-start gap-1 px-3 py-1 bg-slate-900/90 dark:bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-full shadow-xl max-w-[96vw] overflow-x-auto no-scrollbar whitespace-nowrap text-xs">
-                <span class="text-teal-400 font-extrabold px-1 text-[11px] flex items-center gap-1 shrink-0">
-                    <i class="fa-solid fa-map-location-dot"></i> Vùng:
-                </span>
-                <button onclick="flyToRegion(16.0, 106.5, 6)" class="region-jump-btn active px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-600 text-white transition shrink-0">Toàn quốc</button>
-                <button onclick="flyToRegion(21.0285, 105.8542, 12)" class="region-jump-btn px-2.5 py-0.5 rounded-full text-[11px] font-bold text-slate-300 hover:text-white hover:bg-slate-800 transition shrink-0">HN (Hà Nội)</button>
-                <button onclick="flyToRegion(21.5928, 105.8442, 12)" class="region-jump-btn px-2.5 py-0.5 rounded-full text-[11px] font-bold text-slate-300 hover:text-white hover:bg-slate-800 transition shrink-0">Thái Nguyên</button>
-                <button onclick="flyToRegion(21.7168, 104.8953, 12)" class="region-jump-btn px-2.5 py-0.5 rounded-full text-[11px] font-bold text-slate-300 hover:text-white hover:bg-slate-800 transition shrink-0">Yên Bái</button>
-                <button onclick="flyToRegion(16.4637, 107.5909, 12)" class="region-jump-btn px-2.5 py-0.5 rounded-full text-[11px] font-bold text-slate-300 hover:text-white hover:bg-slate-800 transition shrink-0">Huế</button>
-                <button onclick="flyToRegion(16.0544, 108.2022, 12)" class="region-jump-btn px-2.5 py-0.5 rounded-full text-[11px] font-bold text-slate-300 hover:text-white hover:bg-slate-800 transition shrink-0">Đà Nẵng</button>
-                <button onclick="flyToRegion(10.8231, 106.6297, 12)" class="region-jump-btn px-2.5 py-0.5 rounded-full text-[11px] font-bold text-slate-300 hover:text-white hover:bg-slate-800 transition shrink-0">TP.HCM</button>
-                <button onclick="flyToRegion(10.0452, 105.7469, 12)" class="region-jump-btn px-2.5 py-0.5 rounded-full text-[11px] font-bold text-slate-300 hover:text-white hover:bg-slate-800 transition shrink-0">Cần Thơ</button>
-            </div>
-
             <!-- FLOATING OVERLAY: Left Drawer Info Panel (SOS.info.vn Style) -->
-            <div class="absolute top-24 left-4 z-20 hidden md:flex flex-col gap-3 w-80 max-h-[calc(100vh-220px)] overflow-hidden pointer-events-none">
+            <div class="absolute top-20 left-4 z-20 hidden md:flex flex-col gap-3 w-80 max-h-[calc(100vh-200px)] overflow-hidden pointer-events-none">
                 
                 <!-- Quick Emergency Hotline Card -->
                 <div class="pointer-events-auto bg-slate-900/90 backdrop-blur border border-slate-800 text-white rounded-2xl p-4 shadow-xl">
@@ -1517,140 +1472,91 @@
         // LEAFLET MAPS IMPLEMENTATION
         // ===================================================================
 
-        // Danh mục các vùng trọng điểm & nhãn địa danh trên bản đồ Việt Nam
-        const VIETNAM_REGIONS = [
-            { code: 'HN', name: 'Hà Nội', lat: 21.0285, lng: 105.8542, zoom: 12 },
-            { code: 'TN', name: 'Thái Nguyên', lat: 21.5928, lng: 105.8442, zoom: 12 },
-            { code: 'YB', name: 'Yên Bái', lat: 21.7168, lng: 104.8953, zoom: 12 },
-            { code: 'HP', name: 'Hải Phòng', lat: 20.8449, lng: 106.6881, zoom: 12 },
-            { code: 'NA', name: 'Nghệ An', lat: 18.6734, lng: 105.6813, zoom: 11 },
-            { code: 'Huế', name: 'Huế', lat: 16.4637, lng: 107.5909, zoom: 12 },
-            { code: 'Đà Nẵng', name: 'Đà Nẵng', lat: 16.0544, lng: 108.2022, zoom: 12 },
-            { code: 'BĐ', name: 'Bình Định', lat: 13.7830, lng: 109.2197, zoom: 11 },
-            { code: 'Nha Trang', name: 'Khánh Hòa', lat: 12.2388, lng: 109.1967, zoom: 12 },
-            { code: 'TP.HCM', name: 'TP. Hồ Chí Minh', lat: 10.8231, lng: 106.6297, zoom: 12 },
-            { code: 'Cần Thơ', name: 'Cần Thơ', lat: 10.0452, lng: 105.7469, zoom: 12 },
-            { code: 'Cà Mau', name: 'Cà Mau', lat: 9.1769, lng: 105.1500, zoom: 11 }
-        ];
+        // Dữ liệu và hàm hiển thị ranh giới tỉnh thành (viền trắng) & tên tỉnh trắng kiểu Google Maps
+        let cachedVietnamProvincesGeoJson = null;
+        let cachedVietnamProvinceLabels = null;
 
-        let vietnamRegionsGroup = null;
-
-        function extractRegionTag(item) {
-            if (!item) return '';
-            const text = ((item.location || '') + ' ' + (item.title || '')).toLowerCase();
-            if (text.includes('hà nội') || text.includes('ha noi') || text.includes('ba đình') || text.includes('nam từ liêm') || text.includes('hoàn kiếm') || text.includes('cầu giấy')) return 'HN';
-            if (text.includes('huế') || text.includes('thừa thiên') || text.includes('phú lộc') || text.includes('hương trà')) return 'Huế';
-            if (text.includes('đà nẵng') || text.includes('hải châu') || text.includes('hòa vang') || text.includes('ngũ hành sơn') || text.includes('liên chiểu')) return 'Đà Nẵng';
-            if (text.includes('hồ chí minh') || text.includes('tphcm') || text.includes('tp.hcm') || text.includes('sài gòn') || text.includes('quận 7') || text.includes('quận 11') || text.includes('thủ đức') || text.includes('bình thạnh')) return 'TP.HCM';
-            if (text.includes('thái nguyên') || text.includes('túc duyên') || text.includes('quang trung') || text.includes('gang thép')) return 'Thái Nguyên';
-            if (text.includes('yên bái') || text.includes('hồng hà') || text.includes('văn yên')) return 'Yên Bái';
-            if (text.includes('hải phòng') || text.includes('ngô quyền') || text.includes('hồng bàng')) return 'Hải Phòng';
-            if (text.includes('nghệ an') || text.includes('vinh') || text.includes('hưng nguyên')) return 'Nghệ An';
-            if (text.includes('quảng trị') || text.includes('đông hà') || text.includes('triệu phong')) return 'Quảng Trị';
-            if (text.includes('quảng bình') || text.includes('đồng hới') || text.includes('lệ thủy')) return 'Quảng Bình';
-            if (text.includes('quảng nam') || text.includes('hội an') || text.includes('tam kỳ')) return 'Quảng Nam';
-            if (text.includes('cần thơ') || text.includes('ninh kiều') || text.includes('cái răng')) return 'Cần Thơ';
-            if (text.includes('nha trang') || text.includes('khánh hòa')) return 'Nha Trang';
-            if (text.includes('bình định') || text.includes('quy nhơn')) return 'Bình Định';
-            if (text.includes('lào cai') || text.includes('sa pa')) return 'Lào Cai';
-            if (text.includes('cao bằng')) return 'Cao Bằng';
-            if (text.includes('bắc kạn')) return 'Bắc Kạn';
-            if (text.includes('tuyên quang')) return 'Tuyên Quang';
-            if (text.includes('hà tĩnh')) return 'Hà Tĩnh';
-            if (text.includes('thanh hóa')) return 'Thanh Hóa';
-            if (text.includes('cà mau')) return 'Cà Mau';
-            if (item.location) {
-                const parts = item.location.split(',');
-                const last = parts[parts.length - 1].trim().replace(/^TP\.\s*/i, '').replace(/^Tỉnh\s*/i, '');
-                if (last.length <= 12) return last;
-            }
-            return '';
-        }
-
-        function createCustomMarkerIcon(type, regionTag = '') {
+        function createCustomMarkerIcon(type) {
             let colorClass = 'bg-emergency';
             let iconClass = 'fa-triangle-exclamation';
-            let tagBg = 'bg-rose-600 text-white';
 
             if (type === 'flood') {
                 colorClass = 'bg-flood';
                 iconClass = 'fa-water';
-                tagBg = 'bg-amber-600 text-white';
             } else if (type === 'shelter') {
                 colorClass = 'bg-shelter';
                 iconClass = 'fa-house-chimney-medical';
-                tagBg = 'bg-emerald-600 text-white';
             } else if (type === 'sensor') {
                 colorClass = 'bg-sensor';
                 iconClass = 'fa-tower-cell';
-                tagBg = 'bg-sky-600 text-white';
             }
-
-            const tagHtml = regionTag ? `<span class="marker-pill-badge ${tagBg}">${regionTag}</span>` : '';
 
             return L.divIcon({
                 className: 'custom-leaflet-pin',
-                html: `
-                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 84px; margin-left: -42px; margin-top: -16px;">
-                        <div class="custom-marker ${colorClass} w-8 h-8 text-xs">
-                            <i class="fa-solid ${iconClass}"></i>
-                        </div>
-                        ${tagHtml}
-                    </div>
-                `,
-                iconSize: [0, 0],
-                iconAnchor: [0, 0]
+                html: `<div class="custom-marker ${colorClass} w-8 h-8 text-xs shadow-lg"><i class="fa-solid ${iconClass}"></i></div>`,
+                iconSize: [32, 32],
+                iconAnchor: [16, 16]
             });
         }
 
-        function addVietnamRegionLabels(mapInstance) {
+        async function loadVietnamProvinceBoundaries(mapInstance) {
             if (!mapInstance) return null;
             const group = L.layerGroup();
-            VIETNAM_REGIONS.forEach(reg => {
-                const icon = L.divIcon({
-                    className: 'vietnam-region-marker',
-                    html: `
-                        <div class="vietnam-region-pill" onclick="flyToRegion(${reg.lat}, ${reg.lng}, ${reg.zoom})" title="Khu vực ${reg.name} - Bấm để phóng to">
-                            <span class="pulse-dot"></span>
-                            <span>${reg.name}</span>
-                            <span class="text-[9px] text-teal-300 font-extrabold">(${reg.code})</span>
-                        </div>
-                    `,
-                    iconSize: [0, 0],
-                    iconAnchor: [38, 12]
-                });
-                const marker = L.marker([reg.lat, reg.lng], { icon, zIndexOffset: 40 });
-                marker.bindPopup(`
-                    <div style="font-family: sans-serif; font-size: 12px;" class="p-1 text-center">
-                        <strong style="color: #0f766e; font-size: 13px;">📍 ${reg.name} (${reg.code})</strong><br/>
-                        <button onclick="flyToRegion(${reg.lat}, ${reg.lng}, ${reg.zoom})" style="margin-top: 6px; padding: 4px 10px; background: #0f766e; color: white; border-radius: 6px; border: none; cursor: pointer; font-size: 11px; font-weight: bold;">
-                            Xem sự cố & trạm tại ${reg.name}
-                        </button>
-                    </div>
-                `);
-                group.addLayer(marker);
-            });
-            group.addTo(mapInstance);
-            return group;
-        }
 
-        function flyToRegion(lat, lng, zoom = 12) {
-            if (fullMapInstance) {
-                fullMapInstance.flyTo([lat, lng], zoom, { duration: 1.2 });
-            }
-            if (homeMapInstance && currentView === 'home') {
-                homeMapInstance.flyTo([lat, lng], zoom, { duration: 1.2 });
-            }
-            document.querySelectorAll('.region-jump-btn').forEach(btn => {
-                btn.classList.remove('bg-teal-600', 'text-white');
-                btn.classList.add('text-slate-300');
-            });
-            if (window.event && window.event.currentTarget) {
-                const el = window.event.currentTarget;
-                if (el.classList && el.classList.contains('region-jump-btn')) {
-                    el.classList.add('bg-teal-600', 'text-white');
-                    el.classList.remove('text-slate-300');
+            try {
+                // 1. Tải GeoJSON ranh giới tỉnh thành Việt Nam
+                if (!cachedVietnamProvincesGeoJson) {
+                    const resp = await fetch('/static/vietnam_provinces.geojson');
+                    if (resp.ok) {
+                        cachedVietnamProvincesGeoJson = await resp.json();
+                    }
                 }
+
+                // 2. Vẽ đường viền ranh giới màu trắng phân định rõ địa phận từng tỉnh (như Google Maps)
+                if (cachedVietnamProvincesGeoJson) {
+                    const boundaryLayer = L.geoJSON(cachedVietnamProvincesGeoJson, {
+                        style: {
+                            color: '#ffffff',
+                            weight: 1.5,
+                            opacity: 0.85,
+                            fillColor: 'transparent',
+                            fillOpacity: 0
+                        },
+                        interactive: false // Static, không rê chuột, không cản trở click
+                    });
+                    group.addLayer(boundaryLayer);
+                }
+
+                // 3. Tải và hiển thị tên các tỉnh thành màu trắng (Google Maps typography)
+                if (!cachedVietnamProvinceLabels) {
+                    const respLbl = await fetch('/static/vietnam_province_labels.json');
+                    if (respLbl.ok) {
+                        cachedVietnamProvinceLabels = await respLbl.json();
+                    }
+                }
+
+                if (cachedVietnamProvinceLabels && Array.isArray(cachedVietnamProvinceLabels)) {
+                    cachedVietnamProvinceLabels.forEach(p => {
+                        const labelIcon = L.divIcon({
+                            className: 'province-label-container',
+                            html: `<span class="province-map-label">${p.name}</span>`,
+                            iconSize: [0, 0],
+                            iconAnchor: [0, 0]
+                        });
+                        const lblMarker = L.marker([p.lat, p.lng], {
+                            icon: labelIcon,
+                            interactive: false,
+                            zIndexOffset: 15
+                        });
+                        group.addLayer(lblMarker);
+                    });
+                }
+
+                group.addTo(mapInstance);
+                return group;
+            } catch (err) {
+                console.warn('Lỗi tải ranh giới tỉnh thành:', err);
+                return null;
             }
         }
 
@@ -1661,17 +1567,11 @@
             // Satellite imagery
             L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
                 maxZoom: 19,
-                attribution: '© Satellite Imagery - FloodAI Vietnam GIRC'
+                attribution: '© Ảnh Vệ Tinh - FloodAI Vietnam GIRC'
             }).addTo(homeMapInstance);
 
-            // Vietnamese City and Province labels overlay
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', {
-                subdomains: 'abcd',
-                maxZoom: 19,
-                pane: 'overlayPane'
-            }).addTo(homeMapInstance);
-
-            addVietnamRegionLabels(homeMapInstance);
+            // Hiển thị viền trắng ranh giới & tên tỉnh thành
+            loadVietnamProvinceBoundaries(homeMapInstance);
 
             homeMarkersGroup = L.layerGroup().addTo(homeMapInstance);
             renderHomeMiniMapPins();
@@ -1682,8 +1582,7 @@
             homeMarkersGroup.clearLayers();
             const latlngs = [];
             emergencyData.forEach(item => {
-                const regionTag = extractRegionTag(item);
-                const marker = L.marker([item.lat, item.lng], { icon: createCustomMarkerIcon(item.type, regionTag) });
+                const marker = L.marker([item.lat, item.lng], { icon: createCustomMarkerIcon(item.type) });
                 marker.bindPopup(`
                     <div style="font-family: sans-serif; font-size: 12px;" class="p-1">
                         <strong style="color: #0f766e;">${item.title}</strong><br/>
@@ -1702,7 +1601,7 @@
             }
         }
 
-        function initFullScreenMap() {
+        async function initFullScreenMap() {
             const initialCoords = (userLocation && userLocation.lat) ? [userLocation.lat, userLocation.lon] : [16.0, 106.5];
             const initialZoom = (userLocation && userLocation.lat) ? 12 : 6;
             fullMapInstance = L.map('fullScreenMap').setView(initialCoords, initialZoom);
@@ -1710,56 +1609,38 @@
             // 1. Satellite Imagery
             const satellitePure = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
                 maxZoom: 19,
-                attribution: '© Ảnh Vệ Tinh (Thuần ảnh) - FloodAI GIRC'
+                attribution: '© Ảnh Vệ Tinh - FloodAI GIRC'
             });
 
-            // 2. Voyager with Labels (Clean City & Province Names)
-            const voyagerWithLabels = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            // 2. Clean Modern Map
+            const voyagerClean = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
                 subdomains: 'abcd',
                 maxZoom: 19,
-                attribution: '© Bản đồ Đô thị (Có tên tỉnh/thành) - CARTO & OSM'
+                attribution: '© Bản đồ Đô thị - CARTO & OSM'
             });
 
-            // 3. Clean Light (No Labels)
-            const cleanLightNoLabels = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
-                subdomains: 'abcd',
-                maxZoom: 19,
-                attribution: '© Bản đồ Số Sạch - FloodAI GIRC'
-            });
-
-            // 4. Dark Mode (No Labels)
+            // 3. Dark Mode
             const darkNoLabels = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
                 subdomains: 'abcd',
                 maxZoom: 19,
                 attribution: '© Bản đồ Đêm - FloodAI GIRC'
             });
 
-            // 5. High-contrast Administrative Labels Overlay
-            const labelsOverlay = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', {
-                subdomains: 'abcd',
-                maxZoom: 19,
-                pane: 'overlayPane',
-                attribution: '© Nhãn địa danh CARTO'
-            });
+            satellitePure.addTo(fullMapInstance);
 
-            // Combo Satellite + Labels (Shows crisp city/province names over satellite)
-            const satelliteWithLabels = L.layerGroup([satellitePure, labelsOverlay]);
+            // Nạp lớp ranh giới tỉnh thành (viền trắng) & tên tỉnh kiểu Google Maps
+            const boundaryLayerGroup = await loadVietnamProvinceBoundaries(fullMapInstance);
 
-            // Default layer: Satellite with Vietnamese city & province labels
-            satelliteWithLabels.addTo(fullMapInstance);
-
-            // Add Vietnam Regional Landmark Markers (HN, Huế, Đà Nẵng, TP.HCM...)
-            vietnamRegionsGroup = addVietnamRegionLabels(fullMapInstance);
+            const overlayControls = {};
+            if (boundaryLayerGroup) {
+                overlayControls["🏳️ Ranh giới & Tên tỉnh thành (Viền trắng)"] = boundaryLayerGroup;
+            }
 
             L.control.layers({
-                "🛰️ Vệ Tinh + Tên Tỉnh Thành (Khuyên dùng)": satelliteWithLabels,
-                "🗺️ Bản đồ Đô thị (Có tên tỉnh/thành)": voyagerWithLabels,
-                "🛰️ Ảnh Vệ Tinh Thuần (Không chữ)": satellitePure,
-                "🌙 Bản đồ Đêm (Không chữ)": darkNoLabels
-            }, {
-                "🏷️ Nhãn Khu Vực Lớn (HN, Huế, ĐN, HCM...)": vietnamRegionsGroup,
-                "🏷️ Lớp nhãn địa danh CARTO": labelsOverlay
-            }, { position: 'bottomleft' }).addTo(fullMapInstance);
+                "🛰️ Ảnh Vệ Tinh (Khuyên dùng)": satellitePure,
+                "🗺️ Bản đồ Đô thị": voyagerClean,
+                "🌙 Bản đồ Đêm": darkNoLabels
+            }, overlayControls, { position: 'bottomleft' }).addTo(fullMapInstance);
 
             mapMarkersGroup = L.layerGroup().addTo(fullMapInstance);
             renderMapMarkers('all');
@@ -1844,8 +1725,7 @@
             emergencyData.forEach(item => {
                 if (filterType !== 'all' && item.type !== filterType) return;
 
-                const regionTag = extractRegionTag(item);
-                const marker = L.marker([item.lat, item.lng], { icon: createCustomMarkerIcon(item.type, regionTag) });
+                const marker = L.marker([item.lat, item.lng], { icon: createCustomMarkerIcon(item.type) });
                 
                 const popupContent = `
                     <div class="p-2 space-y-2 text-xs" style="max-width: 240px; font-family: sans-serif;">
