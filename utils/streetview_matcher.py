@@ -321,8 +321,8 @@ class StreetViewMatcher:
         lines      = cv2.HoughLinesP(edges, 1, np.pi/180, 40, minLineLength=w//5, maxLineGap=10)
         if lines is not None and len(lines) > 5:
             horiz = sum(
-                1 for l in lines
-                if abs(l[0][3]-l[0][1]) < 8   # duong ngang
+                1 for x1, y1, x2, y2 in np.asarray(lines).reshape(-1, 4)
+                if abs(y2 - y1) < 8   # duong ngang
             )
             if horiz > 3:
                 score = max(score, 0.40)
@@ -396,9 +396,9 @@ class StreetViewMatcher:
         if lines is None:
             return 0.0
         vert = sum(
-            1 for l in lines
-            if abs(l[0][2]-l[0][0]) < 15   # duong doc
-            and abs(l[0][3]-l[0][1]) > h//4
+            1 for x1, y1, x2, y2 in np.asarray(lines).reshape(-1, 4)
+            if abs(x2 - x1) < 15   # duong doc
+            and abs(y2 - y1) > h//4
         )
         return min(1.0, vert / 3)
 
@@ -865,8 +865,7 @@ class StreetViewMatcher:
         )
 
         if lines is not None:
-            for line in lines[:10]:
-                x1, y1, x2, y2 = line[0]
+            for x1, y1, x2, y2 in np.asarray(lines).reshape(-1, 4)[:10]:
                 line_h = abs(y2 - y1)
                 if line_h > h // 4:  # vertical line đủ dài
                     mid_x = (x1 + x2) // 2

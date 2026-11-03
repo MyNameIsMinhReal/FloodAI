@@ -2121,7 +2121,7 @@
                 document.getElementById('aiConfidence').innerText = `Độ tin cậy: ${data.confidence || 85}%`;
                 document.getElementById('aiDepthVal').innerText = `${data.depth_cm ?? 0} cm`;
                 document.getElementById('aiRiskVal').innerText = data.risk_label || data.flood_level || 'ĐÃ PHÂN TÍCH';
-                document.getElementById('aiAdvice').innerText = data.advice || 'Đã hoàn tất phân tích độ sâu ngập.';
+                document.getElementById('aiAdvice').innerHTML = formatChatMarkdown(data.advice || 'Đã hoàn tất phân tích độ sâu ngập.');
             } catch (err) {
                 document.getElementById('aiConfidence').innerText = 'Lỗi xử lý';
                 document.getElementById('aiDepthVal').innerText = '-- cm';
@@ -2151,6 +2151,21 @@
             const thumb = document.getElementById('chatImagePreviewThumb');
             if (thumb) thumb.src = '';
             document.getElementById('chatImageBadge').classList.add('hidden');
+        }
+
+        function formatChatMarkdown(rawText) {
+            if (!rawText) return '';
+            let s = String(rawText).normalize('NFC');
+            // Escape HTML tags to prevent XSS while preserving symbols
+            s = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            // Convert **bold** and __bold__ to <strong>
+            s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong class="font-bold text-slate-900 dark:text-white">$1</strong>');
+            s = s.replace(/__([^_\n]+)__/g, '<strong class="font-bold text-slate-900 dark:text-white">$1</strong>');
+            // Convert markdown headings (### Title) to bold lines
+            s = s.replace(/^#{1,4}\s+(.+)$/gm, '<strong class="font-bold text-slate-900 dark:text-white">$1</strong>');
+            // Clean up any stray unmatched **
+            s = s.replace(/\*\*/g, '');
+            return s;
         }
 
         function sendQuickQuery(text) {
@@ -2217,7 +2232,7 @@
                 if (el) {
                     let html = `
                         <p class="font-bold text-teal-600 dark:text-teal-400">Trợ lý FloodAI:</p>
-                        <div style="white-space: pre-line;" class="leading-relaxed">${reply}</div>
+                        <div style="white-space: pre-line;" class="leading-relaxed">${formatChatMarkdown(reply)}</div>
                     `;
 
                     // Nếu có ảnh kết quả đo độ sâu (overlay_b64) thì hiển thị kèm để người dùng có thể bấm xem lại
@@ -2453,11 +2468,11 @@
                     })
                 });
                 const data = await resp.json();
-                lastRewrittenText = String(data.rewritten || art.body || art.summary || '').normalize('NFC');
-                if (bodyEl) bodyEl.innerText = lastRewrittenText;
+                lastRewrittenText = String(data.rewritten || art.body || art.summary || '').normalize('NFC').replace(/\*\*/g, '');
+                if (bodyEl) bodyEl.innerHTML = formatChatMarkdown(data.rewritten || art.body || art.summary || '');
             } catch (err) {
-                lastRewrittenText = String(art.body || art.summary || 'Không thể tải nội dung chi tiết.').normalize('NFC');
-                if (bodyEl) bodyEl.innerText = lastRewrittenText;
+                lastRewrittenText = String(art.body || art.summary || 'Không thể tải nội dung chi tiết.').normalize('NFC').replace(/\*\*/g, '');
+                if (bodyEl) bodyEl.innerHTML = formatChatMarkdown(art.body || art.summary || 'Không thể tải nội dung chi tiết.');
             } finally {
                 if (loading) loading.classList.add('hidden');
                 if (result) result.classList.remove('hidden');

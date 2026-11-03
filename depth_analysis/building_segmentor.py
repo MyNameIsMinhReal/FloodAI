@@ -146,8 +146,7 @@ class BuildingSegmentor:
                                 minLineLength=h * 0.15, maxLineGap=20)
         facade_mask = np.zeros((h, w), dtype=np.uint8)
         if lines is not None:
-            for l in lines:
-                x1, y1, x2, y2 = l[0]
+            for x1, y1, x2, y2 in np.asarray(lines).reshape(-1, 4):
                 angle = abs(np.degrees(np.arctan2(y2 - y1, x2 - x1 + 1e-9)))
                 if 60 < angle < 120:  # gần đứng
                     cv2.line(facade_mask, (x1, y1), (x2, y2), 255, 8)

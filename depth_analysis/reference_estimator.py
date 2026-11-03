@@ -916,8 +916,7 @@ class ReferenceEstimator:
         if lines is not None:
             # Tinh goc nghieng trung binh cua cac đường
             angles = []
-            for l in lines[:30]:
-                x1,y1,x2,y2 = l[0]
+            for x1, y1, x2, y2 in np.asarray(lines).reshape(-1, 4)[:30]:
                 if abs(x2-x1) > 10:
                     angles.append(abs(np.degrees(np.arctan2(y2-y1, x2-x1))))
             if angles:

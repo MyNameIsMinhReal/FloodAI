@@ -55,6 +55,9 @@ SUBMERGE_CRITICAL = 0.60
 
 # ── Font hỗ trợ tiếng Việt ────────────────────────────────────────────────────
 _FONT_PATHS = [
+    "C:/Windows/Fonts/segoeui.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+    "C:/Windows/Fonts/tahoma.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     "/usr/share/fonts/truetype/freefont/FreeSans.ttf",

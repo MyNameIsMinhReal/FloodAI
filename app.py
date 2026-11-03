@@ -547,20 +547,29 @@ def _build_safety_advice_for_depth(depth_cm: float, level: str) -> str:
     lvl = (level or "UNKNOWN").upper()
     if depth_cm >= 100 or lvl in ("CHEST", "SUBMERGED"):
         return (
-            "⚠️ CẢNH BÁO KHẨN CẤP (Mức 3 - Rất nguy hiểm): Mực nước rất sâu, nguy cơ đuối nước và rò rỉ điện cực cao. "
-            "Cần ngắt ngay cầu dao điện tổng, di chuyển khẩn cấp lên tầng cao/mái nhà và gọi cứu hộ 112 hoặc 114."
+            "⚠️ **CẢNH BÁO KHẨN CẤP (Mức 3 - Rất nguy hiểm):** Mực nước rất sâu, nguy cơ đuối nước và rò rỉ điện cực cao.\n"
+            "• Ngắt ngay cầu dao điện tổng trong nhà.\n"
+            "• Di chuyển khẩn cấp lên tầng cao hoặc mái nhà và gọi cứu hộ **112** hoặc **114**."
         )
     if depth_cm >= 40 or lvl in ("KNEE", "WAIST"):
         return (
-            "⚠️ CẢNH BÁO NGUY HIỂM (Mức 2): Nước ngập từ đầu gối đến ngang hông, vượt quá ống xả và gầm xe. "
-            "Tuyệt đối không đi xe máy hoặc ô tô gầm thấp qua khu vực này, tránh xa cột điện và hố ga, ưu tiên sơ tán người già và trẻ nhỏ."
+            "⚠️ **CẢNH BÁO NGUY HIỂM (Mức 2):** Nước ngập từ đầu gối đến ngang hông, vượt quá ống xả và gầm xe.\n"
+            "• Tuyệt đối không đi xe máy hoặc ô tô gầm thấp qua khu vực này.\n"
+            "• Tránh xa cột điện, trạm biến áp và hố ga; ưu tiên sơ tán người già và trẻ nhỏ."
         )
-    if depth_cm >= 10 or lvl in ("PUDDLE", "ANKLE"):
+    if depth_cm >= 15 or lvl == "ANKLE":
         return (
-            "ℹ️ CẢNH BÁO NGẬP NHẸ (Mức 1): Mặt đường ngập khoảng mắt cá chân. "
-            "Xe máy và ô tô nên giảm tốc độ, giữ đều ga, chú ý ổ gà hoặc nắp cống bị nước che khuất và theo dõi nếu mưa còn tiếp diễn."
+            "ℹ️ **CẢNH BÁO NGẬP NHẸ (Mức 1 - Ngập mắt cá chân):** Mặt đường ngập khoảng 15–40 cm.\n"
+            "• Xe máy và ô tô nên giảm tốc độ, giữ đều ga để tránh chết máy.\n"
+            "• Chú ý ổ gà hoặc nắp cống bị nước che khuất và theo dõi nếu mưa lớn tiếp diễn."
         )
-    return "✅ Hiện trạng mặt đường tương đối an toàn, không phát hiện mực nước ngập sâu nguy hiểm."
+    if depth_cm > 0 or lvl == "PUDDLE":
+        return (
+            "🟢 **THÔNG BÁO AN TOÀN (Nước đọng / Ngập nông < 15 cm):** Mặt đường chỉ có lớp nước nông dưới mắt cá chân (xấp xỉ mép dưới lốp xe).\n"
+            "• Người dân và các phương tiện vẫn di chuyển bình thường.\n"
+            "• Nên giảm nhẹ tốc độ để tránh trơn trượt và bắn nước."
+        )
+    return "✅ **AN TOÀN:** Hiện trạng mặt đường khô ráo, không phát hiện mực nước ngập nguy hiểm."
 
 
 def _analyze_image_with_meta(image_b64: str) -> tuple[str, dict]:
@@ -664,12 +673,14 @@ def _analyze_image_with_meta(image_b64: str) -> tuple[str, dict]:
                 except Exception:
                     overlay_b64 = None
 
-            veh_names = []
+            veh_raw = []
             for v in vehs:
                 if isinstance(v, dict):
-                    veh_names.append(str(v.get("vehicle_type") or v.get("class_name") or "phương tiện"))
+                    veh_raw.append(str(v.get("vehicle_vi") or v.get("vehicle_type") or v.get("class_name") or "Phương tiện"))
                 else:
-                    veh_names.append(str(v))
+                    veh_raw.append(str(v))
+            from collections import Counter as _Counter
+            veh_names = [f"{cnt} {name}" if cnt > 1 else name for name, cnt in _Counter(veh_raw).items()]
 
             # Format khớp với cấu trúc dữ liệu mà LoRA đã học ([Kết quả phân tích hiện tại])
             lines = [
@@ -686,13 +697,17 @@ def _analyze_image_with_meta(image_b64: str) -> tuple[str, dict]:
 
             range_txt = f" (Khoảng: {depth_range})" if depth_range and depth_range != "N/A" else ""
             card_lines = [
-                "📊 KẾT QUẢ PHÂN TÍCH MỨC ĐỘ NGẬP LỤT:",
-                f"• Tình trạng ngập: {level_vi}",
-                f"• Độ sâu ngập ước tính: {depth} cm{range_txt}",
-                f"• Độ tin cậy: {conf}% ({n_objs} mốc tham chiếu trong ảnh)",
+                "**📊 KẾT QUẢ PHÂN TÍCH MỨC ĐỘ NGẬP LỤT:**",
+                f"• **Tình trạng ngập:** {level_vi}",
+                f"• **Độ sâu ngập ước tính:** {depth} cm{range_txt}",
+                f"• **Độ tin cậy:** {conf}% ({n_objs} mốc tham chiếu trong ảnh)",
+            ]
+            if veh_names:
+                card_lines.append(f"• **Phương tiện nhận diện:** {', '.join(veh_names)}")
+            card_lines.extend([
                 "",
                 advice,
-            ]
+            ])
             meta.update({
                 "status": "ok",
                 "level": level,
@@ -1250,19 +1265,24 @@ def _run_instant_depth(image_b64: str) -> dict:
         elif depth_cm >= 40 or level in ("KNEE", "WAIST"):
             risk_label = f"CẢNH BÁO MỨC 2 — NGUY HIỂM ({level_vi})"
             advice = "⚠️ Nước ngập qua bánh xe máy / gầm ô tô. Tuyệt đối không cố đi xe qua vùng ngập, ưu tiên sơ tán người già và trẻ nhỏ."
-        elif depth_cm >= 10 or level in ("PUDDLE", "ANKLE"):
+        elif depth_cm >= 15 or level == "ANKLE":
             risk_label = f"CẢNH BÁO MỨC 1 — NGẬP NHẸ ({level_vi})"
-            advice = "ℹ️ Mặt đường có nước ngập nhẹ (~mắt cá chân). Các phương tiện di chuyển chậm, chú ý nắp cống và ổ gà."
+            advice = "ℹ️ Mặt đường có nước ngập nhẹ (~mắt cá chân, 15–40 cm). Các phương tiện di chuyển chậm, chú ý nắp cống và ổ gà."
+        elif depth_cm > 0 or level == "PUDDLE":
+            risk_label = f"AN TOÀN — NƯỚC ĐỌNG / NGẬP NÔNG ({level_vi})"
+            advice = "🟢 Mặt đường chỉ có lớp nước nông dưới mắt cá chân (<15 cm). Các phương tiện di chuyển bình thường, nên giảm tốc độ tránh trơn trượt."
         else:
             risk_label = "AN TOÀN — KHÔNG PHÁT HIỆN NGẬP SÂU (0 CM)"
             advice = "✅ Không phát hiện mực nước ngập nguy hiểm trong ảnh."
 
-        veh_names = []
+        veh_raw = []
         for v in vehs:
             if isinstance(v, dict):
-                veh_names.append(str(v.get("vehicle_type") or v.get("class_name") or "phương tiện"))
+                veh_raw.append(str(v.get("vehicle_vi") or v.get("vehicle_type") or v.get("class_name") or "Phương tiện"))
             else:
-                veh_names.append(str(v))
+                veh_raw.append(str(v))
+        from collections import Counter as _Counter
+        veh_names = [f"{cnt} {name}" if cnt > 1 else name for name, cnt in _Counter(veh_raw).items()]
         if veh_names:
             advice += f" (Mốc tham chiếu phát hiện: {', '.join(veh_names)})."
 
@@ -1578,8 +1598,19 @@ def api_chat_message():
                 "analysis": img_meta,
             })
 
-        # Nếu trợ lý hội thoại chưa sẵn sàng nhưng hệ thống đã đo xong ảnh → trả ngay thông tin ngập và cảnh báo
-        if not _llm_ready and img_meta and img_meta.get("summary_card"):
+        # Nếu người dùng chỉ gửi ảnh (không kèm câu hỏi riêng ngoài câu mặc định) HOẶC trợ lý ngôn ngữ chưa sẵn sàng
+        # → trả về ngay thẻ kết quả đo độ sâu & cảnh báo chính xác (tránh LLM tự suy diễn mâu thuẫn với số đo thực tế)
+        _default_img_prompts = (
+            "",
+            "hãy phân tích mức độ ngập và tư vấn an toàn cho ảnh này.",
+            "phân tích mức độ ngập và cảnh báo cho ảnh này",
+            "phân tích ảnh này",
+            "tình hình hiện tại sao rồi?",
+        )
+        is_default_img_prompt = user_msg.lower().strip() in _default_img_prompts
+        if img_meta and img_meta.get("summary_card") and (
+            is_default_img_prompt or not _llm_ready or img_meta.get("status") != "ok"
+        ):
             reply = img_meta["summary_card"]
             with _sess_lock:
                 hist.append({"role": "user",      "content": f"{analysis}\n{user_msg}".strip()})
@@ -1607,16 +1638,15 @@ def api_chat_message():
     messages.append({"role": "user", "content": content})
 
     try:
-        # Khi đã có kết quả đo lường từ hệ thống phân tích ảnh (img_meta['status'] == 'ok'),
-        # truyền text context chuẩn cho LoRA (tránh truyền pil_img làm lệch phân phối LoRA text-only).
-        pass_img = None if (img_meta and img_meta.get("status") == "ok") else pil_img
-        reply = llm_infer(messages, max_new_tokens=256, image=pass_img)
+        # Không truyền pil_img trực tiếp vào LLM khi đã có kết quả đo từ hệ thống phân tích ảnh,
+        # nhằm ngăn mô hình tự đoán mò độ sâu (ví dụ đoán 40-50cm khi thực tế chỉ 10cm).
+        reply = llm_infer(messages, max_new_tokens=256, image=None)
         if "INTENT:" in reply:
             from learning.flood_llm import _parse_llm_output
             reply = _parse_llm_output(reply).response or reply
         reply = _clean_vietnamese_reply(reply)
 
-        # Kiểm tra và chặn lỗi hallucinate "cần ít nhất 2 ảnh để so sánh" khi người dùng gửi 1 ảnh
+        # Kiểm tra và chặn lỗi hallucinate "cần ít nhất 2 ảnh để so sánh" hoặc bịa độ sâu mâu thuẫn
         reply_low = reply.lower()
         has_hallucinated_refusal = any(pat in reply_low for pat in _HALLUCINATED_2_IMAGES_PATTERNS)
         generic_status_phrases = (
@@ -1627,12 +1657,17 @@ def api_chat_message():
         )
         is_generic_status = any(p in reply_low for p in generic_status_phrases) and len(reply) < 120
 
+        has_contradiction = False
+        if img_meta and float(img_meta.get("depth_cm", 0) or 0) < 35.0:
+            if any(p in reply_low for p in ("ngập rất sâu", "ngập hết bánh xe", "40-50 cm", "40 - 50 cm", "sơ tán khẩn cấp")):
+                has_contradiction = True
+
         if img_meta and img_meta.get("summary_card"):
             card = img_meta["summary_card"]
-            if has_hallucinated_refusal or is_generic_status or not reply:
+            if has_hallucinated_refusal or is_generic_status or has_contradiction or not reply:
                 reply = card
             elif card not in reply:
-                reply = f"{card}\n\n💬 Tư vấn bổ sung: {reply}"
+                reply = f"{card}\n\n💬 **Tư vấn bổ sung:** {reply}"
         elif has_hallucinated_refusal and "so sánh" not in user_msg.lower():
             reply = (
                 "Bạn chỉ cần gửi **1 bức ảnh** chụp khu vực đang ngập lên đây, "

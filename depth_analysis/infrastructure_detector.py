@@ -235,8 +235,7 @@ class InfrastructureDetector:
             return results
 
         pole_candidates = []
-        for line in lines:
-            x1, y1, x2, y2 = line[0]
+        for x1, y1, x2, y2 in np.asarray(lines).reshape(-1, 4):
             # Chi lay duong gan doc (angle < 15 do so voi doc)
             if x2 == x1:
                 angle = 90.0

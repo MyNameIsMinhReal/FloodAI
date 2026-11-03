@@ -124,8 +124,7 @@ class PerspectiveAnalyzer:
                                     minLineLength=w//6, maxLineGap=20)
             if lines is not None:
                 angles = []
-                for l in lines[:30]:
-                    x1, y1, x2, y2 = l[0]
+                for x1, y1, x2, y2 in np.asarray(lines).reshape(-1, 4)[:30]:
                     if abs(x2-x1) > 10:
                         angles.append(abs(np.degrees(np.arctan2(y2-y1, x2-x1))))
                 if angles:
@@ -229,8 +228,7 @@ class PerspectiveAnalyzer:
             # Wide-angle: nhieu duong cong/cheo o bien anh
             edge_lines = 0
             center_lines = 0
-            for l in lines[:40]:
-                x1, y1, x2, y2 = l[0]
+            for x1, y1, x2, y2 in np.asarray(lines).reshape(-1, 4)[:40]:
                 cx = (x1 + x2) / 2
                 if abs(cx - w/2) > w * 0.3:
                     edge_lines += 1
@@ -315,8 +313,7 @@ class PerspectiveAnalyzer:
             return candidate_y, 0.25
 
         horizontal = []
-        for line in lines:
-            x1, y1, x2, y2 = line[0]
+        for x1, y1, x2, y2 in np.asarray(lines).reshape(-1, 4):
             angle = abs(np.degrees(np.arctan2(y2 - y1, x2 - x1)))
             if angle < 12 or angle > 168:
                 length  = np.hypot(x2-x1, y2-y1)
@@ -369,8 +366,7 @@ class PerspectiveAnalyzer:
         )
         horizon_edges = 0
         if lines is not None:
-            for line in lines:
-                x1,y1,x2,y2 = line[0]
+            for x1, y1, x2, y2 in np.asarray(lines).reshape(-1, 4):
                 ang = abs(np.degrees(np.arctan2(y2-y1, x2-x1)))
                 if ang < 15 or ang > 165:
                     horizon_edges += 1
@@ -493,8 +489,7 @@ class PerspectiveAnalyzer:
         # --- Bước 2: Tìm vanishing point bằng RANSAC-style voting ---
         # Chỉ lấy các đường có hướng gần với "perspective lines" (không nằm ngang hoàn toàn)
         persp_lines = []
-        for line in lines:
-            x1, y1, x2, y2 = line[0]
+        for x1, y1, x2, y2 in np.asarray(lines).reshape(-1, 4):
             angle = np.degrees(np.arctan2(y2 - y1, x2 - x1 + 1e-6)) % 180
             # Bỏ đường nằm ngang (85-95°) và đường dọc (0-5°, 175-180°) gần hoàn toàn
             if 10 < angle < 80 or 100 < angle < 170:
