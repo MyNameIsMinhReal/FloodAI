@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Đăng nhập & Đăng ký — FloodAI Việt Nam</title>
+    <title>Đăng nhập — FloodAI Việt Nam</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -69,16 +69,15 @@
                 <div class="absolute -top-24 -left-24 w-56 h-56 bg-teal-500/10 rounded-full blur-3xl pointer-events-none"></div>
                 <div class="absolute -bottom-24 -right-24 w-56 h-56 bg-rose-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
-                <!-- Tabs: Đăng nhập vs Đăng ký -->
-                <div class="flex items-center p-1.5 bg-slate-950/80 rounded-2xl border border-slate-800 mb-6">
-                    <button id="tabBtnLogin" onclick="switchTab('login')" class="flex-1 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 bg-teal-600 text-white shadow-md">
-                        <i class="fa-solid fa-right-to-bracket text-xs"></i>
-                        <span>Đăng nhập</span>
-                    </button>
-                    <button id="tabBtnRegister" onclick="switchTab('register')" class="flex-1 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200">
-                        <i class="fa-solid fa-user-plus text-xs"></i>
-                        <span>Đăng ký mới</span>
-                    </button>
+                <!-- Header: Đăng nhập -->
+                <div class="mb-6 pb-4 border-b border-slate-800 flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-teal-500/15 border border-teal-500/30 text-teal-400 flex items-center justify-center">
+                        <i class="fa-solid fa-right-to-bracket text-sm"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-extrabold text-white tracking-tight">Đăng nhập hệ thống</h2>
+                        <p class="text-xs text-slate-400">Dành cho tài khoản được cấp quyền trên hệ thống FloodAI</p>
+                    </div>
                 </div>
 
                 <!-- Alert Message Box -->
@@ -130,104 +129,6 @@
                     <button type="submit" id="btnSubmitLogin" class="w-full py-3 px-4 bg-teal-600 hover:bg-teal-500 active:scale-[0.99] text-white font-bold rounded-xl shadow-lg shadow-teal-600/30 transition flex items-center justify-center gap-2 text-sm mt-2">
                         <span>Đăng nhập hệ thống</span>
                         <i class="fa-solid fa-arrow-right text-xs"></i>
-                    </button>
-                </form>
-
-                <!-- ============================================================== -->
-                <!-- FORM 2: ĐĂNG KÝ (REGISTER) — DỄ DÀNG CUSTOM THÊM TRƯỜNG        -->
-                <!-- ============================================================== -->
-                <form id="formRegister" onsubmit="handleRegister(event)" class="space-y-3.5 hidden">
-                    
-                    <!-- [CUSTOM FIELD: Họ và tên] -->
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                            Họ và tên <span class="text-rose-400">*</span>
-                        </label>
-                        <div class="relative">
-                            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                                <i class="fa-solid fa-user"></i>
-                            </span>
-                            <input type="text" id="regName" required placeholder="Họ và tên đầy đủ..."
-                                   class="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition" />
-                        </div>
-                    </div>
-
-                    <!-- [CUSTOM FIELD: Số điện thoại & Email (2 cột)] -->
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                                Số điện thoại <span class="text-rose-400">*</span>
-                            </label>
-                            <div class="relative">
-                                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                                    <i class="fa-solid fa-phone"></i>
-                                </span>
-                                <input type="tel" id="regPhone" required placeholder="09xxxxxxxx"
-                                       class="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition" />
-                            </div>
-                        </div>
-
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                                Email liên hệ
-                            </label>
-                            <div class="relative">
-                                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                                    <i class="fa-solid fa-envelope"></i>
-                                </span>
-                                <input type="email" id="regEmail" placeholder="email@domain.com"
-                                       class="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition" />
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- [CUSTOM FIELD: Tỉnh / Thành phố cư trú] -->
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                            Tỉnh / Thành phố thường trú
-                        </label>
-                        <div class="relative">
-                            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                                <i class="fa-solid fa-location-dot"></i>
-                            </span>
-                            <input type="text" id="regProvince" placeholder="Ví dụ: Thái Nguyên, Hà Nội, Huế, TP.HCM..."
-                                   class="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition" />
-                        </div>
-                    </div>
-
-                    <!-- [CUSTOM FIELD: Mật khẩu & Xác nhận] -->
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                                Mật khẩu <span class="text-rose-400">*</span>
-                            </label>
-                            <div class="relative">
-                                <input type="password" id="regPassword" required placeholder="Tối thiểu 6 ký tự" minlength="6"
-                                       class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition" />
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                                Nhập lại mật khẩu <span class="text-rose-400">*</span>
-                            </label>
-                            <div class="relative">
-                                <input type="password" id="regPasswordConfirm" required placeholder="Khớp mật khẩu" minlength="6"
-                                       class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition" />
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- [CUSTOM FIELD: Điều khoản chia sẻ vị trí] -->
-                    <div class="pt-1">
-                        <label class="flex items-start gap-2.5 text-xs text-slate-400 cursor-pointer select-none">
-                            <input type="checkbox" id="regAgreeTerms" required checked class="mt-0.5 rounded border-slate-700 bg-slate-950 text-teal-600 focus:ring-teal-500" />
-                            <span>Tôi đồng ý cung cấp thông tin liên hệ và tọa độ phục vụ công tác cứu trợ, tìm kiếm cứu nạn khẩn cấp của FloodAI.</span>
-                        </label>
-                    </div>
-
-                    <button type="submit" id="btnSubmitRegister" class="w-full py-3 px-4 bg-teal-600 hover:bg-teal-500 active:scale-[0.99] text-white font-bold rounded-xl shadow-lg shadow-teal-600/30 transition flex items-center justify-center gap-2 text-sm mt-3">
-                        <span>Hoàn tất đăng ký</span>
-                        <i class="fa-solid fa-circle-check text-xs"></i>
                     </button>
                 </form>
 
@@ -301,33 +202,7 @@
 
     <!-- INTERACTIVE JAVASCRIPT LOGIC -->
     <script>
-        // Check query param ?tab=register or ?tab=login
         const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('tab') === 'register') {
-            switchTab('register');
-        }
-
-        function switchTab(tab) {
-            const btnLogin = document.getElementById('tabBtnLogin');
-            const btnReg = document.getElementById('tabBtnRegister');
-            const formLogin = document.getElementById('formLogin');
-            const formReg = document.getElementById('formRegister');
-            const alertBox = document.getElementById('authAlert');
-
-            alertBox.classList.add('hidden');
-
-            if (tab === 'login') {
-                btnLogin.className = "flex-1 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 bg-teal-600 text-white shadow-md";
-                btnReg.className = "flex-1 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200";
-                formLogin.classList.remove('hidden');
-                formReg.classList.add('hidden');
-            } else {
-                btnReg.className = "flex-1 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 bg-teal-600 text-white shadow-md";
-                btnLogin.className = "flex-1 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200";
-                formReg.classList.remove('hidden');
-                formLogin.classList.add('hidden');
-            }
-        }
 
         function togglePasswordVisibility(inputId, btn) {
             const input = document.getElementById(inputId);
@@ -390,50 +265,6 @@
                 showAlert('Lỗi kết nối máy chủ. Vui lòng thử lại.');
                 btn.disabled = false;
                 btn.innerHTML = '<span>Đăng nhập hệ thống</span><i class="fa-solid fa-arrow-right text-xs ml-2"></i>';
-            }
-        }
-
-        async function handleRegister(e) {
-            e.preventDefault();
-            const name = document.getElementById('regName').value.trim();
-            const phone = document.getElementById('regPhone').value.trim();
-            const email = document.getElementById('regEmail').value.trim();
-            const province = document.getElementById('regProvince').value.trim();
-            const password = document.getElementById('regPassword').value;
-            const passwordConfirm = document.getElementById('regPasswordConfirm').value;
-            const btn = document.getElementById('btnSubmitRegister');
-
-            if (password !== passwordConfirm) {
-                showAlert('Mật khẩu xác nhận không khớp.');
-                return;
-            }
-
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Đang tạo tài khoản...';
-
-            try {
-                const resp = await fetch('/api/account/register', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, phone, email, province, password })
-                });
-                const data = await resp.json();
-
-                if (data.ok) {
-                    showAlert('Đăng ký thành công! Đang chuyển hướng...', true);
-                    const nextUrl = urlParams.get('next') || '/';
-                    setTimeout(() => {
-                        window.location.href = nextUrl;
-                    }, 1000);
-                } else {
-                    showAlert(data.error || 'Đăng ký không thành công.');
-                    btn.disabled = false;
-                    btn.innerHTML = '<span>Hoàn tất đăng ký</span><i class="fa-solid fa-circle-check text-xs ml-2"></i>';
-                }
-            } catch (err) {
-                showAlert('Lỗi kết nối máy chủ. Vui lòng thử lại.');
-                btn.disabled = false;
-                btn.innerHTML = '<span>Hoàn tất đăng ký</span><i class="fa-solid fa-circle-check text-xs ml-2"></i>';
             }
         }
     </script>
