@@ -264,8 +264,15 @@ CHAT_SYS = (
 
 
 def _clean_vietnamese_reply(text: str) -> str:
-    """Xóa bỏ hoặc dịch các cụm từ tiếng Trung/ngoại lai nếu mô hình gốc bị code-switching."""
+    """Chuẩn hóa Unicode dựng sẵn (NFC) và xóa bỏ/dịch các cụm từ ngoại lai nếu mô hình bị code-switching."""
     import re
+    import unicodedata
+
+    if not text:
+        return ""
+    # Chuẩn hóa Unicode Tổ hợp (NFD) -> Dựng sẵn (NFC) để không bị lỗi tách dấu tiếng Việt (như đề, Sống)
+    text = unicodedata.normalize("NFC", str(text))
+
     replacements = {
         "原地等待救援": "ở nguyên vị trí an toàn chờ cứu hộ",
         "等待救援": "chờ lực lượng cứu hộ",
@@ -276,26 +283,34 @@ def _clean_vietnamese_reply(text: str) -> str:
         "危险": "nguy hiểm",
         "安全": "an toàn",
         "救援": "cứu hộ",
+        " STILL ": " vẫn ",
+        " still ": " vẫn ",
+        " HOWEVER ": " tuy nhiên ",
+        " however ": " tuy nhiên ",
     }
     for k, v in replacements.items():
         text = text.replace(k, v)
     # Loại bỏ triệt để các ký tự chữ Hán (CJK) nếu còn sót lại
     text = re.sub(r'[\u4e00-\u9fff]+', '', text)
-    # Dọn dẹp khoảng trắng thừa
-    text = re.sub(r' +', ' ', text)
-    return text.strip()
+    # Dọn dẹp khoảng trắng thừa trên cùng 1 dòng (giữ nguyên xuống dòng \n)
+    text = re.sub(r'[ \t]+', ' ', text)
+    return unicodedata.normalize("NFC", text).strip()
 
 
 def _summarize(title: str, body: str) -> str:
+    import unicodedata
+    title = unicodedata.normalize("NFC", str(title or ""))
+    body = unicodedata.normalize("NFC", str(body or ""))
     try:
         prompt = (
             f"Tóm tắt trong 1-2 câu ngắn bằng tiếng Việt. "
             f"Chỉ viết câu tóm tắt:\nTiêu đề: {title}\nNội dung: {body[:500]}"
         )
-        return llm_infer([
+        res = llm_infer([
             {"role": "system", "content": SUMMARIZE_SYS},
             {"role": "user",   "content": prompt},
         ], max_new_tokens=100).strip()
+        return _clean_vietnamese_reply(res)
     except Exception as exc:
         log.debug(f"[summarize] {exc}")
         return (body[:250] + "…") if len(body) > 250 else body
@@ -377,17 +392,19 @@ _FALLBACK_NEWS_ARTICLES = [
 
 
 def _entry_to_article(src: str, e) -> dict:
+    import unicodedata
     ts = _parse_entry_ts(e)
     raw_summary = str(e.get("summary") or e.get("description") or "")
     # Trích xuất ảnh thumbnail nếu có trong RSS summary
     img_match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', raw_summary, re.I)
     image_url = img_match.group(1) if img_match else ""
-    # Làm sạch thẻ HTML khỏi nội dung tóm tắt
+    # Làm sạch thẻ HTML và chuẩn hóa Unicode dựng sẵn (NFC) tránh lỗi font tách dấu
     clean_body = html.unescape(re.sub(r"<[^>]+>", " ", raw_summary))
-    clean_body = re.sub(r"\s+", " ", clean_body).strip()[:800]
+    clean_body = unicodedata.normalize("NFC", re.sub(r"\s+", " ", clean_body).strip())[:800]
+    clean_title = unicodedata.normalize("NFC", html.unescape(str(e.get("title") or "")).strip())
     return {
-        "source":    src,
-        "title":     html.unescape(str(e.get("title") or "")).strip(),
+        "source":    unicodedata.normalize("NFC", src),
+        "title":     clean_title,
         "link":      e.get("link", ""),
         "published": _format_ts(ts, e.get("published", "")),
         "ts":        ts or int(time.time()),
@@ -1317,40 +1334,49 @@ def api_news_summaries():
 @app.route("/api/news/rewrite", methods=["POST"])
 def api_news_rewrite():
     try:
+        import unicodedata
         data  = request.get_json(force=True, silent=True)
         if not isinstance(data, dict):
             data = {}
-        title = data.get("title", "").strip()
-        body  = data.get("body", "").strip()
-        source = data.get("source", "").strip()
+        title  = unicodedata.normalize("NFC", data.get("title", "").strip())
+        body   = unicodedata.normalize("NFC", data.get("body", "").strip())
+        source = unicodedata.normalize("NFC", data.get("source", "").strip())
         if not title:
             return jsonify({"error": "missing title"}), 400
 
+        def _build_structured_article(t: str, b: str, s: str) -> str:
+            body_clean = unicodedata.normalize("NFC", re.sub(r'<[^>]+>', '', b or '').strip())
+            if not body_clean:
+                body_clean = (
+                    f"Theo thông tin ghi nhận từ {s or 'báo chí'}, diễn biến sự việc đang được các cơ quan chức năng địa phương "
+                    f"và lực lượng cứu nạn khẩn cấp tiếp tục giám sát, triển khai các biện pháp ứng phó trên địa bàn."
+                )
+            src_tag = f" ({s})" if s else ""
+            return (
+                f"Theo diễn biến mới nhất ghi nhận tại các vùng chịu ảnh hưởng thiên tai{src_tag}, "
+                f"thông tin về \"{t}\" đang nhận được sự quan tâm đặc biệt của các cơ quan phòng chống thiên tai và người dân địa phương.\n\n"
+                f"{body_clean}\n\n"
+                f"Trước diễn biến thời tiết và thủy văn còn tiềm ẩn nhiều phức tạp, cơ quan chức năng khuyến cáo người dân trong khu vực chịu tác động "
+                f"chủ động theo dõi sát bản tin cảnh báo, dự trữ nước ngọt và nhu yếu phẩm, ngắt cầu dao điện khi nước dâng, "
+                f"không tự ý di chuyển qua điểm ngập sâu hoặc sạt lở và liên hệ ngay tổng đài cứu hộ 112 hoặc 114 khi cần hỗ trợ khẩn cấp."
+            )
+
         try:
-            rewritten = llm_infer([
+            raw_rewritten = llm_infer([
                 {"role": "system", "content": REWRITE_SYS},
                 {"role": "user",   "content":
-                 f"Tiêu đề: {title}\nNguồn tin: {source}\nNội dung gốc: {body[:800]}\n\nViết lại thành bài báo hoàn chỉnh:"},
+                 f"Tiêu đề: {title}\nNguồn tin: {source}\nNội dung gốc: {body[:800]}\n\nViết lại thành bài báo hoàn chỉnh bằng tiếng Việt chuẩn (không lặp lại dòng 'Tiêu đề:'):"},
             ], max_new_tokens=450).strip()
+            rewritten = _clean_vietnamese_reply(raw_rewritten)
+            # Xóa dòng "Tiêu đề: ..." ở đầu nếu mô hình tự thêm vào (vì tiêu đề đã hiển thị trên đầu modal)
+            rewritten = re.sub(r'^(?:Tiêu\s*đề\s*:\s*[^\n]+\n+)+', '', rewritten, flags=re.IGNORECASE).strip()
+            if len(rewritten) < 120 or "INTENT:" in rewritten:
+                rewritten = _build_structured_article(title, body, source)
         except Exception as exc:
             log.warning(f"[rewrite] {exc}")
-            import re
-            # Xử lý đoạn văn bản gốc và định dạng chuẩn báo chí chuyên nghiệp theo REWRITE_SYS
-            body_clean = re.sub(r'<[^>]+>', '', body or '').strip()
-            if not body_clean:
-                body_clean = f"Theo thông tin ghi nhận từ {source or 'báo chí'}, diễn biến sự việc đang được các cơ quan chức năng địa phương và lực lượng cứu nạn khẩn cấp tiếp tục giám sát, triển khai các biện pháp ứng phó trên địa bàn."
+            rewritten = _build_structured_article(title, body, source)
 
-            src_tag = f" ({source})" if source else ""
-            rewritten = (
-                f"TÌNH HÌNH THIÊN TAI KHẨN CẤP: {title.upper()}\n\n"
-                f"Theo diễn biến mới nhất ghi nhận tại các vùng chịu ảnh hưởng thiên tai{src_tag}, "
-                f"sự kiện \"{title}\" đang thu hút sự chú ý đặc biệt của các cơ quan chức năng phòng chống thiên tai và cộng đồng người dân.\n\n"
-                f"{body_clean}\n\n"
-                f"Trước diễn biến thời tiết còn tiềm ẩn nhiều phức tạp và nguy cơ sạt lở, ngập úng diện rộng, "
-                f"lực lượng chức năng khuyến cáo người dân trong khu vực chịu tác động cần chủ động ngắt cầu dao điện, "
-                f"gia cố nhà cửa, không tự ý di chuyển qua các điểm ngập sâu nước chảy xiết và khẩn trương liên hệ các đầu số "
-                f"cứu hộ khẩn cấp 112 (Tìm kiếm cứu nạn) hoặc 114 (Cứu nạn cứu hộ) khi cần hỗ trợ."
-            )
+        rewritten = unicodedata.normalize("NFC", rewritten)
         return jsonify({"rewritten": rewritten, "title": title, "source": source})
     except Exception as exc:
         log.error(f"[rewrite] unhandled: {exc}")

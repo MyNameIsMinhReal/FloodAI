@@ -2376,9 +2376,11 @@
 
             grid.innerHTML = filtered.map((art) => {
                 const origIdx = newsArticles.indexOf(art);
-                const summaryText = art.summary || art.body || 'Bấm "Đọc bản tin tổng hợp" để xem chi tiết diễn biến và khuyến cáo an toàn.';
+                const rawSummary = art.summary || art.body || 'Bấm "Đọc bản tin tổng hợp" để xem chi tiết diễn biến và khuyến cáo an toàn.';
+                const summaryText = String(rawSummary).normalize('NFC');
+                const titleText = String(art.title || '').normalize('NFC');
                 const pubTime = art.published || 'Mới cập nhật';
-                const sourceName = art.source || 'Điểm báo 24/7';
+                const sourceName = String(art.source || 'Điểm báo 24/7').normalize('NFC');
 
                 return `
                     <article class="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition flex flex-col justify-between space-y-4">
@@ -2390,7 +2392,7 @@
                                 <span class="text-slate-400 text-[11px]"><i class="fa-regular fa-clock mr-1"></i>${pubTime}</span>
                             </div>
                             <h3 class="font-bold text-base text-slate-900 dark:text-white leading-snug line-clamp-2 hover:text-teal-600 dark:hover:text-teal-400 transition cursor-pointer" onclick="openArticleRewriteModal(${origIdx})">
-                                ${art.title}
+                                ${titleText}
                             </h3>
                             <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-3">
                                 ${summaryText}
@@ -2429,8 +2431,8 @@
             modal.classList.remove('hidden');
             if (loading) loading.classList.remove('hidden');
             if (result) result.classList.add('hidden');
-            if (titleEl) titleEl.innerText = art.title || 'Bản tin thiên tai';
-            if (srcBadge) srcBadge.innerHTML = `<i class="fa-solid fa-newspaper mr-1"></i> Nguồn: ${art.source || 'Báo Mới 24/7'} • ${art.published || 'Hôm nay'}`;
+            if (titleEl) titleEl.innerText = String(art.title || 'Bản tin thiên tai').normalize('NFC');
+            if (srcBadge) srcBadge.innerHTML = `<i class="fa-solid fa-newspaper mr-1"></i> Nguồn: ${String(art.source || 'Báo Mới 24/7').normalize('NFC')} • ${art.published || 'Hôm nay'}`;
             if (origLink) {
                 if (art.link) {
                     origLink.href = art.link;
@@ -2445,16 +2447,16 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        title: art.title || '',
-                        body: art.body || art.summary || '',
-                        source: art.source || ''
+                        title: String(art.title || '').normalize('NFC'),
+                        body: String(art.body || art.summary || '').normalize('NFC'),
+                        source: String(art.source || '').normalize('NFC')
                     })
                 });
                 const data = await resp.json();
-                lastRewrittenText = data.rewritten || art.body || art.summary || '';
+                lastRewrittenText = String(data.rewritten || art.body || art.summary || '').normalize('NFC');
                 if (bodyEl) bodyEl.innerText = lastRewrittenText;
             } catch (err) {
-                lastRewrittenText = art.body || art.summary || 'Không thể tải nội dung chi tiết.';
+                lastRewrittenText = String(art.body || art.summary || 'Không thể tải nội dung chi tiết.').normalize('NFC');
                 if (bodyEl) bodyEl.innerText = lastRewrittenText;
             } finally {
                 if (loading) loading.classList.add('hidden');
@@ -2557,7 +2559,7 @@
                         <h4 class="font-bold text-xs uppercase text-slate-400 mb-2 flex items-center gap-1.5">
                             <i class="fa-solid fa-newspaper text-teal-500"></i> Nội Dung Bản Tin Báo Mới Tổng Hợp:
                         </h4>
-                        <div id="rewriteArticleBody" class="prose dark:prose-invert max-w-none text-slate-700 dark:text-slate-200 text-xs sm:text-sm leading-relaxed whitespace-pre-line font-serif">
+                        <div id="rewriteArticleBody" class="prose dark:prose-invert max-w-none text-slate-700 dark:text-slate-200 text-xs sm:text-sm leading-relaxed whitespace-pre-line font-sans">
                             <!-- Injected by JS -->
                         </div>
                     </div>
