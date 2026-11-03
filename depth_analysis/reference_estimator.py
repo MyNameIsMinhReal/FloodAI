@@ -686,7 +686,7 @@ class ReferenceEstimator:
             vehicles = []
 
         # 13. Draw
-        ov_path    = self._draw_overlay(img_bgr, valid_dets, measured, wl_y, water_cm, level, image_path, vehicles=vehicles)
+        ov_path    = self._draw_overlay(img_bgr, valid_dets, measured, wl_y, water_cm, level, image_path, vehicles=vehicles, wmask=wmask)
         depth_path = self._save_depth_colormap(depth_r, image_path)
 
         notes = (f"wl={wl_y}(conf={wl_conf:.2f}) water={water_pct:.1f}% "
@@ -943,98 +943,97 @@ class ReferenceEstimator:
                           h: int, w: int) -> tuple:
         """
         Tim water line CUC BO tai vi tri cua object.
-
-        FIX BUG 16% visibility:
-        Bug cu: tim nuoc tu y1 (dinh bbox) -> lay nuoc background phia tren
-               -> local_wl_y qua cao -> visibility 16% -> water_cm sai
-        Fix: chi tim nuoc trong vung DUOI cua bbox (50%-120% tu dinh)
-             + confirm bang water density tai vung chan
-
-        Logic:
-          1. Kiem tra nuoc tai vung chan (y2-30 -> y2+20): co water contact khongđ
-          2. Neu co: tim ranh gioi nuoc-kho tu duoi len trong vung 40-100% bbox
-          3. Neu khong: tra ve y2 (khong ngap)
+        Uu tien mask tu SegFormer (neu co) de tranh nham quan ao toi mau la nuoc,
+        dong thoi quet tu duoi day bbox len tren theo mat do hang (row fraction).
         """
         x1, y1, x2, y2 = det["bbox"]
         bh = max(y2 - y1, 1)
         bw = max(x2 - x1, 1)
 
+        seg_res = getattr(self, "_last_seg_result", None)
+        use_seg_mask = (
+            seg_res is not None
+            and getattr(seg_res, "water_mask", None) is not None
+            and seg_res.water_mask.shape == wmask.shape
+            and getattr(seg_res, "water_pct", 0.0) >= 2.0
+        )
+        active_mask = seg_res.water_mask if use_seg_mask else wmask
+
         # Mo rong sang 2 ben de bat nuoc canh doi tuong
-        margin = max(8, bw // 6)
+        margin = max(10, bw // 4)
         cx1    = max(0, x1 - margin)
         cx2    = min(w, x2 + margin)
 
         # ── Buoc 1: Kiem tra co nuoc tai vung chan khong ──────────────
-        # Vung chan = 20px tren + 20px duoi y2
-        foot_y1 = max(0, y2 - int(bh * 0.15))
-        foot_y2 = min(h, y2 + 20)
-        foot_mask   = wmask[foot_y1:foot_y2, cx1:cx2]
+        foot_y1 = max(0, y2 - int(bh * 0.18))
+        foot_y2 = min(h, y2 + max(20, int(bh * 0.18)))
+        foot_mask = active_mask[foot_y1:foot_y2, cx1:cx2]
         if foot_mask.size == 0:
             return y2, 0.0
 
-        foot_density = float(foot_mask.sum() / 255) / max(foot_mask.size, 1)
+        foot_density = float((foot_mask > 0).mean())
+        if foot_density < 0.05 and use_seg_mask:
+            # Fallback kiem tra them wmask ket hop neu SegFormer bo sot vung nuoc nho
+            foot_mask_w = wmask[foot_y1:foot_y2, cx1:cx2]
+            foot_density = max(foot_density, float((foot_mask_w > 0).mean()) * 0.75)
 
-        if foot_density < 0.03:
-            # Khong co nuoc tai chan -> object KHONG bi ngap
-            # Kiem tra them: co nuoc trong vung rong hon khong (cho xe may etc)
-            wider_mask = wmask[max(0, y2 - int(bh*0.3)):foot_y2,
-                               max(0, cx1 - margin):min(w, cx2 + margin)]
-            wider_density = float(wider_mask.sum()/255)/max(wider_mask.size,1) if wider_mask.size > 0 else 0
-            if wider_density < 0.02:
-                # Fallback dac biet cho nguoi mac ao mua: ao mua che mau nuoc xung quanh
-                # → mo rong pham vi kiem tra sang 2 ben va xuong duoi nhieu hon
-                if det.get("class_name") == "person" and det.get("rain_coat_prob", 0) > 0.3:
-                    wide2_mask = wmask[
-                        max(0, y2 - int(bh * 0.5)):min(h, y2 + 40),
-                        max(0, cx1 - margin * 2):min(w, cx2 + margin * 2)
-                    ]
-                    wide2_density = (
-                        float(wide2_mask.sum() / 255) / max(wide2_mask.size, 1)
-                        if wide2_mask.size > 0 else 0
-                    )
-                    if wide2_density >= 0.015:
-                        foot_density = wide2_density  # tiep tuc do
-                    else:
-                        return y2, 0.05
-                else:
-                    return y2, 0.05   # khong ngap
+        if foot_density < 0.04:
+            wider_mask = active_mask[
+                max(0, y2 - int(bh * 0.30)):foot_y2,
+                max(0, cx1 - margin):min(w, cx2 + margin)
+            ]
+            wider_density = float((wider_mask > 0).mean()) if wider_mask.size > 0 else 0.0
+            if wider_density < 0.03:
+                return y2, 0.05
+            foot_density = max(foot_density, wider_density)
 
-        # ── Buoc 2: Tim ranh gioi nuoc - kho trong vung duoi bbox ────
-        # Chi tim trong vung 40% duoi den 120% y2 (tranh lay nuoc background tren)
-        search_top = max(0, y1 + int(bh * 0.40))   # bat dau tu 40% chieu cao bbox
-        search_bot = min(h, y2 + 15)
-        search_mask = wmask[search_top:search_bot, cx1:cx2]
-
+        # ── Buoc 2: Tim ranh gioi nuoc - kho tu duoi len ─────────────
+        search_top = max(0, y1 + int(bh * 0.35))
+        search_bot = min(h, y2 + 12)
+        search_mask = active_mask[search_top:search_bot, cx1:cx2]
         if search_mask.size == 0:
             return y2, 0.0
 
-        rows_with_water = np.where(search_mask.any(axis=1))[0]
-        if len(rows_with_water) == 0:
-            # Khong co nuoc trong vung duoi -> tinh theo global
-            return y2, 0.10
+        row_fracs = (search_mask > 0).mean(axis=1)
+        # Doi voi person: quan ao o giua bbox khong phai la nuoc, nen kiem tra ca 2 ben suon (flanks)
+        if det.get("class_name") == "person":
+            flank_l = active_mask[search_top:search_bot, max(0, x1 - margin):max(x1 + 4, cx1 + 4)]
+            flank_r = active_mask[search_top:search_bot, min(w - 4, x2 - 4):min(w, x2 + margin)]
+            # Quet tu duoi day bbox (y2) di len tren: tim hang ma mat do nuoc tren than nguoi giam xuong
+            inner_mask = active_mask[search_top:search_bot, x1:x2]
+            inner_fracs = (inner_mask > 0).mean(axis=1) if inner_mask.size > 0 else row_fracs
+            y2_rel = min(len(inner_fracs) - 1, max(0, y2 - search_top))
+            local_wl_rel = y2_rel
+            for r_idx in range(y2_rel, -1, -1):
+                if inner_fracs[r_idx] >= 0.32:
+                    local_wl_rel = r_idx
+                else:
+                    # Cho phep nhay qua nhieu nho <= 3px
+                    if r_idx >= 3 and inner_fracs[max(0, r_idx - 3):r_idx].mean() >= 0.35:
+                        continue
+                    break
+            local_wl_y = search_top + local_wl_rel
+            # Neu chan nguoi dang dung trong vung nuoc (foot_density >= 0.20) ma local_wl_y == y2,
+            # dat local_wl_y sat mep nuoc tai co chan/bap chan hien huu
+            if local_wl_y >= y2 - 2 and foot_density >= 0.20:
+                local_wl_y = max(y1 + int(bh * 0.50), y2 - max(4, int(bh * 0.04)))
+        else:
+            # Doi voi xe co / cua nha: lay hang co mat do nuoc >= 0.25 tu duoi len
+            wet_rows = np.where(row_fracs >= 0.22)[0]
+            if len(wet_rows) == 0:
+                wet_rows = np.where(row_fracs >= 0.10)[0]
+            if len(wet_rows) == 0:
+                return y2, 0.10
+            water_top_rel = int(np.percentile(wet_rows, 25))
+            local_wl_y = search_top + water_top_rel
 
-        # Lay percentile 20 cua cac hang co nuoc (loai outlier)
-        # Cong vao search_top de ra toa do anh tuyet doi
-        water_top_rel  = int(np.percentile(rows_with_water, 20))
-        local_wl_y     = search_top + water_top_rel
-
-        # ── Buoc 3: Tinh confidence ───────────────────────────────────
-        # Confidence cao khi: mat do nuoc cao + water line gan chan (hop le)
-        local_conf = min(0.88, foot_density * 6.0 + 0.25)
-
-        # Penalty: neu local_wl_y < 50% chieu cao bbox -> co the lay nuoc sai
+        local_conf = min(0.90, foot_density * 1.2 + 0.35)
         wl_relative = (local_wl_y - y1) / bh
-        if wl_relative < 0.45:
-            # Water line o qua cao (tren giua bbox) -> giam confidence
-            local_conf *= 0.50
-            # Day water_line xuong vi tri hop ly hon (60% chieu cao bbox)
-            local_wl_y = y1 + int(bh * 0.60)
-            log.debug(f"  LocalWL [{det['class_name']}]: WL too high ({wl_relative:.0%}), "
-                      f"clamped to 60% bbox")
+        if wl_relative < 0.40:
+            local_conf *= 0.55
+            local_wl_y = y1 + int(bh * 0.55)
 
-        # Clamp: water line phai nam trong [y1+20%, y2]
-        local_wl_y = max(y1 + int(bh*0.20), min(y2, local_wl_y))
-
+        local_wl_y = max(y1 + int(bh * 0.20), min(y2, local_wl_y))
         log.debug(f"  LocalWL [{det['class_name']}]: y={local_wl_y} "
                   f"rel={wl_relative:.0%} foot_dens={foot_density:.2f} conf={local_conf:.2f}")
         return local_wl_y, round(local_conf, 2)
@@ -1418,10 +1417,21 @@ class ReferenceEstimator:
             except Exception:
                 poses = []
 
+        def _is_riding_box(pb, vb):
+            if _iou(pb, vb) > 0.15:
+                return True
+            px1, py1, px2, py2 = pb
+            vx1, vy1, vx2, vy2 = vb
+            x_ov = max(0, min(px2, vx2) - max(px1, vx1))
+            min_w = max(1, min(px2 - px1, vx2 - vx1))
+            if x_ov / min_w >= 0.45 and py1 < vy1 + (vy2 - vy1) * 0.45 and (vy1 - 12 <= py2 <= vy2 + 25):
+                return True
+            return False
+
         for det in dets:
             if det["class_name"] == "person":
-                if any(_iou(det["bbox"], vb) > 0.25 for vb in vehicle_bboxes):
-                    log.debug(f"  Skip RIDING (IoU) {det['bbox']}")
+                if any(_is_riding_box(det["bbox"], vb) for vb in vehicle_bboxes):
+                    log.debug(f"  Skip RIDING (overlap) {det['bbox']}")
                     continue
 
                 if poses:
@@ -1570,18 +1580,14 @@ class ReferenceEstimator:
         if foot_cands:
             foot_ys  = sorted([y for y, _ in foot_cands])
             foot_p25 = int(np.percentile(foot_ys, 25))
-            # FIX: YOLO foot consensus la anchor chinh xac hon color boundary
-            # Khi background co nuoc sau (cuoi pho, song...), color_wl bi keo len
-            # YOLO foot cho biet vi tri THUC cua chan vat the = nuoc chinh xac nhat
-            # => uu tien foot consensus, chi dung color_wl neu no THAP HON (an toan)
+            avg_bh_cand = int(np.mean([d["bbox"][3] - d["bbox"][1] for d in dets[:4]])) if dets else 60
+            # Khi vat the dung trong vung nuoc, mat nuoc nam phia tren hoac ngang chan vat the
+            cand_wl  = max(int(h * 0.25), foot_p25 - int(avg_bh_cand * 0.08))
             if len(foot_cands) >= 2:
-                # Nhieu vat the dong thuan: tin vao foot consensus
-                wl_y    = foot_p25
+                wl_y    = cand_wl
                 wl_conf = min(0.92, 0.55 + 0.08 * min(len(foot_cands), 4))
             else:
-                # 1 vat the: ket hop voi color (nhung khong de color keo len)
-                # water_line = max cua 2 gia tri (chon gia tri THAP HON = an toan hon)
-                wl_y    = max(foot_p25, color_wl)   # lay gia tri THAP HON (larger y = lower)
+                wl_y    = int(0.5 * cand_wl + 0.5 * color_wl) if color_wl < h else cand_wl
                 wl_conf = min(0.85, color_conf + 0.06)
         else:
             wl_y, wl_conf = color_wl, color_conf
@@ -1617,57 +1623,7 @@ class ReferenceEstimator:
         if seg_road_pct > 30.0:
             wl_y = min(h, wl_y + min(int(h*0.08), int((seg_road_pct-30)*1.5)))
 
-        # Sanity: neu nhieu doi tuong co visibility cao -> WL qua cao
-        if dets:
-            vis_list = []
-            for det in dets[:5]:
-                x1,y1,x2,y2 = det["bbox"]
-                bh  = max(y2-y1, 1)
-                sub = max(0, y2-wl_y) if wl_y < y2 else 0
-                vis_list.append((bh-sub)/bh)
-            avg_vis = float(np.mean(vis_list))
-            n_high_vis = sum(1 for v in vis_list if v > 0.7)
-
-            # Neu trung binh visibility cao va WL qua cao -> day xuong
-            if avg_vis > 0.75 and wl_y < int(h*0.60):
-                foot_mean = int(np.mean([d["bbox"][3] for d in dets[:5]]))
-                new_wl    = int(foot_mean * 0.85 + h * 0.15)
-                if new_wl > wl_y:
-                    wl_y    = new_wl
-                    wl_conf *= 0.65
-                    log.debug(f"  WL sanity down: avg_vis={avg_vis:.2f} -> {wl_y}")
-
-            # Them: neu NHIEU object co high visibility (>= 3) -> anh it ngap
-            if n_high_vis >= 3 and wl_y < int(h * 0.70):
-                foot_max = int(np.max([d["bbox"][3] for d in dets[:5]]))
-                wl_y     = max(wl_y, int(foot_max * 0.80 + h * 0.20))
-                wl_conf *= 0.60
-
         wl_y = max(int(h*0.08), min(h, wl_y))
-
-        # ── Force waterline from person ankle keypoints (local strong prior)
-        ankle_ys = []
-        for det_item in dets:
-            if det_item.get("class_name") != "person":
-                continue
-            kpts = det_item.get("keypoints")
-            if not isinstance(kpts, np.ndarray) or kpts.shape[0] < 17:
-                continue
-            l_ankle = float(kpts[15][1]) if kpts[15][2] > 0.25 else None
-            r_ankle = float(kpts[16][1]) if kpts[16][2] > 0.25 else None
-            x1,y1,x2,y2 = det_item["bbox"]
-            for pt in (l_ankle, r_ankle):
-                if pt is not None and y1 + 5 < pt < y2 - 5:
-                    # Chỉ dùng khi ankle nằm trong bbox và có khả năng chìm
-                    ankle_ys.append(pt)
-
-        if ankle_ys:
-            # Dùng median, tránh 1 người phản lại toàn bộ
-            candidate_ankle = int(np.median(ankle_ys))
-            if candidate_ankle > wl_y:
-                wl_y = min(candidate_ankle + 2, h - 3)
-                wl_conf = min(0.95, wl_conf + 0.12)
-                log.debug(f"  ForceWL from ankle keypoints: ankle={candidate_ankle} -> wl_y={wl_y}")
 
         # ── Sanity: neu water_line qua cao + tat ca objects visibility ~16%
         # → đây la dau hieu water_mask bi nhiem (ao mua, fence...)
@@ -1728,98 +1684,26 @@ class ReferenceEstimator:
     def _estimate_person_foot_y(self, det: dict, all_dets: list,
                                  img_rgb: np.ndarray, h: int, w: int) -> tuple:
         """
-        Uoc tinh vi tri chan thuc (foot_y) cua nguoi.
-
-        vấn đề: Khi nguoi đúng canh/tren xe may bi ngap, bbox YOLO bao gom ca
-        phan xe ben duoi → bh bi phong đai → water_cm tinh sai.
-
-        Phuong phap uu tien:
-          1. Pose keypoints (ankle/hip): chinh xac nhat
-          2. Tach xe may ben duoi: neu co moto bbox overlap
-          3. Edge detection: tim ranh gioi nguoi/xe
-          4. Fallback: dung y2 goc
-
-        Tra ve (foot_y, confidence)
+        Uoc tinh vi tri chan thuc (foot_y) cua nguoi CHI KHI nguoi dung canh/tren
+        xe may hoac xe dap ma bbox YOLO bao gom ca phan xe ben duoi.
+        (Khong cat ngan bbox nguoi bang Sobel edge hay ankle keypoint vi khi dung
+        trong nuoc lu, YOLO da tu cat y2 ngay tai mat nuoc).
         """
         x1, y1, x2, y2 = det["bbox"]
         bh = y2 - y1
-        # ── Phuong phap 1: Pose keypoints ────────────────────────────
-        if hasattr(self, '_pose_mdl') and self._pose_mdl:
-            try:
-                poses = self._pose_mdl.analyze_image(img_rgb)
-                for pose in poses:
-                    pb = pose.bbox
-                    # Tim pose tuong ung voi detection nay
-                    # _iou is a module-level function, no import needed
-                    if _iou(list(pb), det["bbox"]) > 0.40 and pose.keypoints is not None:
-                        kpts = pose.keypoints  # shape (17, 3) [x, y, conf]
-                        # Keypoint 15,16 = left/right ankle
-                        ankles = [(kpts[15][1], kpts[15][2]),
-                                  (kpts[16][1], kpts[16][2])]
-                        valid_ankle = [(y, c) for y, c in ankles if c > 0.2 and y > y1]
-                        if valid_ankle:
-                            ankle_y = float(max(y for y, _ in valid_ankle))
-                            # Hieu chinh boi vi point ngoai da co 1-2cm tu mongo
-                            foot_y = min(y2, int(ankle_y + max(6, int(bh * 0.04))))
-                            conf   = float(np.mean([c for _, c in valid_ankle]))
-                            log.debug(f"  Foot from ankle keypoints: ankle_y={ankle_y} -> foot_y={foot_y} conf={conf:.2f}")
-                            return foot_y, conf
-
-                        # Fallback: dung knee neu ankle khong ro
-                        knees = [(kpts[13][1], kpts[13][2]),
-                                 (kpts[14][1], kpts[14][2])]
-                        valid_knee = [(y, c) for y, c in knees if c > 0.3 and y > y1]
-                        if valid_knee:
-                            knee_y = float(max(y for y, _ in valid_knee))
-                            foot_y = min(y2, int(knee_y + max(10, int(bh * 0.18))))
-                            conf   = float(np.mean([c for _, c in valid_knee])) * 0.8
-                            log.debug(
-                                f"  Foot fallback from knees: knee_y={knee_y} -> foot_y={foot_y} conf={conf:.2f}"
-                            )
-                            return foot_y, conf
-            except Exception as e:
-                log.debug(f"  Pose keypoint foot failed: {e}")
-
-        # ── Phuong phap 2: Loai phan xe may ben duoi ─────────────────
-        # Tim motorcycle/bicycle bbox co overlap duoi cung cua person bbox
         for other in all_dets:
-            if other is det: continue
-            if other["class_name"] not in ("motorcycle", "bicycle"): continue
+            if other is det:
+                continue
+            if other["class_name"] not in ("motorcycle", "bicycle"):
+                continue
             ox1, oy1, ox2, oy2 = other["bbox"]
-            # Xe ben duoi person: oy1 phai nam trong nua duoi bbox nguoi
             mid_person = y1 + bh // 2
-            iou_val    = _iou([x1,y1,x2,y2], [ox1,oy1,ox2,oy2])
+            iou_val    = _iou([x1, y1, x2, y2], [ox1, oy1, ox2, oy2])
             if iou_val > 0.15 and oy1 > mid_person:
-                # Chan nguoi đ top cua xe may (hoac 10px tren top xe)
                 foot_y = max(y1 + int(bh * 0.3), oy1 - 5)
                 log.debug(f"  Foot from motorcycle bbox: y={foot_y} (moto_top={oy1})")
                 return foot_y, 0.65
 
-        # ── Phuong phap 3: Edge detection để tach nguoi / xe ────────
-        # Tim ranh gioi ngang manh trong nua duoi bbox
-        # (ranh gioi nguoi-xe thuong co edge manh)
-        try:
-            roi = img_rgb[y1:y2, max(0,x1):min(w,x2)]
-            if roi.shape[0] > 20:
-                gray_roi = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
-                # Tinh gradient theo chieu doc
-                grad_y   = cv2.Sobel(gray_roi.astype(np.float32), cv2.CV_64F, 0, 1, ksize=3)
-                row_grad = np.abs(grad_y).mean(axis=1)
-                # Tim hang co gradient manh nhat trong 40-80% duoi bbox
-                search_start = int(bh * 0.40)
-                search_end   = int(bh * 0.80)
-                if search_end > search_start:
-                    sub_grad = row_grad[search_start:search_end]
-                    peak_rel = int(np.argmax(sub_grad))
-                    peak_abs = search_start + peak_rel
-                    if row_grad[peak_abs] > row_grad.mean() * 2.5:
-                        foot_y   = y1 + peak_abs
-                        log.debug(f"  Foot from edge peak: y={foot_y}")
-                        return foot_y, 0.45
-        except Exception:
-            pass
-
-        # ── Fallback: dung y2 goc ────────────────────────────────────
         return y2, 0.20
 
     def _measure_objects_local(self, dets, wmask, global_wl_y, global_wl_conf,
@@ -1938,46 +1822,75 @@ class ReferenceEstimator:
                 effective_conf = 0.1
                 wl_source = "none"
 
-            # --- Person ankle override (keypoint evidence) ---
-            if obj_class == "person" and det.get("keypoints") is not None:
-                kpts = det.get("keypoints")
-                if isinstance(kpts, np.ndarray) and kpts.shape[0] >= 17:
-                    l_ankle = float(kpts[15][1]) if kpts[15][2] > 0.25 else None
-                    r_ankle = float(kpts[16][1]) if kpts[16][2] > 0.25 else None
-                    ankle_y = None
-                    for val in (l_ankle, r_ankle):
-                        if val is not None and y1 + 5 < val < y2 - 5:
-                            ankle_y = val if ankle_y is None else max(ankle_y, val)
+            # ── Khoi phuc phan chan nguoi chim duoi mat nuoc duc (Anthropometric Reconstruction) ──
+            # Khi nguoi dung trong nuoc lu duc (mau nau/xam), YOLO chi bat duoc phan co the
+            # NHO LEN TREN MAT NUOC (y1 -> y2), tuc y2 chinh la mat nuoc chu khong phai ban chan!
+            # Su dung ty le giai phau phan than tren (dau->hong = 47% chieu cao, vai->hong = 30%,
+            # dau->vai = 18%) de khoi phuc vi tri ban chan thuc (true_foot_y) ben duoi mat nuoc.
+            true_foot_y = effective_y2
+            if obj_class == "person" and pose_factor >= 0.75:
+                seg_res = getattr(self, "_last_seg_result", None)
+                check_mask = (
+                    seg_res.water_mask
+                    if (seg_res is not None and getattr(seg_res, "water_mask", None) is not None and getattr(seg_res, "water_pct", 0.0) >= 2.0)
+                    else wmask
+                )
+                bw_p = max(x2 - x1, 1)
+                below_zone = check_mask[
+                    max(0, y2 - int(bh * 0.12)):min(h, y2 + max(25, int(bh * 0.25))),
+                    max(0, x1 - bw_p // 4):min(w, x2 + bw_p // 4)
+                ]
+                water_below_dens = float((below_zone > 0).mean()) if below_zone.size > 0 else 0.0
 
-                    if ankle_y is not None and ankle_y > effective_wl + 4:
-                        # Ưu tiên ankle keypoint (càng gần chân càng đúng)
-                        new_wl = min(int(ankle_y + 3), y2 - 2)
-                        if new_wl > effective_wl:
-                            log.debug(
-                                f"  Ankle override: wl {effective_wl}->{new_wl} ankle={ankle_y}"
-                            )
-                            effective_wl = new_wl
-                            effective_conf = max(effective_conf, 0.5)
+                if water_below_dens >= 0.22:
+                    expected_full_bh = float(bh)
+                    kpts = det.get("keypoints")
+                    if isinstance(kpts, np.ndarray) and kpts.shape[0] >= 17:
+                        sh_ys  = [float(kpts[i][1]) for i in (5, 6)   if float(kpts[i][2]) >= 0.40 and y1 < float(kpts[i][1]) < y2]
+                        hip_ys = [float(kpts[i][1]) for i in (11, 12) if float(kpts[i][2]) >= 0.40 and y1 < float(kpts[i][1]) < y2]
+                        y_sh  = float(np.mean(sh_ys))  if sh_ys  else None
+                        y_hip = float(np.mean(hip_ys)) if hip_ys else None
+
+                        if y_hip is not None and y_hip < y2 - 12:
+                            h_head_hip = (y_hip - y1) / 0.47
+                            if y_sh is not None and y_hip - y_sh > 12:
+                                h_torso = (y_hip - y_sh) / 0.30
+                                expected_full_bh = 0.65 * h_head_hip + 0.35 * h_torso
+                            else:
+                                expected_full_bh = h_head_hip
+                        elif y_sh is not None and y_sh < y2 - 12:
+                            expected_full_bh = (y_sh - y1) / 0.18
+
+                    if expected_full_bh > bh * 1.03:
+                        expected_full_bh = min(expected_full_bh, bh * 2.4)
+                        true_foot_y = min(h - 2, int(round(y1 + expected_full_bh)))
+                        # Khi chan nguoi bi cat boi mat nuoc, mat nuoc nam ngay sat y2 (hoac local_wl_y)
+                        water_surface_y = min(effective_wl, y2 - max(3, int(bh * 0.03)))
+                        effective_wl = water_surface_y
+                        effective_conf = max(effective_conf, min(0.88, water_below_dens + 0.25))
+                        wl_source = "local_occluded"
+                        log.debug(
+                            f"  Person submerged-leg reconstruction: y2={y2} -> true_foot_y={true_foot_y} "
+                            f"(bh {bh}->{true_foot_y - y1}, wl={effective_wl}, water_below={water_below_dens:.2f})"
+                        )
+
+            full_bh = max(bh, true_foot_y - y1)
 
             # ── Tinh pixels bi ngap ──────────────────────────────────
-            # QUAN TRONG: dung effective_y2 (sau foot correction), KHONG dung y2_orig
-            # Neu dung y2_orig thi sub_px > bh → vis_ratio am → sai
-            if effective_wl >= effective_y2:
+            if effective_wl >= true_foot_y:
                 sub_px = 0               # water line duoi chan → khong ngap
             elif effective_wl <= y1:
-                sub_px = bh             # water line tren đầu → ngap hoan toan
+                sub_px = full_bh         # water line tren đầu → ngap hoan toan
             else:
-                sub_px = effective_y2 - effective_wl   # phan duoi water line
+                sub_px = true_foot_y - effective_wl   # phan duoi water line
 
-            # Clamp để tranh sub_px > bh (defensive programming)
-            sub_px = max(0, min(sub_px, bh))
-            vis_px = bh - sub_px
-            vis_r  = vis_px / max(bh, 1)   # tranh chia 0
+            # Clamp để tranh sub_px > full_bh
+            sub_px = max(0, min(sub_px, full_bh))
+            vis_px = full_bh - sub_px
+            vis_r  = vis_px / max(full_bh, 1)
 
-            # ── [SAM2] Tinh chỉnh pixel bằng mask chính xác ────────────
-            # Bbox hình chữ nhật chứa background → đếm px sai khi người nghiêng.
-            # SAM mask theo đúng hình dáng object → chính xác hơn rõ rệt.
-            if img_rgb is not None and effective_wl < effective_y2:
+            # ── [SAM2] Tinh chỉnh pixel bằng mask chính xác (chi khi khong bi cat chan boi nuoc) ──
+            if img_rgb is not None and effective_wl < effective_y2 and true_foot_y == effective_y2:
                 try:
                     from depth_analysis.sam_segmentor import refine_submersion_pixels
                     sub_px_sam, sam_conf = refine_submersion_pixels(
@@ -1990,14 +1903,14 @@ class ReferenceEstimator:
                             f"(mask-based)"
                         )
                         sub_px = sub_px_sam
-                        vis_px = bh - sub_px
-                        vis_r  = vis_px / max(bh, 1)
+                        vis_px = full_bh - sub_px
+                        vis_r  = vis_px / max(full_bh, 1)
                 except Exception as e_sam:
                     log.debug(f"  [SAM] hook fail (dùng bbox): {e_sam}")
 
             # ── Tinh water_cm ─────────────────────────────────────────
             # Cong thuc: ref_height × pose_factor × ti_le_ngap
-            water_cm = ref_h * pose_factor * (sub_px / bh)
+            water_cm = ref_h * pose_factor * (sub_px / max(full_bh, 1))
 
             # Aerial view correction: giam water_cm
             if is_aerial:
@@ -2052,7 +1965,7 @@ class ReferenceEstimator:
             # → gan sai body part (VD: nuoc 30cm → ratio=0.32="knee" thay vi "ankle").
             body_part = self._classify_body_contact(water_cm, ref_h)
 
-            if obj_class == "person":
+            if obj_class == "person" and true_foot_y == effective_y2 and water_cm >= 5.0:
                 kp_contact = self._classify_body_contact_from_keypoints(det, effective_wl)
                 if kp_contact is not None:
                     body_part = kp_contact
@@ -2080,7 +1993,7 @@ class ReferenceEstimator:
                 pose_factor         = round(pose_factor, 2),
                 water_height_cm     = round(max(0.0, water_cm), 1),
                 visibility_ratio    = round(vis_r, 3),
-                pixels_total        = bh,
+                pixels_total        = full_bh,
                 pixels_above_water  = vis_px,
                 pixels_below_water  = sub_px,
                 local_wl_y          = effective_wl,
@@ -2404,17 +2317,13 @@ class ReferenceEstimator:
         return round(water_cm, 1), round(conf, 3), level, desc
 
     # ─── Draw overlay ────────────────────────────────────────────────────────
-    def _draw_overlay(self, img_bgr, dets, measured, wl_y, water_cm, level, original, vehicles=None):
+    def _draw_overlay(self, img_bgr, dets, measured, wl_y, water_cm, level, original, vehicles=None, wmask=None):
         """
         Ve overlay thong tin:
         - Header 2 dong (mau theo muc do lu)
-        - Duong water line (cyan, co shadow)
-        - Bbox vat the (mau rieng, co shadow)
-        - Label: "{class} | {ref_height}cm ({visibility}% visible)"
-          * ref_height la chieu cao THUC (170 cho person, KHONG phu thuoc pose)
-          * visibility = ti le phan nhin thay
-        - Arrow tu water line xuong chan (chi khi bi ngap >= 5% chieu cao)
-        - Smart label placement: tranh che nhau
+        - Vung nuoc ngap theo mask thuc te (SegFormer / wmask) thay vi ke 1 duong ngang cat ngang anh
+        - Bbox vat the + phan chan bi chim duoi nuoc (net dut) + mui ten do do sau tai tung vat the
+        - Label: "{class} | ~{water_cm}cm ({visibility}% visible) [body_part]"
         """
         ov   = img_bgr.copy()
         h, w = ov.shape[:2]
@@ -2424,93 +2333,162 @@ class ReferenceEstimator:
         hdr_fs    = max(0.55, sc*0.80)
         arr_thick = max(1, round(sc*1.5))
 
-        # Water tint
-        if wl_y < h:
-            tint = ov.copy()
-            cv2.rectangle(tint, (0,wl_y), (w,h), (255,180,30), -1)
-            cv2.addWeighted(tint, 0.15, ov, 0.85, 0, ov)
-            cv2.line(ov, (0,wl_y), (w,wl_y), (0,0,0),     thick+2)
-            cv2.line(ov, (0,wl_y), (w,wl_y), (0,215,255), thick)
-            lbl = f"Water line ~{water_cm:.0f} cm"
-            (tw,th), _ = cv2.getTextSize(lbl, cv2.FONT_HERSHEY_SIMPLEX, sc*0.60, thick)
-            ly = max(wl_y-8, th+6)
-            cv2.putText(ov, lbl, (12,ly+1), cv2.FONT_HERSHEY_SIMPLEX, sc*0.60, (0,0,0),     thick+1, cv2.LINE_AA)
-            cv2.putText(ov, lbl, (12,ly),   cv2.FONT_HERSHEY_SIMPLEX, sc*0.60, (0,215,255), thick,   cv2.LINE_AA)
+        # ── Water region tint (theo mask thực tế thay vì đường kẻ ngang phẳng) ──
+        seg_res = getattr(self, "_seg_result", None)
+        mask_to_draw = None
+        if seg_res is not None and getattr(seg_res, "water_mask", None) is not None:
+            sm = seg_res.water_mask
+            if sm.shape[:2] != (h, w):
+                sm = cv2.resize(sm, (w, h), interpolation=cv2.INTER_NEAREST)
+            if np.count_nonzero(sm > 0) > h * w * 0.02:
+                mask_to_draw = (sm > 0).astype(np.uint8)
+        if mask_to_draw is None and wmask is not None:
+            wm = wmask
+            if wm.shape[:2] != (h, w):
+                wm = cv2.resize(wm, (w, h), interpolation=cv2.INTER_NEAREST)
+            if np.count_nonzero(wm > 0) > h * w * 0.02:
+                mask_to_draw = (wm > 0).astype(np.uint8)
 
-        meas_map  = {tuple(o.bbox): o for o in measured}
+        if water_cm > 0.5:
+            if mask_to_draw is not None:
+                # Làm mượt mask và tô màu xanh dương nhạt theo đúng vùng nước thực tế
+                k_smooth = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+                smooth_m = cv2.morphologyEx(mask_to_draw * 255, cv2.MORPH_CLOSE, k_smooth)
+                water_bool = smooth_m > 127
+                tint_color = np.array([255, 175, 30], dtype=np.float32)  # BGR cyan-blue
+                ov_f = ov.astype(np.float32)
+                ov_f[water_bool] = ov_f[water_bool] * 0.78 + tint_color * 0.22
+                ov = np.clip(ov_f, 0, 255).astype(np.uint8)
+                # Vẽ đường ranh giới mặt nước (bỏ các đoạn chạy sát mép khung ảnh)
+                contours, _ = cv2.findContours(smooth_m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+                b_thick = max(1, thick - 1)
+                for cnt in contours:
+                    if cv2.contourArea(cnt) > h * w * 0.015:
+                        pts = cnt.reshape(-1, 2)
+                        for idx in range(len(pts) - 1):
+                            p1, p2 = pts[idx], pts[idx + 1]
+                            if (p1[1] >= h - 4 and p2[1] >= h - 4) or (p1[0] <= 3 and p2[0] <= 3) or (p1[0] >= w - 4 and p2[0] >= w - 4):
+                                continue
+                            cv2.line(ov, (int(p1[0]), int(p1[1])), (int(p2[0]), int(p2[1])), (0, 215, 255), b_thick, cv2.LINE_AA)
+            elif wl_y < h:
+                tint = ov.copy()
+                cv2.rectangle(tint, (0, wl_y), (w, h), (255, 180, 30), -1)
+                cv2.addWeighted(tint, 0.15, ov, 0.85, 0, ov)
+                cv2.line(ov, (0, wl_y), (w, wl_y), (0, 0, 0),     thick + 2)
+                cv2.line(ov, (0, wl_y), (w, wl_y), (0, 215, 255), thick)
+
+        meas_map   = {tuple(o.bbox): o for o in measured}
         used_rects = []
+        pending_labels = []
 
+        # Pass 1: Vẽ toàn bộ bounding box, khung chân chìm và mũi tên đo độ sâu
         for det in dets:
-            x1,y1,x2,y2 = det["bbox"]
-            color = det.get("color_bgr", (128,128,128))
-            obj   = meas_map.get((x1,y1,x2,y2))
+            x1, y1, x2, y2 = det["bbox"]
+            color = det.get("color_bgr", (128, 128, 128))
+            obj   = meas_map.get((x1, y1, x2, y2))
 
-            cv2.rectangle(ov, (x1,y1), (x2,y2), (0,0,0), thick+2)
-            cv2.rectangle(ov, (x1,y1), (x2,y2), color,   thick)
+            cv2.rectangle(ov, (x1, y1), (x2, y2), (0, 0, 0), thick + 2)
+            cv2.rectangle(ov, (x1, y1), (x2, y2), color,     thick)
 
-            # Arrow tu water line cuc bo xuong chan (chi khi thuc su ngap)
+            # Tính vị trí chân thật sự (nếu phần chân dưới nước bị che khuất bởi nước đục)
+            foot_y = min(h - 2, y1 + obj.pixels_total) if obj else y2
             arrow_wl = obj.local_wl_y if obj and obj.local_wl_conf > 0.20 else wl_y
-            if obj and obj.pixels_below_water > max(5, obj.pixels_total*0.05) and arrow_wl < y2:
-                cx = (x1+x2)//2
-                cv2.arrowedLine(ov, (cx, arrow_wl), (cx, y2), (0,0,0),     arr_thick+2, tipLength=0.20)
-                cv2.arrowedLine(ov, (cx, arrow_wl), (cx, y2), (0,255,255), arr_thick,   tipLength=0.20)
 
-            # Label: hien thi ref_height + visibility + body part neu co
+            if obj and obj.pixels_below_water > max(4, obj.pixels_total * 0.04) and arrow_wl < foot_y:
+                # Vẽ khung nét đứt cho phần cơ thể/bánh xe chìm dưới mặt nước (nếu foot_y > y2)
+                if foot_y > y2 + 4:
+                    step = 8
+                    for yy in range(y2, foot_y, step * 2):
+                        y_end = min(yy + step, foot_y)
+                        cv2.line(ov, (x1, yy), (x1, y_end), (0, 215, 255), max(1, thick - 1))
+                        cv2.line(ov, (x2, yy), (x2, y_end), (0, 215, 255), max(1, thick - 1))
+                    cv2.line(ov, (x1, foot_y), (x2, foot_y), (0, 215, 255), max(1, thick - 1))
+
+                # Vẽ vạch mặt nước cục bộ ngang qua vật thể
+                lx1, lx2 = max(0, x1 - 6), min(w - 1, x2 + 6)
+                cv2.line(ov, (lx1, arrow_wl), (lx2, arrow_wl), (0, 0, 0),     arr_thick + 2, cv2.LINE_AA)
+                cv2.line(ov, (lx1, arrow_wl), (lx2, arrow_wl), (0, 215, 255), arr_thick,     cv2.LINE_AA)
+
+                # Mũi tên đo độ sâu từ mặt nước cục bộ xuống đáy chân/bánh xe
+                cx = (x1 + x2) // 2
+                cv2.arrowedLine(ov, (cx, arrow_wl), (cx, foot_y), (0, 0, 0),     arr_thick + 2, tipLength=0.22)
+                cv2.arrowedLine(ov, (cx, arrow_wl), (cx, foot_y), (0, 255, 255), arr_thick,     tipLength=0.22)
+
+            # Chuẩn bị nội dung label cho Pass 2 (không dùng ký tự '~' vì Hershey font vẽ giống dấu trừ '-')
             if obj:
                 vis_pct = int(obj.visibility_ratio * 100)
-                # Them body part contact vao label
-                # Body part labels - ASCII để cv2 render được tren moi he thong
-                part_str = {
-                    "ankle":     " [ankle]",
-                    "knee":      " [knee]",
-                    "waist":     " [waist]",
-                    "chest":     " [chest]",
-                    "submerged": " [submerged]",
-                    "none":      "",
-                }.get(obj.body_part_contact, "")
-                lbl = f"{det['class_name']} | {int(obj.ref_height_cm)}cm ({vis_pct}% visible){part_str}"
+                if det["class_name"] == "person":
+                    part_str = {
+                        "ankle":     " [ankle]",
+                        "knee":      " [knee]",
+                        "waist":     " [waist]",
+                        "chest":     " [chest]",
+                        "submerged": " [submerged]",
+                        "none":      "",
+                    }.get(obj.body_part_contact, "")
+                else:
+                    part_str = " [submerged]" if obj.body_part_contact == "submerged" else ""
+                if obj.water_height_cm >= 2.0:
+                    lbl = f"{det['class_name']} | {obj.water_height_cm:.0f}cm ({vis_pct}% visible){part_str}"
+                else:
+                    lbl = f"{det['class_name']} | {int(obj.ref_height_cm)}cm ({vis_pct}% visible)"
             else:
                 lbl = det["class_name"]
 
-            (tw,th), _ = cv2.getTextSize(lbl, cv2.FONT_HERSHEY_SIMPLEX, lbl_fs, 1)
+            pending_labels.append((x1, y1, x2, foot_y, color, lbl))
+
+        # Pass 2: Vẽ tất cả label lên trên cùng để không bị viền bbox đè lên chữ
+        for x1, y1, x2, foot_y, color, lbl in pending_labels:
+            (tw, th), _ = cv2.getTextSize(lbl, cv2.FONT_HERSHEY_SIMPLEX, lbl_fs, 1)
             pad = 4
 
-            # Smart placement: thu phia tren truoc, neu bi che hoac bi cat thi dat phia duoi
             def overlaps(r):
-                return any(not(r[2]<ur[0] or r[0]>ur[2] or r[3]<ur[1] or r[1]>ur[3]) for ur in used_rects)
+                return any(not (r[2] + 2 < ur[0] or r[0] - 2 > ur[2] or r[3] + 2 < ur[1] or r[1] - 2 > ur[3]) for ur in used_rects)
 
-            lx = max(0, min(w-tw-pad*2-2, x1))
+            lx = max(0, min(w - tw - pad * 2 - 2, x1))
             ly = y1 - pad - 2
-            rect_top = (lx, ly-th-pad, lx+tw+pad*2, ly+pad//2)
+            rect_top = (lx, ly - th - pad, lx + tw + pad * 2, ly + pad // 2)
 
-            if overlaps(rect_top) or ly-th-pad < 0:
-                ly    = y2 + th + pad + 2
-                rect_top = (lx, y2+2, lx+tw+pad*2, ly+pad)
+            # Nếu trùng với label trước đó thì đẩy dịch lên trên hoặc xuống dưới
+            while overlaps(rect_top) and ly - th - pad > th + pad + 4:
+                ly -= (th + pad * 2 + 3)
+                rect_top = (lx, ly - th - pad, lx + tw + pad * 2, ly + pad // 2)
 
-            ly = max(th+pad+2, min(h-2, ly))
-            cv2.rectangle(ov, (lx,ly-th-pad), (lx+tw+pad*2,ly+pad//2), (0,0,0), -1)
-            cv2.putText(ov, lbl, (lx+pad,ly), cv2.FONT_HERSHEY_SIMPLEX, lbl_fs, color, 1, cv2.LINE_AA)
-            used_rects.append((lx,ly-th-pad,lx+tw+pad*2,ly+pad//2))
+            if overlaps(rect_top) or ly - th - pad < 0:
+                ly = foot_y + th + pad + 4
+                rect_top = (lx, foot_y + 2, lx + tw + pad * 2, ly + pad)
+
+            ly = max(th + pad + 2, min(h - 2, ly))
+            cv2.rectangle(ov, (lx, ly - th - pad), (lx + tw + pad * 2, ly + pad // 2), (0, 0, 0), -1)
+            cv2.putText(ov, lbl, (lx + pad, ly), cv2.FONT_HERSHEY_SIMPLEX, lbl_fs, color, 1, cv2.LINE_AA)
+            used_rects.append((lx, ly - th - pad, lx + tw + pad * 2, ly + pad // 2))
 
         # Header
-        lc = LEVEL_COLOR_BGR.get(level, (200,200,200))
+        lc = LEVEL_COLOR_BGR.get(level, (200, 200, 200))
         h1 = f"FLOOD LEVEL: {level}"
-        h2 = f"Water depth: ~{water_cm:.0f} cm"
-        (h1w,h1h),_ = cv2.getTextSize(h1, cv2.FONT_HERSHEY_SIMPLEX, hdr_fs,     thick)
-        (h2w,h2h),_ = cv2.getTextSize(h2, cv2.FONT_HERSHEY_SIMPLEX, hdr_fs*0.88, thick)
-        bar_w = max(h1w,h2w)+24; bar_h = h1h+h2h+28
+        h2 = f"Water depth: {water_cm:.0f} cm"
+        (h1w, h1h), _ = cv2.getTextSize(h1, cv2.FONT_HERSHEY_SIMPLEX, hdr_fs,        thick)
+        (h2w, h2h), _ = cv2.getTextSize(h2, cv2.FONT_HERSHEY_SIMPLEX, hdr_fs * 0.88, thick)
+        bar_w = max(h1w, h2w) + 24
+        bar_h = h1h + h2h + 28
         ov2 = ov.copy()
-        cv2.rectangle(ov2,(0,0),(bar_w,bar_h),(0,0,0),-1)
-        cv2.addWeighted(ov2,0.75,ov,0.25,0,ov)
-        cv2.putText(ov, h1, (10,h1h+8),        cv2.FONT_HERSHEY_SIMPLEX, hdr_fs,      lc,         thick, cv2.LINE_AA)
-        cv2.line(ov,(8,h1h+14),(bar_w-8,h1h+14),(80,80,80),1)
-        cv2.putText(ov, h2, (10,h1h+h2h+20),   cv2.FONT_HERSHEY_SIMPLEX, hdr_fs*0.88, (0,215,255), thick, cv2.LINE_AA)
+        cv2.rectangle(ov2, (0, 0), (bar_w, bar_h), (0, 0, 0), -1)
+        cv2.addWeighted(ov2, 0.75, ov, 0.25, 0, ov)
+        cv2.putText(ov, h1, (10, h1h + 8),        cv2.FONT_HERSHEY_SIMPLEX, hdr_fs,        lc,            thick, cv2.LINE_AA)
+        cv2.line(ov, (8, h1h + 14), (bar_w - 8, h1h + 14), (80, 80, 80), 1)
+        cv2.putText(ov, h2, (10, h1h + h2h + 20), cv2.FONT_HERSHEY_SIMPLEX, hdr_fs * 0.88, (0, 215, 255), thick, cv2.LINE_AA)
 
-        # ── Vẽ xe (ô tô + xe máy) lên overlay ──────────────────────────────
+        # ── Vẽ xe (chỉ vẽ xe chưa có trong dets để tránh đè 2 khung chồng nhau) ──
         if vehicles:
             try:
                 from depth_analysis.vehicle_detector import VehicleDetector
-                VehicleDetector.draw_vehicles(ov, vehicles, scale=sc)
+                det_boxes = [d["bbox"] for d in dets]
+                extra_vehicles = [
+                    v for v in vehicles
+                    if not any(_iou(v.bbox, db) > 0.30 for db in det_boxes)
+                ]
+                if extra_vehicles:
+                    VehicleDetector.draw_vehicles(ov, extra_vehicles, scale=sc)
             except Exception as _vde:
                 log.debug(f"  [Vehicle draw] {_vde}")
 

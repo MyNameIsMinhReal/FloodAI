@@ -139,14 +139,23 @@ class PerspectiveAnalyzer:
         # --- MERGE scores ---
         # Horizon-based: view_angle → aerial_score
         horizon_aerial = 1.0 if perspective.view_angle == "aerial" else (
-            0.5 if perspective.view_angle == "elevated" else 0.0)
+            0.4 if perspective.view_angle == "elevated" else 0.0)
 
-        # Final aerial = max(horizon, object-size) — ca 2 deu quan trong
-        final_aerial_score = max(horizon_aerial, aerial_score_obj)
-        is_aerial = final_aerial_score > 0.55
+        # Neu co objects va chieu cao trung binh >= 18% chieu cao anh -> CHAC CHAN khong phai anh flycam/aerial
+        if dets:
+            obj_heights = [d["bbox"][3] - d["bbox"][1] for d in dets]
+            avg_h_ratio = float(np.mean(obj_heights)) / max(h, 1)
+            if avg_h_ratio >= 0.18:
+                final_aerial_score = min(0.35, 0.3 * horizon_aerial + 0.7 * aerial_score_obj)
+            else:
+                final_aerial_score = 0.45 * horizon_aerial + 0.55 * aerial_score_obj
+        else:
+            final_aerial_score = horizon_aerial * 0.75
+
+        is_aerial = final_aerial_score > 0.65
 
         if is_aerial:
-            angle_factor = max(0.2, 1.0 - final_aerial_score * 0.8)
+            angle_factor = max(0.35, 1.0 - final_aerial_score * 0.65)
         else:
             angle_factor = 1.0
 
@@ -354,7 +363,13 @@ class PerspectiveAnalyzer:
         horizon_ratio = horizon_y / h
 
         hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
-        sky_mask = cv2.inRange(hsv, np.array([95, 10, 120]), np.array([135, 120, 255]))
+        # Bao gom ca bau troi xanh VA bau troi xam/trang u am mua lu o 40% phia tren anh
+        blue_sky = cv2.inRange(hsv, np.array([90, 10, 120]), np.array([140, 140, 255]))
+        overcast_sky = np.zeros((h, w), dtype=np.uint8)
+        top_h = int(h * 0.40)
+        overcast_top = cv2.inRange(hsv[:top_h, :], np.array([0, 0, 165]), np.array([180, 55, 255]))
+        overcast_sky[:top_h, :] = overcast_top
+        sky_mask = cv2.bitwise_or(blue_sky, overcast_sky)
         sky_pct  = sky_mask.sum() / 255 / (h * w)
 
         ground_mask = cv2.inRange(hsv, np.array([0, 0, 0]), np.array([180, 255, 80]))
