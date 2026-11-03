@@ -224,7 +224,7 @@
                             <span class="text-transparent bg-clip-text bg-gradient-to-r from-teal-600 via-teal-500 to-rose-600">Vạn hy vọng lớn.</span>
                         </h1>
                         <p class="text-slate-600 dark:text-slate-300 text-sm md:text-base leading-relaxed max-w-2xl">
-                            <strong class="text-slate-800 dark:text-slate-100">FloodAI - GIRC</strong> là nền tảng số hỗ trợ cộng đồng chia sẻ thông tin cứu nạn, cảnh báo điểm ngập lụt, sạt lở và trợ giúp y tế khẩn cấp trên toàn lãnh thổ Việt Nam. Tích hợp AI phân tích ảnh (SegFormer + Depth Anything V2 + Qwen2.5-VL) và trợ lý cứu hộ thông minh 24/7.
+                            <strong class="text-slate-800 dark:text-slate-100">FloodAI - GIRC</strong> là nền tảng số hỗ trợ cộng đồng chia sẻ thông tin cứu nạn, cảnh báo điểm ngập lụt, sạt lở và trợ giúp y tế khẩn cấp trên toàn lãnh thổ Việt Nam. Tích hợp công nghệ phân tích ảnh hiện trường tự động và trợ lý cứu hộ thông minh 24/7.
                         </p>
 
                         <!-- CTA Actions -->
@@ -349,7 +349,7 @@
                             </span>
                             <h3 class="text-2xl sm:text-3xl font-black">Phân Tích Độ Sâu Ngập Từ Ảnh Chụp</h3>
                             <p class="text-slate-300 text-sm leading-relaxed">
-                                Người dân chỉ cần chụp ảnh hiện trường. Mô hình AI của GIRC (SegFormer B2 + Depth Anything V2 + YOLOv8 + Qwen2.5-VL) tự động đo chiều cao cột nước ngập (cm) dựa trên các vật chuẩn như bánh xe, người đi đường, biển báo... hỗ trợ lực lượng chức năng điều động xuồng cứu hộ phù hợp.
+                                Người dân chỉ cần chụp ảnh hiện trường. Hệ thống của GIRC tự động đo chiều cao cột nước ngập (cm) dựa trên các vật chuẩn như bánh xe, người đi đường, biển báo... hỗ trợ lực lượng chức năng điều động xuồng cứu hộ phù hợp.
                             </p>
                             <div class="pt-2 flex flex-wrap gap-3">
                                 <button onclick="openAiChatModal()" class="bg-teal-500 hover:bg-teal-600 text-slate-950 font-extrabold px-5 py-2.5 rounded-xl transition flex items-center gap-2 shadow-lg">
@@ -364,7 +364,7 @@
                         <!-- Graphic Visual -->
                         <div class="bg-slate-950/60 rounded-2xl p-5 border border-slate-800 shadow-2xl space-y-3">
                             <div class="flex items-center justify-between text-xs text-slate-400">
-                                <span><i class="fa-solid fa-microchip text-teal-400"></i> SegFormer-B2 + Qwen2.5-VL Engine</span>
+                                <span><i class="fa-solid fa-water text-teal-400"></i> Hệ thống phân tích ngập tự động</span>
                                 <span class="text-emerald-400 font-mono">Độ chính xác: 94.8%</span>
                             </div>
                             <div class="relative rounded-xl overflow-hidden bg-slate-800 h-44 flex items-center justify-center border border-slate-700">
@@ -745,8 +745,12 @@
 
                 <!-- Image Attachment -->
                 <div>
-                    <label class="block text-xs font-bold mb-1">Đính kèm ảnh hiện trường (AI tự trích xuất vị trí & đo mức nước)</label>
+                    <label class="block text-xs font-bold mb-1">Đính kèm ảnh hiện trường (Tự động đo mức nước & cảnh báo)</label>
                     <input type="file" id="sosPhoto" onchange="onSosPhotoSelected(event)" accept="image/*" class="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-teal-50 file:text-teal-700 dark:file:bg-slate-800 dark:file:text-teal-300 hover:file:bg-teal-100" />
+                    <div id="sosPhotoPreviewWrap" class="hidden mt-2 relative inline-block">
+                        <img id="sosPhotoPreviewImg" src="" alt="Ảnh đính kèm" onclick="openImageLightbox(this.src)" class="max-h-40 rounded-xl border border-slate-300 dark:border-slate-700 object-cover cursor-pointer hover:opacity-90 transition shadow-sm" title="Bấm vào ảnh để xem lại kích thước lớn" />
+                        <span class="block text-[10px] text-teal-600 dark:text-teal-400 mt-1"><i class="fa-solid fa-magnifying-glass-plus mr-1"></i> Bấm vào ảnh để xem lại kích thước lớn</span>
+                    </div>
                     <div id="sosGeoAlert" class="hidden mt-2 p-2.5 bg-emerald-50 dark:bg-slate-800 border border-emerald-300 dark:border-emerald-700 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 space-y-1">
                     </div>
                 </div>
@@ -760,7 +764,7 @@
     </div>
 
     <!-- =================================================================== -->
-    <!-- MODAL 3: FLOODAGENT AI CHATBOT (Qwen2.5-VL)                        -->
+    <!-- MODAL 3: TRỢ LÝ CỨU HỘ FLOODAI                                      -->
     <!-- =================================================================== -->
     <div id="aiChatModal" onclick="if(event.target === this) closeAiChatModal()" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
         <div class="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-t-3xl sm:rounded-3xl max-w-lg w-full h-[90dvh] sm:h-[580px] p-4 shadow-2xl border border-slate-200 dark:border-slate-800 relative flex flex-col">
@@ -770,7 +774,7 @@
                         <i class="fa-solid fa-robot"></i>
                     </div>
                     <div>
-                        <div class="font-bold text-sm">FloodAgent AI Trợ Lý (Qwen2.5-VL)</div>
+                        <div class="font-bold text-sm">Trợ Lý Cứu Hộ FloodAI</div>
                         <div class="text-[10px] text-emerald-500 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Hỗ trợ hỏi đáp & phân tích ảnh trực tuyến</div>
                     </div>
                 </div>
@@ -785,10 +789,16 @@
                 </div>
             </div>
 
-            <!-- Selected chat image badge -->
-            <div id="chatImageBadge" class="hidden flex-shrink-0 px-2.5 py-1 mb-1 bg-teal-50 dark:bg-slate-800 border border-teal-200 dark:border-slate-700 rounded-lg text-[11px] flex items-center justify-between text-teal-700 dark:text-teal-300">
-                <span id="chatImageName" class="truncate"><i class="fa-solid fa-image mr-1"></i> Đã chọn ảnh</span>
-                <button type="button" onclick="clearChatImage()" class="text-rose-500 font-bold ml-2">✕</button>
+            <!-- Selected chat image badge with live preview -->
+            <div id="chatImageBadge" class="hidden flex-shrink-0 p-2 mb-1 bg-teal-50 dark:bg-slate-800 border border-teal-200 dark:border-slate-700 rounded-xl text-[11px] flex items-center justify-between gap-2 text-teal-700 dark:text-teal-300">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <img id="chatImagePreviewThumb" src="" alt="Xem trước ảnh" onclick="openImageLightbox(this.src)" class="w-12 h-12 rounded-lg object-cover border border-teal-300 dark:border-slate-600 cursor-pointer hover:opacity-90 transition shrink-0" title="Bấm vào để xem lại ảnh phóng to" />
+                    <div class="min-w-0">
+                        <div id="chatImageName" class="font-semibold truncate"><i class="fa-solid fa-image mr-1"></i> Đã chọn ảnh</div>
+                        <div class="text-[10px] text-slate-500 dark:text-slate-400">Bấm vào ảnh để xem lại chi tiết</div>
+                    </div>
+                </div>
+                <button type="button" onclick="clearChatImage()" class="text-rose-500 hover:text-rose-600 font-bold px-2 py-1 text-sm shrink-0" title="Xoá ảnh">✕</button>
             </div>
 
             <!-- Quick Suggestions -->
@@ -920,6 +930,19 @@
             </div>
         </div>
     </div>
+
+    <!-- =================================================================== -->
+    <!-- MODAL 5: XEM LẠI ẢNH PHÓNG TO (LIGHTBOX)                            -->
+    <!-- =================================================================== -->
+    <div id="imageLightboxModal" onclick="if(event.target === this) closeImageLightbox()" class="fixed inset-0 z-[60] bg-slate-950/90 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="relative max-w-4xl w-full flex flex-col items-center">
+            <button onclick="closeImageLightbox()" class="absolute -top-10 right-0 text-white/80 hover:text-white text-2xl px-2 py-1" title="Đóng">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <img id="imageLightboxImg" src="" alt="Xem lại ảnh đã gửi" class="max-h-[82vh] max-w-full rounded-2xl border border-slate-700 shadow-2xl object-contain bg-slate-900" />
+            <div class="mt-3 text-xs text-slate-300 flex items-center gap-2">
+                <i class="fa-solid fa-image text-teal-400"></i>
+                <span>Ảnh hiện trường đã tải lên • Bấm ra ngoài hoặc nhấn ESC để đóng</span>
             </div>
         </div>
     </div>
@@ -941,6 +964,9 @@
         let userLocation = null;
         let userMarkerMini = null;
         let userMarkerFull = null;
+        let newsArticles = [];
+        let currentNewsSourceFilter = 'all';
+        let lastRewrittenText = '';
         const chatSessionId = 'sess_' + Math.random().toString(36).slice(2, 10);
         const initialViewFromServer = "{{ initial_view or 'home' }}";
 
@@ -1327,8 +1353,8 @@
                                 location: pt.address || 'Việt Nam',
                                 time: pt.time || 'Vừa cập nhật',
                                 phone: '112',
-                                detail: `Độ sâu: ${pt.depth_range || 'Đang cập nhật'} • Nguồn: ${pt.source || 'AI Pipeline'}`,
-                                aiAnalysis: `AI Confidence: ${Math.round((pt.confidence || 0.8) * 100)}%`,
+                                detail: `Độ sâu: ${pt.depth_range || 'Đang cập nhật'} • Nguồn: ${pt.source || 'Hệ thống tự động'}`,
+                                aiAnalysis: `Độ tin cậy: ${Math.round((pt.confidence || 0.8) * 100)}%`,
                                 status: 'pending'
                             });
                         }
@@ -1860,15 +1886,36 @@
         function openHotlineModal() { document.getElementById('hotlineModal').classList.remove('hidden'); }
         function closeHotlineModal() { document.getElementById('hotlineModal').classList.add('hidden'); }
 
+        function openImageLightbox(src) {
+            if (!src) return;
+            const modal = document.getElementById('imageLightboxModal');
+            const img = document.getElementById('imageLightboxImg');
+            if (modal && img) {
+                img.src = src;
+                modal.classList.remove('hidden');
+            }
+        }
 
+        function closeImageLightbox() {
+            const modal = document.getElementById('imageLightboxModal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        function closeBroadcast() {
+            const banner = document.getElementById('broadcastBanner');
+            if (banner) banner.classList.add('hidden');
+        }
 
         // Close any open modal on Escape key press
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
+                closeImageLightbox();
                 closeSosModal();
                 closeAiChatModal();
                 closeHotlineModal();
-                            }
+                closeArticleRewriteModal();
+                closeCustomRewriteModal();
+            }
         });
 
         // Get GPS
@@ -1885,45 +1932,84 @@
             }
         }
 
-        // Tự động nhận diện vị trí khi người dân chọn ảnh trong form SOS
+        // Tự động xem lại ảnh, phân tích mức độ ngập + cảnh báo, và chỉ định vị khi ngập quá mắt cá chân
         async function onSosPhotoSelected(event) {
             const file = event.target.files[0];
             if (!file) return;
+
+            // Hiển thị ảnh xem lại ngay khi tải lên
+            const previewWrap = document.getElementById('sosPhotoPreviewWrap');
+            const previewImg = document.getElementById('sosPhotoPreviewImg');
+            if (previewWrap && previewImg) {
+                previewImg.src = URL.createObjectURL(file);
+                previewWrap.classList.remove('hidden');
+            }
+
             const alertBox = document.getElementById('sosGeoAlert');
             alertBox.classList.remove('hidden');
-            alertBox.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> AI đang trích xuất GPS từ ảnh & vị trí WiFi...';
+            alertBox.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang phân tích mức độ ngập và cảnh báo từ ảnh...';
 
             try {
                 const b64 = await fileToBase64(file);
-                let bLat = currentGpsCoords ? currentGpsCoords.lat : null;
-                let bLng = currentGpsCoords ? currentGpsCoords.lng : null;
 
-                const resp = await fetch('/api/geo/detect', {
+                // Bước 1: Phân tích độ sâu ngập và cảnh báo
+                const depthResp = await fetch('/api/depth/instant', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        image_b64: b64,
-                        browser_lat: bLat,
-                        browser_lon: bLng
-                    })
+                    body: JSON.stringify({ filename: file.name, image_b64: b64 })
                 });
-                const data = await resp.json();
-                if (data.ok && data.geo && data.geo.lat) {
-                    currentGpsCoords = { lat: data.geo.lat, lng: data.geo.lon };
-                    document.getElementById('sosAddress').value = data.geo.address;
-                    alertBox.innerHTML = `
-                        <div class="font-bold flex items-center gap-1">
-                            <i class="fa-solid fa-location-dot text-rose-500"></i>
-                            Đã nhận diện vị trí (${data.geo.method_label}):
-                        </div>
-                        <div class="font-semibold text-slate-900 dark:text-slate-100">${data.geo.address}</div>
-                        <div class="text-[11px] opacity-80">Đã tự động điền vào ô địa chỉ. Bạn có thể sửa đổi nếu cần trước khi gửi.</div>
-                    `;
+                const depthData = await depthResp.json();
+                const depthCm = depthData.depth_cm ?? 0;
+                const levelVi = depthData.level_vi || depthData.risk_label || 'Đã kiểm tra';
+                const advice = depthData.advice || '';
+                const canPinMap = Boolean(depthData.can_pin_map);
+
+                let html = `
+                    <div class="font-bold text-teal-800 dark:text-teal-300 flex items-center justify-between">
+                        <span>📊 Kết quả phân tích ngập: ${levelVi}</span>
+                        <span class="bg-teal-600 text-white px-2 py-0.5 rounded text-[11px]">Ngập sâu: ${depthCm} cm</span>
+                    </div>
+                    <div class="text-slate-700 dark:text-slate-200 mt-1">${advice}</div>
+                `;
+
+                // Bước 2: Chỉ trích xuất & đánh dấu vị trí khi ngập QUÁ MẮT CÁ CHÂN (canPinMap == true)
+                if (canPinMap) {
+                    let bLat = currentGpsCoords ? currentGpsCoords.lat : null;
+                    let bLng = currentGpsCoords ? currentGpsCoords.lng : null;
+                    const geoResp = await fetch('/api/geo/detect', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            image_b64: b64,
+                            browser_lat: bLat,
+                            browser_lon: bLng
+                        })
+                    });
+                    const geoData = await geoResp.json();
+                    if (geoData.ok && geoData.geo && geoData.geo.lat) {
+                        currentGpsCoords = { lat: geoData.geo.lat, lng: geoData.geo.lon };
+                        document.getElementById('sosAddress').value = geoData.geo.address;
+                        html += `
+                            <div class="pt-2 mt-2 border-t border-emerald-200 dark:border-slate-700">
+                                <div class="font-bold flex items-center gap-1 text-rose-600 dark:text-rose-400">
+                                    <i class="fa-solid fa-location-dot"></i>
+                                    Đã đánh dấu vị trí ngập sâu (${geoData.geo.method_label}):
+                                </div>
+                                <div class="font-semibold text-slate-900 dark:text-slate-100">${geoData.geo.address}</div>
+                            </div>
+                        `;
+                    }
                 } else {
-                    alertBox.innerHTML = '<span class="text-amber-600 dark:text-amber-400"><i class="fa-solid fa-circle-info mr-1"></i> Ảnh không chứa GPS EXIF. Hệ thống sẽ sử dụng vị trí mạng/GPS thiết bị nếu có.</span>';
+                    html += `
+                        <div class="text-[11px] text-slate-500 dark:text-slate-400 pt-1">
+                            <i class="fa-solid fa-circle-check text-emerald-500 mr-1"></i> Ảnh không có lũ hoặc mức nước chưa quá mắt cá chân nên không cần tự động đánh dấu vị trí ngập sâu.
+                        </div>
+                    `;
                 }
+
+                alertBox.innerHTML = html;
             } catch (err) {
-                alertBox.innerHTML = '<span class="text-slate-500"><i class="fa-solid fa-circle-info mr-1"></i> Không đọc được vị trí tự động từ ảnh.</span>';
+                alertBox.innerHTML = '<span class="text-slate-500"><i class="fa-solid fa-circle-info mr-1"></i> Không phân tích được tự động từ ảnh.</span>';
             }
         }
 
@@ -1933,7 +2019,7 @@
             const btn = document.getElementById('sosSubmitBtn');
             const origHtml = btn.innerHTML;
             btn.disabled = true;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> ĐANG GỬI & PHÂN TÍCH AI...';
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> ĐANG GỬI & PHÂN TÍCH...';
 
             try {
                 const name = document.getElementById('sosName').value;
@@ -2004,22 +2090,22 @@
             }
         }
 
-        // AI Image Depth Processing -> Real Backend /api/depth/instant
+        // Image Depth Processing -> Real Backend /api/depth/instant
         async function processAiImage(event) {
             const file = event.target.files[0];
             if (!file) return;
 
             const previewWrap = document.getElementById('aiPreviewWrap');
             const previewImg = document.getElementById('aiPreviewImg');
-            previewImg.src = URL.createObjectURL(file);
-            previewWrap.classList.remove('hidden');
+            if (previewImg) previewImg.src = URL.createObjectURL(file);
+            if (previewWrap) previewWrap.classList.remove('hidden');
 
             const box = document.getElementById('aiResultBox');
-            box.classList.remove('hidden');
-            document.getElementById('aiConfidence').innerText = 'Đang chạy AI...';
+            if (box) box.classList.remove('hidden');
+            document.getElementById('aiConfidence').innerText = 'Đang phân tích...';
             document.getElementById('aiDepthVal').innerText = '...';
             document.getElementById('aiRiskVal').innerText = 'ĐANG PHÂN TÍCH ẢNH';
-            document.getElementById('aiAdvice').innerText = '⏳ Đang phân tích mặt nước bằng SegFormer-B2, Depth Anything V2 và YOLOv8...';
+            document.getElementById('aiAdvice').innerText = '⏳ Đang phân tích mực nước ngập từ ảnh hiện trường...';
 
             try {
                 const b64 = await fileToBase64(file);
@@ -2044,12 +2130,16 @@
             }
         }
 
-        // Chatbot Functionality -> Real Backend /api/chat/message (Qwen2.5-VL)
+        // Chatbot Functionality -> Real Backend /api/chat/message
         function onChatImageSelected(event) {
             const file = event.target.files[0];
             if (!file) return;
             fileToBase64(file).then(b64 => {
                 pendingChatImageB64 = b64;
+                const thumb = document.getElementById('chatImagePreviewThumb');
+                if (thumb) {
+                    thumb.src = `data:image/jpeg;base64,${b64}`;
+                }
                 document.getElementById('chatImageName').innerHTML = `<i class="fa-solid fa-image mr-1"></i> ${file.name}`;
                 document.getElementById('chatImageBadge').classList.remove('hidden');
             });
@@ -2058,6 +2148,8 @@
         function clearChatImage() {
             pendingChatImageB64 = null;
             document.getElementById('chatImageInput').value = '';
+            const thumb = document.getElementById('chatImagePreviewThumb');
+            if (thumb) thumb.src = '';
             document.getElementById('chatImageBadge').classList.add('hidden');
         }
 
@@ -2074,12 +2166,21 @@
             if (!query && !imgB64) return;
 
             const log = document.getElementById('chatMessages');
+            const imgDataUri = imgB64 ? `data:image/jpeg;base64,${imgB64}` : '';
 
-            // Append User Message
+            // Append User Message (hiển thị trực tiếp ảnh đã gửi và cho phép bấm vào để xem lại ảnh phóng to)
             log.innerHTML += `
-                <div class="bg-teal-600 text-white p-3 rounded-2xl max-w-[85%] ml-auto space-y-1">
-                    ${imgB64 ? '<div class="text-[10px] opacity-90"><i class="fa-solid fa-camera mr-1"></i> [Đã đính kèm ảnh hiện trường]</div>' : ''}
-                    <p class="font-semibold">${query || 'Phân tích ảnh ngập này giúp tôi'}</p>
+                <div class="bg-teal-600 text-white p-3 rounded-2xl max-w-[85%] ml-auto space-y-2">
+                    ${imgDataUri ? `
+                        <div class="space-y-1">
+                            <img src="${imgDataUri}" alt="Ảnh đã gửi" onclick="openImageLightbox(this.src)" class="rounded-xl max-h-52 w-auto object-cover border border-white/30 cursor-pointer hover:opacity-95 transition shadow-md" title="Bấm vào ảnh để xem lại kích thước lớn" />
+                            <div class="text-[10px] opacity-85 flex items-center gap-1">
+                                <i class="fa-solid fa-magnifying-glass-plus"></i>
+                                <span>Bấm vào ảnh để xem lại rõ hơn</span>
+                            </div>
+                        </div>
+                    ` : ''}
+                    <p class="font-semibold">${query || 'Phân tích mức độ ngập và cảnh báo cho ảnh này'}</p>
                 </div>
             `;
             input.value = '';
@@ -2088,9 +2189,9 @@
 
             const loadingId = 'loading_' + Date.now();
             log.innerHTML += `
-                <div id="${loadingId}" class="bg-teal-50 dark:bg-slate-800 p-3 rounded-2xl border border-teal-100 dark:border-slate-700 max-w-[85%] text-slate-700 dark:text-slate-200 space-y-1">
-                    <p class="font-bold text-teal-600 dark:text-teal-400">FloodAgent (Qwen2.5-VL):</p>
-                    <p><i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang suy nghĩ...</p>
+                <div id="${loadingId}" class="bg-teal-50 dark:bg-slate-800 p-3 rounded-2xl border border-teal-100 dark:border-slate-700 max-w-[88%] text-slate-700 dark:text-slate-200 space-y-1">
+                    <p class="font-bold text-teal-600 dark:text-teal-400">Trợ lý FloodAI:</p>
+                    <p><i class="fa-solid fa-spinner fa-spin mr-1"></i> ${imgB64 ? 'Đang đo độ sâu ngập và đánh giá mức độ nguy hiểm...' : 'Đang suy nghĩ...'}</p>
                 </div>
             `;
             log.scrollTop = log.scrollHeight;
@@ -2115,21 +2216,33 @@
                 const el = document.getElementById(loadingId);
                 if (el) {
                     let html = `
-                        <p class="font-bold text-teal-600 dark:text-teal-400">FloodAgent (Qwen2.5-VL):</p>
-                        <p style="white-space: pre-line;">${reply}</p>
+                        <p class="font-bold text-teal-600 dark:text-teal-400">Trợ lý FloodAI:</p>
+                        <div style="white-space: pre-line;" class="leading-relaxed">${reply}</div>
                     `;
-                    // Nếu AI trích xuất được vị trí từ ảnh hoặc mạng: HỎI NGƯỜI DÙNG TRƯỚC KHI ĐÁNH DẤU LÊN BẢN ĐỒ
-                    if (data.geo && data.geo.lat && data.geo.lon) {
+
+                    // Nếu có ảnh kết quả đo độ sâu (overlay_b64) thì hiển thị kèm để người dùng có thể bấm xem lại
+                    if (data.analysis && data.analysis.overlay_b64) {
+                        const ovUri = `data:image/jpeg;base64,${data.analysis.overlay_b64}`;
+                        html += `
+                            <div class="mt-2 pt-2 border-t border-teal-200/60 dark:border-slate-700 space-y-1">
+                                <div class="text-[11px] font-semibold text-teal-700 dark:text-teal-300">Ảnh kết quả đo độ sâu ngập:</div>
+                                <img src="${ovUri}" alt="Ảnh phân tích ngập" onclick="openImageLightbox(this.src)" class="rounded-xl max-h-48 w-auto object-cover border border-teal-300 dark:border-slate-600 cursor-pointer hover:opacity-95 transition shadow-sm" title="Bấm vào để xem ảnh phân tích phóng to" />
+                            </div>
+                        `;
+                    }
+
+                    // CHỈ hiển thị khung đánh dấu vị trí khi ngập QUÁ MẮT CÁ CHÂN (data.can_pin_map === true)
+                    if (data.can_pin_map && data.geo && data.geo.lat && data.geo.lon) {
                         const encodedAddr = encodeURIComponent(data.geo.address || 'Điểm ngập');
                         html += `
                             <div class="mt-3 p-3 bg-amber-50 dark:bg-slate-900 border border-amber-300 dark:border-amber-700/60 rounded-xl space-y-2 text-xs">
                                 <div class="font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
                                     <i class="fa-solid fa-location-crosshairs text-rose-500"></i>
-                                    <span>Phát hiện vị trí (${data.geo.method_label}):</span>
+                                    <span>Phát hiện vị trí ngập sâu (${data.geo.method_label}):</span>
                                 </div>
                                 <div class="text-slate-800 dark:text-slate-200 font-semibold">${data.geo.address}</div>
                                 <div class="text-[11px] text-slate-600 dark:text-slate-400">
-                                    👉 Bạn có muốn đánh dấu điểm ngập lụt này lên Bản đồ Cứu hộ công cộng không?
+                                    👉 Mực nước đã vượt quá mắt cá chân. Bạn có muốn đánh dấu điểm ngập lụt này lên Bản đồ Cứu hộ công cộng không?
                                 </div>
                                 <div class="flex items-center gap-2 pt-1">
                                     <button onclick="confirmPinFromChat(${data.geo.lat}, ${data.geo.lon}, '${encodedAddr}', this)" class="bg-rose-600 hover:bg-rose-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 shadow-sm transition">
@@ -2148,7 +2261,7 @@
                 const el = document.getElementById(loadingId);
                 if (el) {
                     el.innerHTML = `
-                        <p class="font-bold text-teal-600 dark:text-teal-400">FloodAgent Bot:</p>
+                        <p class="font-bold text-teal-600 dark:text-teal-400">Trợ lý FloodAI:</p>
                         <p>📞 Tổng Đài Cứu Hộ Quốc Gia: 112 | Đội Cứu Nạn Cứu Hộ PCCC 114 | Cấp Cứu 115 | Trung tâm Thông tin PCTT Quốc Gia: 024.3733.5695.</p>
                     `;
                 }
@@ -2167,12 +2280,12 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        name: "Người dân (xác nhận qua AI)",
+                        name: "Người dân (xác nhận qua Trợ lý)",
                         address: addr,
                         lat: lat,
                         lng: lng,
                         type: "flood",
-                        detail: "Báo cáo điểm ngập được xác nhận qua Trợ lý FloodAgent.",
+                        detail: "Báo cáo điểm ngập sâu được xác nhận trực tiếp từ ảnh hiện trường.",
                     })
                 });
                 const res = await resp.json();
@@ -2180,11 +2293,11 @@
                     btn.parentElement.innerHTML = `
                         <div class="text-emerald-600 dark:text-emerald-400 font-bold text-xs flex items-center gap-1.5">
                             <i class="fa-solid fa-circle-check"></i> Đã đánh dấu điểm ngập lên bản đồ thành công!
-                            <button onclick="switchView('map')" class="ml-2 underline text-teal-600 hover:text-teal-700">Xem ngay</button>
+                            <button onclick="closeAiChatModal(); switchView('map');" class="ml-2 underline text-teal-600 hover:text-teal-700">Xem ngay</button>
                         </div>
                     `;
                     // Cập nhật lại bản đồ ngay lập tức
-                    loadSosReportsFromBackend();
+                    loadServerReports();
                 } else {
                     throw new Error(res.error || 'Lỗi lưu báo cáo');
                 }
@@ -2194,6 +2307,210 @@
             }
         }
 
+        // ===================================================================
+        // BÁO MỚI 24/7 — TIN TỨC THIÊN TAI & BIÊN TẬP BẢN TIN TỔNG HỢP
+        // ===================================================================
+        async function loadNewsArticles(forceRefresh = false) {
+            const skeleton = document.getElementById('newsLoadingSkeleton');
+            const grid = document.getElementById('newsArticlesGrid');
+            const emptyState = document.getElementById('newsEmptyState');
+            const refreshBtn = document.getElementById('refreshNewsBtn');
+
+            if (skeleton) skeleton.classList.remove('hidden');
+            if (grid) grid.classList.add('hidden');
+            if (emptyState) emptyState.classList.add('hidden');
+            if (refreshBtn) {
+                refreshBtn.disabled = true;
+                refreshBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-teal-600"></i><span>Đang tải tin...</span>';
+            }
+
+            try {
+                const url = forceRefresh ? '/api/news/fetch?refresh=1' : '/api/news/fetch';
+                const resp = await fetch(url);
+                const data = await resp.json();
+                newsArticles = Array.isArray(data.articles) ? data.articles : [];
+                const totalEl = document.getElementById('newsTotalCount');
+                if (totalEl) totalEl.innerText = newsArticles.length;
+                renderNewsArticles();
+            } catch (err) {
+                console.warn('Lỗi tải tin tức Báo Mới 24/7:', err);
+                newsArticles = [];
+                renderNewsArticles();
+            } finally {
+                if (skeleton) skeleton.classList.add('hidden');
+                if (refreshBtn) {
+                    refreshBtn.disabled = false;
+                    refreshBtn.innerHTML = '<i class="fa-solid fa-arrows-rotate text-teal-600 dark:text-teal-400"></i><span>Cập nhật tin mới</span>';
+                }
+            }
+        }
+
+        function filterNewsSource(source, btnEl) {
+            currentNewsSourceFilter = source || 'all';
+            document.querySelectorAll('.news-src-btn').forEach(b => {
+                b.className = 'news-src-btn px-3.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-semibold hover:bg-slate-100 transition whitespace-nowrap';
+            });
+            if (btnEl) {
+                btnEl.className = 'news-src-btn active px-3.5 py-1.5 rounded-lg bg-teal-600 text-white font-bold transition whitespace-nowrap';
+            }
+            renderNewsArticles();
+        }
+
+        function renderNewsArticles() {
+            const grid = document.getElementById('newsArticlesGrid');
+            const emptyState = document.getElementById('newsEmptyState');
+            if (!grid) return;
+
+            const filtered = currentNewsSourceFilter === 'all'
+                ? newsArticles
+                : newsArticles.filter(a => (a.source || '').toLowerCase().includes(currentNewsSourceFilter.toLowerCase()));
+
+            if (!filtered || filtered.length === 0) {
+                grid.classList.add('hidden');
+                if (emptyState) emptyState.classList.remove('hidden');
+                return;
+            }
+
+            if (emptyState) emptyState.classList.add('hidden');
+            grid.classList.remove('hidden');
+
+            grid.innerHTML = filtered.map((art) => {
+                const origIdx = newsArticles.indexOf(art);
+                const summaryText = art.summary || art.body || 'Bấm "Đọc bản tin tổng hợp" để xem chi tiết diễn biến và khuyến cáo an toàn.';
+                const pubTime = art.published || 'Mới cập nhật';
+                const sourceName = art.source || 'Điểm báo 24/7';
+
+                return `
+                    <article class="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition flex flex-col justify-between space-y-4">
+                        <div class="space-y-2.5">
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 font-bold">
+                                    <i class="fa-solid fa-newspaper mr-1"></i> ${sourceName}
+                                </span>
+                                <span class="text-slate-400 text-[11px]"><i class="fa-regular fa-clock mr-1"></i>${pubTime}</span>
+                            </div>
+                            <h3 class="font-bold text-base text-slate-900 dark:text-white leading-snug line-clamp-2 hover:text-teal-600 dark:hover:text-teal-400 transition cursor-pointer" onclick="openArticleRewriteModal(${origIdx})">
+                                ${art.title}
+                            </h3>
+                            <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-3">
+                                ${summaryText}
+                            </p>
+                        </div>
+
+                        <div class="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 text-xs">
+                            <button onclick="openArticleRewriteModal(${origIdx})" class="bg-teal-600 hover:bg-teal-700 text-white font-bold px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                                <i class="fa-solid fa-book-open"></i> Đọc bản tin tổng hợp
+                            </button>
+                            ${art.link ? `
+                                <a href="${art.link}" target="_blank" rel="noopener" class="text-slate-500 hover:text-teal-600 dark:text-slate-400 dark:hover:text-teal-300 font-semibold flex items-center gap-1 px-2 py-1.5">
+                                    <span>Bài gốc</span>
+                                    <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+                                </a>
+                            ` : ''}
+                        </div>
+                    </article>
+                `;
+            }).join('');
+        }
+
+        async function openArticleRewriteModal(index) {
+            const art = newsArticles[index];
+            if (!art) return;
+
+            const modal = document.getElementById('articleRewriteModal');
+            const loading = document.getElementById('rewriteLoadingState');
+            const result = document.getElementById('rewriteResultState');
+            const titleEl = document.getElementById('rewriteModalTitle');
+            const srcBadge = document.getElementById('rewriteSourceBadge');
+            const origLink = document.getElementById('rewriteOriginalLink');
+            const bodyEl = document.getElementById('rewriteArticleBody');
+
+            if (!modal) return;
+            modal.classList.remove('hidden');
+            if (loading) loading.classList.remove('hidden');
+            if (result) result.classList.add('hidden');
+            if (titleEl) titleEl.innerText = art.title || 'Bản tin thiên tai';
+            if (srcBadge) srcBadge.innerHTML = `<i class="fa-solid fa-newspaper mr-1"></i> Nguồn: ${art.source || 'Báo Mới 24/7'} • ${art.published || 'Hôm nay'}`;
+            if (origLink) {
+                if (art.link) {
+                    origLink.href = art.link;
+                    origLink.classList.remove('hidden');
+                } else {
+                    origLink.classList.add('hidden');
+                }
+            }
+
+            try {
+                const resp = await fetch('/api/news/rewrite', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: art.title || '',
+                        body: art.body || art.summary || '',
+                        source: art.source || ''
+                    })
+                });
+                const data = await resp.json();
+                lastRewrittenText = data.rewritten || art.body || art.summary || '';
+                if (bodyEl) bodyEl.innerText = lastRewrittenText;
+            } catch (err) {
+                lastRewrittenText = art.body || art.summary || 'Không thể tải nội dung chi tiết.';
+                if (bodyEl) bodyEl.innerText = lastRewrittenText;
+            } finally {
+                if (loading) loading.classList.add('hidden');
+                if (result) result.classList.remove('hidden');
+            }
+        }
+
+        function closeArticleRewriteModal() {
+            const modal = document.getElementById('articleRewriteModal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        function copyRewrittenArticle() {
+            if (!lastRewrittenText) return;
+            navigator.clipboard.writeText(lastRewrittenText).then(() => {
+                const btn = document.getElementById('copyRewrittenBtn');
+                if (btn) {
+                    const orig = btn.innerHTML;
+                    btn.innerHTML = '<i class="fa-solid fa-check text-emerald-500"></i> Đã sao chép!';
+                    setTimeout(() => { btn.innerHTML = orig; }, 2000);
+                }
+            });
+        }
+
+        function openCustomRewriteModal() {
+            const modal = document.getElementById('customRewriteModal');
+            if (modal) modal.classList.remove('hidden');
+        }
+
+        function closeCustomRewriteModal() {
+            const modal = document.getElementById('customRewriteModal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        async function handleCustomRewriteSubmit(e) {
+            if (e && e.preventDefault) e.preventDefault();
+            const title = (document.getElementById('customRewriteTitle').value || '').trim();
+            const source = (document.getElementById('customRewriteSource').value || 'Ghi nhận hiện trường').trim();
+            const body = (document.getElementById('customRewriteBody').value || '').trim();
+            if (!title || !body) return;
+
+            closeCustomRewriteModal();
+            newsArticles.unshift({
+                source: source,
+                title: title,
+                link: '',
+                published: 'Vừa xong',
+                ts: Math.floor(Date.now() / 1000),
+                body: body,
+                summary: body.slice(0, 220) + (body.length > 220 ? '…' : '')
+            });
+            const totalEl = document.getElementById('newsTotalCount');
+            if (totalEl) totalEl.innerText = newsArticles.length;
+            renderNewsArticles();
+            await openArticleRewriteModal(0);
+        }
         </script>
 
     <!-- =================================================================== -->

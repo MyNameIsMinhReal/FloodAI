@@ -734,15 +734,13 @@ def generate_examples() -> List[Dict]:
 
         # ── Nhóm 2: So sánh / theo dõi theo thời gian ────────────────
         ("Hôm nay ngập hơn hôm qua không?", "unknown",
-         "Để so sánh, bạn cần upload ảnh hôm nay. "
-         "Mình sẽ phân tích và bạn có thể so sánh với kết quả hôm qua trong lịch sử."),
+         "Bạn hãy gửi 1 ảnh hiện tại lên, mình sẽ đo ngay độ sâu nước và mức ngập cho bạn."),
         ("Mực nước đang tăng hay giảm?", "unknown",
-         "Mình cần ít nhất 2 ảnh chụp ở các thời điểm khác nhau để so sánh. "
-         "Upload ảnh mới nhất lên, mình sẽ so với lần phân tích trước."),
+         "Chỉ cần gửi 1 ảnh hiện tại là mình đánh giá được ngay độ sâu và mức ngập lúc này. "
+         "Nếu muốn so sánh xu hướng tăng/giảm, bạn có thể gửi thêm ảnh chụp ở thời điểm trước đó."),
         ("Lũ năm nay có nặng hơn năm ngoái không?", "unknown",
-         "Mình không có dữ liệu lịch sử từ năm trước. "
-         "Để so sánh, bạn cần upload ảnh cả 2 thời điểm. "
-         "Thông tin lịch sử lũ có ở Trung tâm Khí tượng Thủy văn quốc gia."),
+         "Mình không có dữ liệu lịch sử từ năm trước, nhưng bạn chỉ cần gửi 1 ảnh hiện tại "
+         "là mình sẽ đo độ sâu ngập ngay. Thông tin lịch sử lũ có ở Trung tâm Khí tượng Thủy văn quốc gia."),
         ("Bao giờ nước rút?", "unknown",
          "Mình không dự báo được thời gian rút lũ — đây là bài toán khí tượng thủy văn. "
          "Theo dõi bản tin của nchmf.gov.vn để có dự báo chính xác nhất."),

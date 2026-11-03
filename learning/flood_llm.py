@@ -569,14 +569,28 @@ class LLMEnhancer:
                     ).to(infer_device)
 
                     with torch.no_grad():
-                        output_ids = self._model.generate(
-                            **inputs,
-                            max_new_tokens=max_new_tokens,
-                            temperature=self.temperature,
-                            do_sample=self.temperature > 0,
-                        )
+                        # Nếu model đang gắn LoRA adapter (vốn chỉ fine-tune trên text-only),
+                        # tạm tắt adapter khi chạy qua nhánh Vision-Language để giữ nguyên khả năng nhìn ảnh của Qwen-VL gốc
+                        if hasattr(self._model, "disable_adapter"):
+                            with self._model.disable_adapter():
+                                output_ids = self._model.generate(
+                                    **inputs,
+                                    max_new_tokens=max_new_tokens,
+                                    temperature=self.temperature,
+                                    do_sample=self.temperature > 0,
+                                )
+                        else:
+                            output_ids = self._model.generate(
+                                **inputs,
+                                max_new_tokens=max_new_tokens,
+                                temperature=self.temperature,
+                                do_sample=self.temperature > 0,
+                            )
                     new_tokens = output_ids[0][inputs["input_ids"].shape[1]:]
-                    return self._processor.decode(new_tokens, skip_special_tokens=True)
+                    decoded_vl = self._processor.decode(new_tokens, skip_special_tokens=True)
+                    if "ít nhất 2 ảnh" not in decoded_vl.lower() and "cần 2 ảnh" not in decoded_vl.lower():
+                        return decoded_vl
+                    log.info("[LLM] VL output contained 2-image hallucination, falling back to text-context inference")
             except Exception as exc:
                 log.warning(f"[LLM] Multimodal VL inference fallback sang text-only: {exc}")
 
@@ -621,14 +635,28 @@ class LLMEnhancer:
             messages.append({"role": role, "content": entry.get("content", "")})
         messages.append({"role": "user", "content": user_content})
 
-        if image is None and context:
-            img_candidate = context.get("original_path") or context.get("image_path")
-            if img_candidate and Path(str(img_candidate)).exists():
-                image = img_candidate
-
         try:
-            raw_output = self._infer(messages, image=image)
-            return _parse_llm_output(raw_output)
+            # Khi đã có context số liệu từ CV pipeline, dùng text-only cho LoRA để tránh lệch phân phối
+            infer_img = None if context else image
+            raw_output = self._infer(messages, image=infer_img)
+            parsed = _parse_llm_output(raw_output)
+            resp_low = (parsed.response or "").lower()
+            if any(k in resp_low for k in ("ít nhất 2 ảnh", "cần 2 ảnh", "chụp thêm ảnh", "để so sánh")):
+                if context:
+                    lvl_code = context.get("flood_level", "UNKNOWN")
+                    lvl_name = _LEVEL_VI.get(lvl_code, lvl_code)
+                    depth    = context.get("water_height_cm", 0)
+                    conf     = round(float(context.get("confidence", 0) or 0) * 100)
+                    parsed.response = (
+                        f"Theo kết quả phân tích ảnh hiện tại: mức ngập là {lvl_name}, "
+                        f"độ sâu ước tính khoảng {depth}cm (độ tin cậy {conf}%)."
+                    )
+                elif "so sánh" not in user_text.lower():
+                    parsed.response = (
+                        "Bạn chỉ cần gửi 1 bức ảnh chụp khu vực ngập lên, "
+                        "mình sẽ đo mực nước (cm) và đánh giá mức độ ngập ngay cho bạn nhé!"
+                    )
+            return parsed
         except Exception as e:
             log.warning(f"[LLM] parse_intent lỗi: {e}")
             return LLMParsedFeedback(
@@ -665,7 +693,7 @@ class LLMEnhancer:
         prompt = (
             f"Bạn vừa phân tích lũ xong (action: {action_type}).\n"
             f"{result_text}{context_text}\n\n"
-            "Hãy viết phản hồi tự nhiên bằng tiếng Việt cho người dùng. "
+            "Hãy viết phản hồi tự nhiên bằng tiếng Việt cho người dùng dựa trên số liệu trên (chỉ từ 1 ảnh này, không yêu cầu 2 ảnh). "
             "Không cần dùng định dạng INTENT/DEPTH_HINT, chỉ viết response thôi."
         )
 
@@ -673,15 +701,14 @@ class LLMEnhancer:
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user",   "content": prompt},
         ]
-        if image is None and results:
-            img_candidate = results[0].get("original_path") or results[0].get("image_path")
-            if img_candidate and Path(str(img_candidate)).exists():
-                image = img_candidate
         try:
-            raw = self._infer(messages, image=image)
+            raw = self._infer(messages, image=None)
             # Nếu model vẫn xuất header → chỉ lấy phần response
             parsed = _parse_llm_output(raw)
-            return parsed.response if parsed.response else _remove_chinese(raw)
+            resp = parsed.response if parsed.response else _remove_chinese(raw)
+            if any(k in resp.lower() for k in ("ít nhất 2 ảnh", "cần 2 ảnh", "chụp thêm ảnh", "để so sánh")):
+                return self._fallback_response(results, duration_s)
+            return resp
         except Exception as e:
             log.warning(f"[LLM] generate_response lỗi: {e}")
             return self._fallback_response(results, duration_s)
