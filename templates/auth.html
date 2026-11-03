@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Đăng nhập — FloodAI Việt Nam</title>
+    <title>Đăng nhập & Đăng ký — FloodAI Việt Nam</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -21,188 +21,540 @@
     </script>
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <!-- Google Fonts: Space Grotesk + Inter + JetBrains Mono -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .glass-panel {
-            background: rgba(15, 23, 42, 0.75);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #030914;
+            overflow-x: hidden;
+        }
+        .font-display { font-family: 'Space Grotesk', 'Inter', sans-serif; }
+        .font-mono-tech { font-family: 'JetBrains Mono', monospace; }
+
+        /* Topographic / Hydrological Grid Background */
+        .hydro-bg {
+            background-image:
+                radial-gradient(circle at 18% 22%, rgba(20, 184, 166, 0.14) 0%, transparent 45%),
+                radial-gradient(circle at 85% 78%, rgba(14, 165, 233, 0.12) 0%, transparent 48%),
+                radial-gradient(circle at 50% 100%, rgba(225, 29, 72, 0.07) 0%, transparent 40%),
+                linear-gradient(rgba(15, 23, 42, 0.4) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(15, 23, 42, 0.4) 1px, transparent 1px);
+            background-size: 100% 100%, 100% 100%, 100% 100%, 36px 36px, 36px 36px;
+        }
+
+        /* Radar Sweep Animation */
+        @keyframes radarSpin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .radar-sweep {
+            background: conic-gradient(from 0deg, transparent 70%, rgba(20, 184, 166, 0.28) 96%, rgba(45, 212, 191, 0.65) 100%);
+            animation: radarSpin 7s linear infinite;
+        }
+
+        /* Animated Water Wave in Hydro Gauge */
+        @keyframes waveSlide {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+        .wave-track {
+            width: 200%;
+            animation: waveSlide 5s linear infinite;
+        }
+
+        /* Pulsing GPS Ping */
+        @keyframes sonarPing {
+            0% { transform: scale(0.8); opacity: 0.9; }
+            80%, 100% { transform: scale(2.4); opacity: 0; }
+        }
+        .sonar-ring::after {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            border-radius: 9999px;
+            border: 1.5px solid currentColor;
+            animation: sonarPing 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+
+        /* HUD Corner Brackets */
+        .hud-card {
+            position: relative;
+            background: linear-gradient(160deg, rgba(10, 20, 38, 0.88) 0%, rgba(6, 13, 26, 0.94) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+        }
+        .hud-corner {
+            position: absolute;
+            width: 14px;
+            height: 14px;
+            border-color: rgba(45, 212, 191, 0.55);
+            pointer-events: none;
+        }
+        .hud-tl { top: -1px; left: -1px; border-top: 2px solid; border-left: 2px solid; border-top-left-radius: 12px; }
+        .hud-tr { top: -1px; right: -1px; border-top: 2px solid; border-right: 2px solid; border-top-right-radius: 12px; }
+        .hud-bl { bottom: -1px; left: -1px; border-bottom: 2px solid; border-left: 2px solid; border-bottom-left-radius: 12px; }
+        .hud-br { bottom: -1px; right: -1px; border-bottom: 2px solid; border-right: 2px solid; border-bottom-right-radius: 12px; }
+
+        /* Input Focus Glow */
+        .hydro-input {
+            background: rgba(3, 9, 20, 0.78);
+            border: 1px solid rgba(51, 65, 85, 0.65);
+            transition: all 0.2s ease;
+        }
+        .hydro-input:focus {
+            border-color: #14b8a6;
+            box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.15), inset 0 0 12px rgba(20, 184, 166, 0.06);
+            outline: none;
         }
     </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between selection:bg-teal-500 selection:text-white">
+<body class="hydro-bg text-slate-100 min-h-screen flex flex-col justify-between selection:bg-teal-500 selection:text-white relative">
 
-    <!-- TOP NAVIGATION BAR -->
-    <header class="border-b border-slate-800 bg-slate-900/70 backdrop-blur-md sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-            <a href="/" class="flex items-center gap-3 group">
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-teal-600 to-teal-400 flex items-center justify-center text-white shadow-lg shadow-teal-500/20 group-hover:scale-105 transition-transform">
-                    <i class="fa-solid fa-water text-lg"></i>
+    <!-- Decorative Topographic SVG Contour Overlay -->
+    <svg class="fixed inset-0 w-full h-full pointer-events-none opacity-[0.07] z-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+        <g fill="none" stroke="#2dd4bf" stroke-width="1.2">
+            <path d="M-100,200 C250,120 420,340 780,260 C1140,180 1290,80 1550,160" />
+            <path d="M-100,260 C270,170 450,390 800,310 C1150,230 1310,140 1550,220" />
+            <path d="M-100,320 C290,220 480,440 820,360 C1160,280 1330,200 1550,280" />
+            <path d="M-100,640 C220,560 510,760 880,650 C1180,560 1340,670 1550,610" />
+            <path d="M-100,700 C240,620 530,820 900,710 C1200,620 1360,730 1550,670" />
+        </g>
+    </svg>
+
+    <!-- TOP COMMAND BAR -->
+    <header class="border-b border-slate-800/80 bg-slate-950/70 backdrop-blur-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+            <a href="/" class="flex items-center gap-3.5 group">
+                <div class="relative w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center text-white shadow-lg shadow-teal-500/25 group-hover:scale-105 transition-transform">
+                    <i class="fa-solid fa-water text-base"></i>
+                    <span class="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-slate-950"></span>
                 </div>
                 <div>
-                    <div class="font-extrabold text-base tracking-tight text-white flex items-center gap-1.5">
-                        FloodAI <span class="text-xs px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-400 border border-teal-500/30 font-semibold">GIRC</span>
+                    <div class="font-display font-bold text-base tracking-tight text-white flex items-center gap-2">
+                        FLOOD<span class="text-teal-400">AI</span>
+                        <span class="font-mono-tech text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300 border border-teal-500/30">GIRC // VN</span>
                     </div>
-                    <div class="text-[11px] text-slate-400 font-medium">Hệ Thống Ứng Phó & Cứu Hộ Thiên Tai</div>
+                    <div class="text-[11px] text-slate-400">Trạm Điều Hành & Cứu Hộ Thủy Văn Thông Minh</div>
                 </div>
             </a>
 
-            <div class="flex items-center gap-3">
-                <a href="/" class="text-xs sm:text-sm font-semibold text-slate-300 hover:text-white px-3.5 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 transition flex items-center gap-2 shadow-sm">
-                    <i class="fa-solid fa-arrow-left text-teal-400"></i>
-                    <span>Quay lại Bản đồ</span>
+            <div class="flex items-center gap-3 sm:gap-4">
+                <!-- Live Telemetry Clock -->
+                <div class="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px] font-mono-tech text-slate-400">
+                    <span class="w-1.5 h-1.5 rounded-full bg-teal-400 animate-ping"></span>
+                    <span>TRỰC BAN:</span>
+                    <span id="liveUtcClock" class="text-teal-300 font-semibold">--:--:-- GMT+7</span>
+                </div>
+
+                <a href="/" class="text-xs sm:text-sm font-semibold text-slate-200 hover:text-white px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-teal-500/50 transition flex items-center gap-2">
+                    <i class="fa-solid fa-map-location-dot text-teal-400"></i>
+                    <span>Bản đồ trực tuyến</span>
                 </a>
             </div>
         </div>
     </header>
 
-    <!-- MAIN AUTH CONTENT (Split-Screen) -->
-    <main class="flex-grow flex items-center justify-center p-4 sm:p-6 lg:p-8">
-        <div class="max-w-5xl w-full grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+    <!-- MAIN WORKSPACE -->
+    <main class="flex-grow flex items-center justify-center p-4 sm:p-6 lg:p-10 relative z-10">
+        <div class="max-w-6xl w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-stretch">
 
-            <!-- LEFT COLUMN: Form Container (Dễ dàng custom thêm trường) -->
-            <div class="lg:col-span-7 bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden backdrop-blur-xl">
-                
-                <!-- Background Glow -->
-                <div class="absolute -top-24 -left-24 w-56 h-56 bg-teal-500/10 rounded-full blur-3xl pointer-events-none"></div>
-                <div class="absolute -bottom-24 -right-24 w-56 h-56 bg-rose-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            <!-- ======================================================================= -->
+            <!-- LEFT COLUMN (5 cols): UNIQUE HYDRO-RADAR & WATER LEVEL TELEMETRY HUD   -->
+            <!-- ======================================================================= -->
+            <div class="lg:col-span-5 flex flex-col justify-between rounded-3xl border border-slate-800/90 bg-slate-950/75 p-6 sm:p-7 relative overflow-hidden shadow-2xl">
+                <!-- Ambient Glow -->
+                <div class="absolute -top-20 -left-20 w-64 h-64 bg-teal-500/10 rounded-full blur-3xl pointer-events-none"></div>
+                <div class="absolute -bottom-24 -right-20 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
-                <!-- Header: Đăng nhập -->
-                <div class="mb-6 pb-4 border-b border-slate-800 flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-xl bg-teal-500/15 border border-teal-500/30 text-teal-400 flex items-center justify-center">
-                        <i class="fa-solid fa-right-to-bracket text-sm"></i>
+                <!-- Top Section: Radar Header + Live Coordinates -->
+                <div class="space-y-4 relative z-10">
+                    <div class="flex items-center justify-between">
+                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-500/10 border border-teal-500/30 text-teal-300 text-[11px] font-mono-tech font-semibold">
+                            <i class="fa-solid fa-satellite-dish text-[10px] animate-pulse"></i>
+                            <span>CỔNG XÁC THỰC CỨU HỘ</span>
+                        </div>
+                        <span class="font-mono-tech text-[11px] text-slate-500">SYS.VER // 2026.4</span>
                     </div>
+
                     <div>
-                        <h2 class="text-lg font-extrabold text-white tracking-tight">Đăng nhập hệ thống</h2>
-                        <p class="text-xs text-slate-400">Dành cho tài khoản được cấp quyền trên hệ thống FloodAI</p>
+                        <h1 class="font-display text-2xl sm:text-3xl font-bold text-white leading-tight tracking-tight">
+                            Định danh một chạm,<br/>
+                            <span class="text-transparent bg-clip-text bg-gradient-to-r from-teal-300 via-cyan-300 to-sky-400">ứng cứu đúng tọa độ.</span>
+                        </h1>
+                        <p class="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">
+                            Khi xảy ra ngập lụt khẩn cấp, tài khoản đã định danh giúp hệ thống tự động ghim số điện thoại và vị trí GPS của bạn lên bản đồ chỉ huy cứu nạn.
+                        </p>
                     </div>
                 </div>
 
-                <!-- Alert Message Box -->
-                <div id="authAlert" class="hidden mb-5 p-3.5 rounded-xl text-xs sm:text-sm font-medium flex items-center gap-2.5"></div>
+                <!-- Centerpiece: Interactive Hydrological Radar + Depth Gauge Widget -->
+                <div class="my-6 grid grid-cols-12 gap-3.5 items-stretch relative z-10">
+                    
+                    <!-- Mini Hydro Radar (7 cols) -->
+                    <div class="col-span-7 rounded-2xl bg-slate-900/80 border border-slate-800/90 p-4 flex flex-col justify-between relative overflow-hidden">
+                        <div class="flex items-center justify-between text-[10px] font-mono-tech text-slate-400 mb-2">
+                            <span>RADAR QUÉT VÙNG NGẬP</span>
+                            <span class="text-teal-400">ACTIVE</span>
+                        </div>
 
-                <!-- ============================================================== -->
-                <!-- FORM 1: ĐĂNG NHẬP (LOGIN)                                     -->
-                <!-- ============================================================== -->
-                <form id="formLogin" onsubmit="handleLogin(event)" class="space-y-4">
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                            Số điện thoại hoặc Email
-                        </label>
-                        <div class="relative">
-                            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                                <i class="fa-solid fa-id-badge"></i>
+                        <!-- Circular Radar Visual -->
+                        <div class="relative w-36 h-36 mx-auto my-1 rounded-full border border-teal-500/30 bg-slate-950/90 flex items-center justify-center overflow-hidden shadow-inner">
+                            <!-- Concentric rings -->
+                            <div class="absolute inset-3 rounded-full border border-teal-500/20"></div>
+                            <div class="absolute inset-7 rounded-full border border-teal-500/15"></div>
+                            <div class="absolute inset-11 rounded-full border border-teal-500/10"></div>
+                            <!-- Crosshairs -->
+                            <div class="absolute inset-x-0 top-1/2 h-[1px] bg-teal-500/20"></div>
+                            <div class="absolute inset-y-0 left-1/2 w-[1px] bg-teal-500/20"></div>
+                            <!-- Rotating Sweep -->
+                            <div class="absolute inset-0 rounded-full radar-sweep"></div>
+                            <!-- Ping Points -->
+                            <span class="sonar-ring absolute top-7 left-9 w-2 h-2 rounded-full bg-teal-400 text-teal-400" title="Thái Nguyên"></span>
+                            <span class="sonar-ring absolute bottom-8 right-8 w-2 h-2 rounded-full bg-amber-400 text-amber-400" title="Miền Trung"></span>
+                            <span class="sonar-ring absolute top-11 right-10 w-2 h-2 rounded-full bg-rose-500 text-rose-500" title="Tín hiệu SOS"></span>
+                            <!-- Center Node -->
+                            <div class="w-2.5 h-2.5 rounded-full bg-white shadow shadow-teal-400 z-10"></div>
+                        </div>
+
+                        <!-- Telemetry Coordinates Footer -->
+                        <div class="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] font-mono-tech text-slate-400">
+                            <span>21.5942°N, 105.8481°E</span>
+                            <span class="text-emerald-400">● 63 TỈNH</span>
+                        </div>
+                    </div>
+
+                    <!-- Live Water Depth Staff Gauge / Thước Thủy Chí (5 cols) -->
+                    <div class="col-span-5 rounded-2xl bg-slate-900/80 border border-slate-800/90 p-3.5 flex flex-col justify-between relative overflow-hidden">
+                        <div class="flex items-center justify-between text-[10px] font-mono-tech text-slate-400">
+                            <span>THƯỚC THỦY CHÍ</span>
+                            <span class="text-cyan-400 font-bold">CM</span>
+                        </div>
+
+                        <!-- Vertical Ruler Marks -->
+                        <div class="relative my-2 flex-grow flex flex-col justify-between py-1 pl-2 border-l-2 border-slate-700 font-mono-tech text-[10px] z-10">
+                            <div class="flex items-center justify-between">
+                                <span class="text-rose-400 font-semibold">80+</span>
+                                <span class="px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300 text-[9px]">NGUY HIỂM</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-amber-400 font-semibold">40</span>
+                                <span class="text-slate-400 text-[9px]">Đầu gối</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-sky-400 font-semibold">20</span>
+                                <span class="text-slate-400 text-[9px]">Mắt cá</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-emerald-400 font-semibold">00</span>
+                                <span class="text-slate-400 text-[9px]">Mặt đường</span>
+                            </div>
+                        </div>
+
+                        <!-- Animated Water Fill at Bottom of Gauge -->
+                        <div class="absolute inset-x-0 bottom-0 h-16 overflow-hidden pointer-events-none opacity-35">
+                            <svg class="wave-track h-full fill-cyan-500" viewBox="0 0 400 60" preserveAspectRatio="none">
+                                <path d="M0,20 C60,5 140,35 200,20 C260,5 340,35 400,20 L400,60 L0,60 Z"></path>
+                            </svg>
+                        </div>
+
+                        <div class="text-[10px] text-slate-400 font-mono-tech pt-1 border-t border-slate-800/80 relative z-10 flex items-center justify-between">
+                            <span>AI DEPTH</span>
+                            <span class="text-teal-300">±3.5 cm</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bottom Section: 3 Quick Capabilities + Emergency Dispatch Bar -->
+                <div class="space-y-3 relative z-10">
+                    <div class="grid grid-cols-3 gap-2 text-center">
+                        <div class="p-2.5 rounded-xl bg-slate-900/70 border border-slate-800/80">
+                            <div class="text-rose-400 text-xs mb-0.5"><i class="fa-solid fa-tower-broadcast"></i></div>
+                            <div class="text-[11px] font-bold text-white">SOS 1-Chạm</div>
+                            <div class="text-[10px] text-slate-400">Định vị GPS</div>
+                        </div>
+                        <div class="p-2.5 rounded-xl bg-slate-900/70 border border-slate-800/80">
+                            <div class="text-teal-400 text-xs mb-0.5"><i class="fa-solid fa-camera-retro"></i></div>
+                            <div class="text-[11px] font-bold text-white">Đo Độ Sâu AI</div>
+                            <div class="text-[10px] text-slate-400">Từ ảnh thực tế</div>
+                        </div>
+                        <div class="p-2.5 rounded-xl bg-slate-900/70 border border-slate-800/80">
+                            <div class="text-amber-400 text-xs mb-0.5"><i class="fa-solid fa-route"></i></div>
+                            <div class="text-[11px] font-bold text-white">Trạm Sơ Tán</div>
+                            <div class="text-[10px] text-slate-400">Lộ trình an toàn</div>
+                        </div>
+                    </div>
+
+                    <!-- Emergency Hotline Strip -->
+                    <div class="px-4 py-3 rounded-2xl bg-gradient-to-r from-rose-950/60 via-slate-900/90 to-slate-900 border border-rose-500/30 flex items-center justify-between">
+                        <div class="flex items-center gap-2.5">
+                            <span class="w-7 h-7 rounded-lg bg-rose-500/20 border border-rose-500/40 text-rose-400 flex items-center justify-center text-xs">
+                                <i class="fa-solid fa-phone-volume"></i>
                             </span>
-                            <input type="text" id="loginIdentifier" required placeholder="Ví dụ: 0912345678 hoặc email@domain.com"
-                                   class="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition" />
+                            <div>
+                                <div class="text-[11px] font-bold text-white">Tổng đài cứu nạn khẩn cấp quốc gia</div>
+                                <div class="text-[10px] text-slate-400">Hoạt động 24/7 — Không cần đăng nhập khi nguy cấp</div>
+                            </div>
                         </div>
+                        <span class="font-mono-tech font-extrabold text-rose-400 text-sm tracking-wider">112 / 114</span>
                     </div>
-
-                    <div>
-                        <div class="flex items-center justify-between mb-1.5">
-                            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
-                                Mật khẩu
-                            </label>
-                            <a href="javascript:void(0)" onclick="alert('Vui lòng liên hệ tổng đài 112 hoặc quản trị viên để cấp lại mật khẩu.')" class="text-xs text-teal-400 hover:underline">Quên mật khẩu?</a>
-                        </div>
-                        <div class="relative">
-                            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                                <i class="fa-solid fa-lock"></i>
-                            </span>
-                            <input type="password" id="loginPassword" required placeholder="Nhập mật khẩu..."
-                                   class="w-full pl-10 pr-10 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition" />
-                            <button type="button" onclick="togglePasswordVisibility('loginPassword', this)" class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300">
-                                <i class="fa-solid fa-eye"></i>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="flex items-center justify-between text-xs text-slate-400 pt-1">
-                        <label class="flex items-center gap-2 cursor-pointer select-none">
-                            <input type="checkbox" id="rememberMe" checked class="rounded border-slate-700 bg-slate-950 text-teal-600 focus:ring-teal-500" />
-                            <span>Ghi nhớ đăng nhập trên thiết bị này</span>
-                        </label>
-                    </div>
-
-                    <button type="submit" id="btnSubmitLogin" class="w-full py-3 px-4 bg-teal-600 hover:bg-teal-500 active:scale-[0.99] text-white font-bold rounded-xl shadow-lg shadow-teal-600/30 transition flex items-center justify-center gap-2 text-sm mt-2">
-                        <span>Đăng nhập hệ thống</span>
-                        <i class="fa-solid fa-arrow-right text-xs"></i>
-                    </button>
-                </form>
-
+                </div>
             </div>
 
-            <!-- RIGHT COLUMN: System Visual & Benefits -->
-            <div class="lg:col-span-5 space-y-6">
-                
-                <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-teal-500/10 border border-teal-500/30 text-teal-400 text-xs font-semibold">
-                    <span class="w-2 h-2 rounded-full bg-teal-400 animate-pulse"></span>
-                    Hệ Thống Dữ Liệu Cứu Trợ Quốc Gia
-                </div>
+            <!-- ======================================================================= -->
+            <!-- RIGHT COLUMN (7 cols): HUD TERMINAL AUTHENTICATION FORM                 -->
+            <!-- ======================================================================= -->
+            <div class="lg:col-span-7 hud-card border border-slate-800/90 rounded-3xl p-6 sm:p-9 shadow-2xl flex flex-col justify-between">
+                <!-- Technical HUD Corners -->
+                <span class="hud-corner hud-tl"></span>
+                <span class="hud-corner hud-tr"></span>
+                <span class="hud-corner hud-bl"></span>
+                <span class="hud-corner hud-br"></span>
 
-                <div class="space-y-3">
-                    <h1 class="text-3xl sm:text-4xl font-black text-white leading-tight">
-                        Chung tay ứng phó thiên tai thông minh
-                    </h1>
-                    <p class="text-slate-400 text-sm leading-relaxed">
-                        Tài khoản FloodAI giúp người dân chủ động cập nhật cảnh báo ngập lụt theo thời gian thực và nhận hỗ trợ cứu hộ khẩn cấp nhanh nhất từ Ban chỉ đạo PCTT.
-                    </p>
-                </div>
-
-                <!-- Feature Benefits List -->
-                <div class="space-y-3.5 pt-2">
-                    <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-start gap-3.5">
-                        <div class="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center shrink-0 border border-rose-500/20 text-base">
-                            <i class="fa-solid fa-tower-broadcast"></i>
+                <div>
+                    <!-- Top Terminal Status Bar -->
+                    <div class="flex items-center justify-between mb-5 pb-3.5 border-b border-slate-800/80">
+                        <div class="flex items-center gap-2.5">
+                            <span class="w-2 h-2 rounded-full bg-teal-400"></span>
+                            <span id="terminalModeTitle" class="font-mono-tech text-xs uppercase tracking-wider text-slate-300 font-semibold">
+                                XÁC THỰC TÀI KHOẢN // ĐĂNG NHẬP
+                            </span>
                         </div>
-                        <div>
-                            <div class="font-bold text-sm text-white">Gửi SOS khẩn cấp 1-chạm</div>
-                            <div class="text-xs text-slate-400 mt-0.5">Tự động truyền số điện thoại, danh tính và định vị GPS chính xác đến lực lượng cứu hộ.</div>
-                        </div>
+                        <span class="font-mono-tech text-[11px] text-teal-400/90 bg-teal-500/10 border border-teal-500/20 px-2.5 py-0.5 rounded-md">
+                            <i class="fa-solid fa-shield-halved mr-1"></i>SHA-256
+                        </span>
                     </div>
 
-                    <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-start gap-3.5">
-                        <div class="w-10 h-10 rounded-xl bg-teal-500/10 text-teal-400 flex items-center justify-center shrink-0 border border-teal-500/20 text-base">
-                            <i class="fa-solid fa-map-location-dot"></i>
-                        </div>
-                        <div>
-                            <div class="font-bold text-sm text-white">Ranh giới vệ tinh & Trạm sơ tán</div>
-                            <div class="text-xs text-slate-400 mt-0.5">Xem bản đồ địa phận 63 tỉnh thành, các điểm ngập sâu và lộ trình an toàn đến trạm sơ tán gần nhất.</div>
-                        </div>
+                    <!-- Segmented Switcher: Đăng nhập / Đăng ký -->
+                    <div class="grid grid-cols-2 gap-1.5 p-1.5 bg-slate-950/90 rounded-2xl border border-slate-800/90 mb-6">
+                        <button id="tabBtnLogin" type="button" onclick="switchTab('login')"
+                                class="py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 bg-gradient-to-r from-teal-600 to-cyan-600 text-white shadow-lg shadow-teal-600/25">
+                            <i class="fa-solid fa-right-to-bracket text-xs"></i>
+                            <span>Đăng nhập</span>
+                        </button>
+                        <button id="tabBtnRegister" type="button" onclick="switchTab('register')"
+                                class="py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200">
+                            <i class="fa-solid fa-user-plus text-xs"></i>
+                            <span>Đăng ký</span>
+                        </button>
                     </div>
 
-                    <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-start gap-3.5">
-                        <div class="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-500/20 text-base">
-                            <i class="fa-solid fa-newspaper"></i>
-                        </div>
+                    <!-- Alert Message Box -->
+                    <div id="authAlert" class="hidden mb-5 p-3.5 rounded-xl text-xs sm:text-sm font-medium flex items-center gap-2.5"></div>
+
+                    <!-- ============================================================== -->
+                    <!-- FORM 1: ĐĂNG NHẬP (LOGIN)                                      -->
+                    <!-- ============================================================== -->
+                    <form id="formLogin" onsubmit="handleLogin(event)" class="space-y-4">
                         <div>
-                            <div class="font-bold text-sm text-white">Điểm báo 24/7 & Trợ lý AI</div>
-                            <div class="text-xs text-slate-400 mt-0.5">Tổng hợp tin tức chính thống từ Nhân Dân, VnExpress, Tuổi Trẻ và phân tích độ sâu ngập bằng AI.</div>
+                            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                                Số điện thoại hoặc Email
+                            </label>
+                            <div class="relative">
+                                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-teal-500/80">
+                                    <i class="fa-solid fa-id-card-clip"></i>
+                                </span>
+                                <input type="text" id="loginIdentifier" required placeholder="0912345678 hoặc email@domain.com"
+                                       class="hydro-input w-full pl-10 pr-4 py-3 rounded-xl text-sm text-white placeholder-slate-500" />
+                            </div>
                         </div>
-                    </div>
+
+                        <div>
+                            <div class="flex items-center justify-between mb-1.5">
+                                <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                                    Mật khẩu
+                                </label>
+                                <a href="javascript:void(0)" onclick="showAlert('Vui lòng liên hệ quản trị viên hoặc tổng đài trực ban để cấp lại mật khẩu.')"
+                                   class="text-xs text-teal-400 hover:text-teal-300 transition">Quên mật khẩu?</a>
+                            </div>
+                            <div class="relative">
+                                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-teal-500/80">
+                                    <i class="fa-solid fa-key"></i>
+                                </span>
+                                <input type="password" id="loginPassword" required placeholder="Nhập mật khẩu của bạn..."
+                                       class="hydro-input w-full pl-10 pr-10 py-3 rounded-xl text-sm text-white placeholder-slate-500" />
+                                <button type="button" onclick="togglePasswordVisibility('loginPassword', this)"
+                                        class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300">
+                                    <i class="fa-solid fa-eye"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between text-xs text-slate-400 pt-1">
+                            <label class="flex items-center gap-2 cursor-pointer select-none">
+                                <input type="checkbox" id="rememberMe" checked class="rounded border-slate-700 bg-slate-950 text-teal-600 focus:ring-teal-500" />
+                                <span>Duy trì phiên trực ban trên thiết bị này</span>
+                            </label>
+                        </div>
+
+                        <button type="submit" id="btnSubmitLogin"
+                                class="w-full py-3.5 px-5 bg-gradient-to-r from-teal-600 via-teal-500 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 active:scale-[0.99] text-white font-bold rounded-xl shadow-lg shadow-teal-600/25 transition flex items-center justify-center gap-2.5 text-sm mt-2">
+                            <span>Truy cập hệ thống FloodAI</span>
+                            <i class="fa-solid fa-arrow-right text-xs"></i>
+                        </button>
+
+                        <!-- Quick switch hint -->
+                        <div class="pt-3 text-center text-xs text-slate-400">
+                            Chưa có tài khoản định danh cứu hộ?
+                            <button type="button" onclick="switchTab('register')" class="text-teal-400 hover:text-teal-300 font-semibold underline underline-offset-4 ml-1">
+                                Đăng ký ngay
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- ============================================================== -->
+                    <!-- FORM 2: ĐĂNG KÝ (REGISTER)                                     -->
+                    <!-- ============================================================== -->
+                    <form id="formRegister" onsubmit="handleRegister(event)" class="space-y-3.5 hidden">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                                Họ và tên người dân / cán bộ <span class="text-rose-400">*</span>
+                            </label>
+                            <div class="relative">
+                                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-teal-500/80">
+                                    <i class="fa-solid fa-user-shield"></i>
+                                </span>
+                                <input type="text" id="regName" required placeholder="Nhập họ và tên đầy đủ..."
+                                       class="hydro-input w-full pl-10 pr-4 py-2.5 rounded-xl text-sm text-white placeholder-slate-500" />
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                                    Số điện thoại khẩn cấp <span class="text-rose-400">*</span>
+                                </label>
+                                <div class="relative">
+                                    <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-teal-500/80">
+                                        <i class="fa-solid fa-phone"></i>
+                                    </span>
+                                    <input type="tel" id="regPhone" required placeholder="09xxxxxxxx"
+                                           class="hydro-input w-full pl-10 pr-4 py-2.5 rounded-xl text-sm text-white placeholder-slate-500" />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                                    Email liên hệ
+                                </label>
+                                <div class="relative">
+                                    <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-teal-500/80">
+                                        <i class="fa-solid fa-envelope"></i>
+                                    </span>
+                                    <input type="email" id="regEmail" placeholder="email@domain.com"
+                                           class="hydro-input w-full pl-10 pr-4 py-2.5 rounded-xl text-sm text-white placeholder-slate-500" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                                Tỉnh / Thành phố thường trú
+                            </label>
+                            <div class="relative">
+                                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-teal-500/80">
+                                    <i class="fa-solid fa-location-crosshairs"></i>
+                                </span>
+                                <input type="text" id="regProvince" placeholder="Ví dụ: Thái Nguyên, Hà Nội, Huế, Đà Nẵng, TP.HCM..."
+                                       class="hydro-input w-full pl-10 pr-4 py-2.5 rounded-xl text-sm text-white placeholder-slate-500" />
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                                    Mật khẩu <span class="text-rose-400">*</span>
+                                </label>
+                                <input type="password" id="regPassword" required placeholder="Tối thiểu 6 ký tự" minlength="6"
+                                       class="hydro-input w-full px-3.5 py-2.5 rounded-xl text-sm text-white placeholder-slate-500" />
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                                    Xác nhận mật khẩu <span class="text-rose-400">*</span>
+                                </label>
+                                <input type="password" id="regPasswordConfirm" required placeholder="Nhập lại mật khẩu" minlength="6"
+                                       class="hydro-input w-full px-3.5 py-2.5 rounded-xl text-sm text-white placeholder-slate-500" />
+                            </div>
+                        </div>
+
+                        <div class="pt-1">
+                            <label class="flex items-start gap-2.5 text-xs text-slate-400 cursor-pointer select-none">
+                                <input type="checkbox" id="regAgreeTerms" required checked class="mt-0.5 rounded border-slate-700 bg-slate-950 text-teal-600 focus:ring-teal-500" />
+                                <span>Tôi đồng ý kết nối thông tin liên hệ và tọa độ GPS khi gửi yêu cầu cứu hộ khẩn cấp trên hệ thống FloodAI.</span>
+                            </label>
+                        </div>
+
+                        <button type="submit" id="btnSubmitRegister"
+                                class="w-full py-3.5 px-5 bg-gradient-to-r from-teal-600 via-teal-500 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 active:scale-[0.99] text-white font-bold rounded-xl shadow-lg shadow-teal-600/25 transition flex items-center justify-center gap-2.5 text-sm mt-2">
+                            <span>Kích hoạt hồ sơ cứu hộ</span>
+                            <i class="fa-solid fa-circle-check text-xs"></i>
+                        </button>
+                    </form>
                 </div>
 
-                <!-- Emergency Contact Pill -->
-                <div class="p-3.5 rounded-2xl bg-gradient-to-r from-rose-950/40 to-slate-900 border border-rose-800/40 flex items-center justify-between text-xs">
-                    <span class="text-slate-300 font-medium">Trực ban cứu hộ khẩn cấp:</span>
-                    <span class="font-extrabold text-rose-400 text-sm">112 / 114</span>
+                <!-- Bottom Security Metadata Footer inside Card -->
+                <div class="mt-6 pt-4 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono-tech text-slate-500">
+                    <span>NODE: GIRC-TUAF-T2026</span>
+                    <span>CHẾ ĐỘ BẢO MẬT: CẤP ĐỘ DÂN SỰ & CỨU HỘ</span>
                 </div>
-
             </div>
 
         </div>
     </main>
 
     <!-- FOOTER -->
-    <footer class="border-t border-slate-800 py-4 text-center text-xs text-slate-500 bg-slate-950">
-        <p>© 2026 FloodAI Việt Nam — Nền tảng Phân Tích & Cứu Hộ Thiên Tai Quốc Gia</p>
+    <footer class="border-t border-slate-800/80 py-3.5 text-center text-xs text-slate-500 bg-slate-950/80 relative z-10">
+        <p>© 2026 FloodAI Việt Nam (GIRC) — Hệ Thống Phân Tích Độ Sâu Ngập & Điều Phối Cứu Hộ Thiên Tai</p>
     </footer>
 
     <!-- INTERACTIVE JAVASCRIPT LOGIC -->
     <script>
+        // Live GMT+7 Telemetry Clock
+        function updateClock() {
+            const el = document.getElementById('liveUtcClock');
+            if (!el) return;
+            const now = new Date();
+            const hh = String(now.getHours()).padStart(2, '0');
+            const mm = String(now.getMinutes()).padStart(2, '0');
+            const ss = String(now.getSeconds()).padStart(2, '0');
+            el.textContent = `${hh}:${mm}:${ss} GMT+7`;
+        }
+        updateClock();
+        setInterval(updateClock, 1000);
+
+        // Check query param ?tab=register or ?tab=login
         const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('tab') === 'register') {
+            switchTab('register');
+        }
+
+        function switchTab(tab) {
+            const btnLogin = document.getElementById('tabBtnLogin');
+            const btnReg = document.getElementById('tabBtnRegister');
+            const formLogin = document.getElementById('formLogin');
+            const formReg = document.getElementById('formRegister');
+            const alertBox = document.getElementById('authAlert');
+            const titleEl = document.getElementById('terminalModeTitle');
+
+            alertBox.classList.add('hidden');
+
+            const activeCls = "py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 bg-gradient-to-r from-teal-600 to-cyan-600 text-white shadow-lg shadow-teal-600/25";
+            const inactiveCls = "py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200";
+
+            if (tab === 'login') {
+                btnLogin.className = activeCls;
+                btnReg.className = inactiveCls;
+                formLogin.classList.remove('hidden');
+                formReg.classList.add('hidden');
+                if (titleEl) titleEl.textContent = "XÁC THỰC TÀI KHOẢN // ĐĂNG NHẬP";
+            } else {
+                btnReg.className = activeCls;
+                btnLogin.className = inactiveCls;
+                formReg.classList.remove('hidden');
+                formLogin.classList.add('hidden');
+                if (titleEl) titleEl.textContent = "KHỞI TẠO HỒ SƠ // ĐĂNG KÝ";
+            }
+        }
 
         function togglePasswordVisibility(inputId, btn) {
             const input = document.getElementById(inputId);
@@ -218,14 +570,12 @@
 
         function showAlert(msg, isSuccess = false) {
             const alertBox = document.getElementById('authAlert');
-            alertBox.classList.remove('hidden', 'bg-rose-950/80', 'text-rose-300', 'border-rose-800', 'bg-teal-950/80', 'text-teal-300', 'border-teal-800');
-            if (isSuccess) {
-                alertBox.className = "mb-5 p-3.5 rounded-xl text-xs sm:text-sm font-medium flex items-center gap-2.5 bg-teal-950/80 text-teal-300 border border-teal-800";
-                alertBox.innerHTML = `<i class="fa-solid fa-circle-check text-teal-400 text-base"></i><span>${msg}</span>`;
-            } else {
-                alertBox.className = "mb-5 p-3.5 rounded-xl text-xs sm:text-sm font-medium flex items-center gap-2.5 bg-rose-950/80 text-rose-300 border border-rose-800";
-                alertBox.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-rose-400 text-base"></i><span>${msg}</span>`;
-            }
+            alertBox.className = isSuccess
+                ? "mb-5 p-3.5 rounded-xl text-xs sm:text-sm font-medium flex items-center gap-2.5 bg-teal-950/80 text-teal-300 border border-teal-700/80"
+                : "mb-5 p-3.5 rounded-xl text-xs sm:text-sm font-medium flex items-center gap-2.5 bg-rose-950/80 text-rose-300 border border-rose-700/80";
+            alertBox.innerHTML = isSuccess
+                ? `<i class="fa-solid fa-circle-check text-teal-400 text-base"></i><span>${msg}</span>`
+                : `<i class="fa-solid fa-triangle-exclamation text-rose-400 text-base"></i><span>${msg}</span>`;
         }
 
         async function handleLogin(e) {
@@ -251,20 +601,64 @@
                 const data = await resp.json();
 
                 if (data.ok) {
-                    showAlert('Đăng nhập thành công! Đang chuyển hướng...', true);
+                    showAlert('Đăng nhập thành công! Đang kết nối bản đồ...', true);
                     const nextUrl = urlParams.get('next') || '/';
                     setTimeout(() => {
                         window.location.href = nextUrl;
-                    }, 800);
+                    }, 700);
                 } else {
                     showAlert(data.error || 'Đăng nhập không thành công.');
                     btn.disabled = false;
-                    btn.innerHTML = '<span>Đăng nhập hệ thống</span><i class="fa-solid fa-arrow-right text-xs ml-2"></i>';
+                    btn.innerHTML = '<span>Truy cập hệ thống FloodAI</span><i class="fa-solid fa-arrow-right text-xs"></i>';
                 }
             } catch (err) {
                 showAlert('Lỗi kết nối máy chủ. Vui lòng thử lại.');
                 btn.disabled = false;
-                btn.innerHTML = '<span>Đăng nhập hệ thống</span><i class="fa-solid fa-arrow-right text-xs ml-2"></i>';
+                btn.innerHTML = '<span>Truy cập hệ thống FloodAI</span><i class="fa-solid fa-arrow-right text-xs"></i>';
+            }
+        }
+
+        async function handleRegister(e) {
+            e.preventDefault();
+            const name = document.getElementById('regName').value.trim();
+            const phone = document.getElementById('regPhone').value.trim();
+            const email = document.getElementById('regEmail').value.trim();
+            const province = document.getElementById('regProvince').value.trim();
+            const password = document.getElementById('regPassword').value;
+            const passwordConfirm = document.getElementById('regPasswordConfirm').value;
+            const btn = document.getElementById('btnSubmitRegister');
+
+            if (password !== passwordConfirm) {
+                showAlert('Mật khẩu xác nhận không khớp.');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Đang khởi tạo hồ sơ...';
+
+            try {
+                const resp = await fetch('/api/account/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, phone, email, province, password })
+                });
+                const data = await resp.json();
+
+                if (data.ok) {
+                    showAlert('Đăng ký thành công! Đang chuyển hướng...', true);
+                    const nextUrl = urlParams.get('next') || '/';
+                    setTimeout(() => {
+                        window.location.href = nextUrl;
+                    }, 900);
+                } else {
+                    showAlert(data.error || 'Đăng ký không thành công.');
+                    btn.disabled = false;
+                    btn.innerHTML = '<span>Kích hoạt hồ sơ cứu hộ</span><i class="fa-solid fa-circle-check text-xs"></i>';
+                }
+            } catch (err) {
+                showAlert('Lỗi kết nối máy chủ. Vui lòng thử lại.');
+                btn.disabled = false;
+                btn.innerHTML = '<span>Kích hoạt hồ sơ cứu hộ</span><i class="fa-solid fa-circle-check text-xs"></i>';
             }
         }
     </script>
