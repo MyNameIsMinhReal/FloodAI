@@ -682,18 +682,14 @@ def _analyze_image_with_meta(image_b64: str) -> tuple[str, dict]:
             from collections import Counter as _Counter
             veh_names = [f"{cnt} {name}" if cnt > 1 else name for name, cnt in _Counter(veh_raw).items()]
 
-            # Format khớp với cấu trúc dữ liệu mà LoRA đã học ([Kết quả phân tích hiện tại])
+            # Tránh dùng header '[Kết quả phân tích hiện tại]' để không kích hoạt mẫu câu so sánh cũ của LoRA
             lines = [
-                "[Kết quả phân tích hiện tại]",
-                f"- Mức lũ   : {level_vi}",
-                f"- Độ sâu   : {depth}cm",
-                f"- Độ tin cậy: {round(conf)}%",
-                f"- Số vật thể tham chiếu: {n_objs}",
+                f"Thông tin ảnh vừa đo thực tế: Tình trạng {level_vi}, độ sâu ngập {depth} cm, độ tin cậy {round(conf)}%, phát hiện {n_objs} mốc tham chiếu."
             ]
             if veh_names:
-                lines.append(f"- Phương tiện phát hiện: {', '.join(veh_names)}")
+                lines.append(f"Phương tiện trong ảnh: {', '.join(veh_names)}.")
             if is_night is not None:
-                lines.append(f"- Ánh sáng: {'Ban đêm' if is_night else 'Ban ngày'}")
+                lines.append(f"Thời điểm: {'Ban đêm' if is_night else 'Ban ngày'}.")
 
             range_txt = f" (Khoảng: {depth_range})" if depth_range and depth_range != "N/A" else ""
             card_lines = [
@@ -1537,6 +1533,27 @@ _HALLUCINATED_2_IMAGES_PATTERNS = (
     "cần ảnh thực tế",
 )
 
+_CANNED_LORA_FEEDBACK_PATTERNS = (
+    "đáng tin cậy hơn so với các kết quả trước",
+    "so với các kết quả trước",
+    "nước đang rút — tin tốt",
+    "nước đang rút - tin tốt",
+    "đã hạ xuống",
+    "mình hạ mức xuống",
+    "nước đang dâng lên — bạn báo đúng",
+    "ghi nhận xác nhận của bạn",
+    "hiệu chuẩn lại kết quả",
+    "rerun ngay",
+    "simulate xong",
+    "mực nước hiện tại đang ổn định",
+    "tình hình mực nước đang ở mức trung bình",
+    "cần theo dõi tiếp",
+    "chưa có biến động lớn",
+    "kết quả phân tích mức độ ngập lụt",
+    "kết quả phân tích ngập lụt",
+    "độ sâu ngập ước tính:",
+)
+
 
 @app.route("/api/chat/message", methods=["POST"])
 def api_chat_message():
@@ -1598,23 +1615,31 @@ def api_chat_message():
                 "analysis": img_meta,
             })
 
-        # Nếu người dùng chỉ gửi ảnh (không kèm câu hỏi riêng ngoài câu mặc định) HOẶC trợ lý ngôn ngữ chưa sẵn sàng
-        # → trả về ngay thẻ kết quả đo độ sâu & cảnh báo chính xác (tránh LLM tự suy diễn mâu thuẫn với số đo thực tế)
+        # Nếu người dùng gửi ảnh mà không hỏi câu hỏi chuyên biệt (như hỏi đường sơ tán/địa điểm cụ thể)
+        # → trả về trực tiếp thẻ kết quả đo độ sâu & cảnh báo chuẩn (tránh LoRA sinh thêm đoạn "Tư vấn bổ sung" lặp lại hoặc câu mẫu so sánh cũ)
         _default_img_prompts = (
             "",
             "hãy phân tích mức độ ngập và tư vấn an toàn cho ảnh này.",
             "phân tích mức độ ngập và cảnh báo cho ảnh này",
             "phân tích ảnh này",
             "tình hình hiện tại sao rồi?",
+            "xem giúp mình",
+            "ngập sâu không",
+            "ngập bao nhiêu",
         )
-        is_default_img_prompt = user_msg.lower().strip() in _default_img_prompts
+        q_low = user_msg.lower().strip()
+        is_specific_followup = bool(
+            q_low
+            and q_low not in _default_img_prompts
+            and any(kw in q_low for kw in ("sơ tán", "đi đâu", "trú ẩn", "số điện thoại", "cứu hộ", "tỉnh", "quận", "huyện", "đường nào"))
+        )
         if img_meta and img_meta.get("summary_card") and (
-            is_default_img_prompt or not _llm_ready or img_meta.get("status") != "ok"
+            not is_specific_followup or not _llm_ready or img_meta.get("status") != "ok"
         ):
             reply = img_meta["summary_card"]
             with _sess_lock:
-                hist.append({"role": "user",      "content": f"{analysis}\n{user_msg}".strip()})
-                hist.append({"role": "assistant", "content": reply})
+                hist.append({"role": "user",      "content": user_msg or "Phân tích mức độ ngập cho ảnh đã gửi."})
+                hist.append({"role": "assistant", "content": f"Ảnh đã phân tích: {img_meta.get('level_vi')}, độ sâu {img_meta.get('depth_cm')} cm."})
                 _sessions[sid] = hist[-MAX_HIST:]
             return jsonify({
                 "reply": reply,
@@ -1623,9 +1648,7 @@ def api_chat_message():
                 "analysis": img_meta,
             })
 
-        # Format đúng cấu trúc mà LoRA đã được huấn luyện ([Kết quả phân tích hiện tại] + Người dùng nói)
-        effective_q = user_msg if user_msg else "tình hình hiện tại sao rồi?"
-        content = f"{analysis}\n\nNgười dùng nói: \"{effective_q}\""
+        content = f"{analysis}\nCâu hỏi thêm của người dân: {user_msg}"
 
     if not _llm_ready:
         status = "đang khởi động…" if _llm_loading else "chưa sẵn sàng"
@@ -1638,24 +1661,16 @@ def api_chat_message():
     messages.append({"role": "user", "content": content})
 
     try:
-        # Không truyền pil_img trực tiếp vào LLM khi đã có kết quả đo từ hệ thống phân tích ảnh,
-        # nhằm ngăn mô hình tự đoán mò độ sâu (ví dụ đoán 40-50cm khi thực tế chỉ 10cm).
         reply = llm_infer(messages, max_new_tokens=256, image=None)
         if "INTENT:" in reply:
             from learning.flood_llm import _parse_llm_output
             reply = _parse_llm_output(reply).response or reply
         reply = _clean_vietnamese_reply(reply)
 
-        # Kiểm tra và chặn lỗi hallucinate "cần ít nhất 2 ảnh để so sánh" hoặc bịa độ sâu mâu thuẫn
+        # Kiểm tra và chặn lỗi hallucinate "cần ít nhất 2 ảnh", câu mẫu LoRA ("Nước đang rút...", "Đáng tin cậy hơn...") hoặc lặp lại thẻ KẾT QUẢ PHÂN TÍCH
         reply_low = reply.lower()
         has_hallucinated_refusal = any(pat in reply_low for pat in _HALLUCINATED_2_IMAGES_PATTERNS)
-        generic_status_phrases = (
-            "mực nước hiện tại đang ổn định",
-            "tình hình mực nước đang ở mức trung bình",
-            "cần theo dõi tiếp",
-            "chưa có biến động lớn",
-        )
-        is_generic_status = any(p in reply_low for p in generic_status_phrases) and len(reply) < 120
+        has_canned_lora = any(pat in reply_low for pat in _CANNED_LORA_FEEDBACK_PATTERNS)
 
         has_contradiction = False
         if img_meta and float(img_meta.get("depth_cm", 0) or 0) < 35.0:
@@ -1664,11 +1679,11 @@ def api_chat_message():
 
         if img_meta and img_meta.get("summary_card"):
             card = img_meta["summary_card"]
-            if has_hallucinated_refusal or is_generic_status or has_contradiction or not reply:
+            if has_hallucinated_refusal or has_canned_lora or has_contradiction or not reply:
                 reply = card
             elif card not in reply:
                 reply = f"{card}\n\n💬 **Tư vấn bổ sung:** {reply}"
-        elif has_hallucinated_refusal and "so sánh" not in user_msg.lower():
+        elif (has_hallucinated_refusal or has_canned_lora) and "so sánh" not in user_msg.lower():
             reply = (
                 "Bạn chỉ cần gửi **1 bức ảnh** chụp khu vực đang ngập lên đây, "
                 "mình sẽ đo độ sâu nước (cm), đánh giá mức độ nguy hiểm và tư vấn an toàn ngay cho bạn nhé!"
